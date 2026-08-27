@@ -14,7 +14,7 @@
   <img alt="Rendering: 100% CPU" src="https://img.shields.io/badge/rendering-100%25%20CPU-FF7A45?style=flat-square&labelColor=1b1b2b">
   <img alt="Dependencies: none" src="https://img.shields.io/badge/dependencies-none-2E7D32?style=flat-square&labelColor=1b1b2b">
   <img alt="Backend: Win32" src="https://img.shields.io/badge/backend-Win32-1D6FB8?style=flat-square&labelColor=1b1b2b">
-  <img alt="Unsafe: one file" src="https://img.shields.io/badge/unsafe-one%20file-9C27B0?style=flat-square&labelColor=1b1b2b">
+  <img alt="Unsafe: at the OS edge only" src="https://img.shields.io/badge/unsafe-OS%20edge%20only-9C27B0?style=flat-square&labelColor=1b1b2b">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-555555?style=flat-square&labelColor=1b1b2b">
 </p>
 
@@ -55,7 +55,7 @@
 | **Rendering** | Software rasteriser on the CPU — near-plane clipping, back-face culling, depth buffer, perspective-correct interpolation, Blinn-Phong |
 | **Failure** | A subsystem that cannot start raises `PlatformError` **from its constructor** — there is no half-built object to test |
 | **Teardown** | Every handle-holding class is `Closeable`, so dropping one without `close()` is a compile error (**E0511**), not a leak found later |
-| **`unsafe`** | Confined to a single file — `src/kernel/raw.axle` |
+| **`unsafe`** | Only where an OS record is laid out through a typed pointer — `kernel/raw` (the accessors every other site goes through), the five `video/windows/` files, the three `platform/` seams that fill an OS struct, and `io/bmp`. Nothing above them contains one. |
 | **Size** | ~6 000 lines across 43 modules |
 
 ## ✨ Highlights
@@ -220,7 +220,7 @@ Layers, bottom to top. **A module never reaches upward.**
    │  sys/      win32_types · win32_layout_check                          │
    │            win32_kernel · win32_user · win32_gdi · win32_mm          │
    ├─────────────────────────────────────────────────────────────────────┤
-   │  kernel/   raw ← every `unsafe` in the library · blob · wide         │
+   │  kernel/   raw ← the pointer accessors · blob · wide                 │
    └─────────────────────────────────────────────────────────────────────┘
 ```
 

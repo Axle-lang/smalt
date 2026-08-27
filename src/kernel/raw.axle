@@ -97,6 +97,21 @@ class Raw {
         }
     }
 
+    /**
+     * The SIGNED 16-bit half-word at `base + off`.
+     *
+     * Read through a `ptr<i16>`, so the widening is the load's own
+     * sign-extension. Doing it in arithmetic instead — compare against
+     * 32768, subtract 65536 — is a branch per sample in a mixer's inner
+     * loop, and it is the same three lines wherever a caller needs it.
+     */
+    static fn i16At(base : ptr, off : i64) : i32 {
+        unsafe {
+            let slot : ptr<i16> = ((base as i64) + off) as ptr<i16>;
+            return (*slot) as i32;
+        }
+    }
+
     /** Store the low 16 bits of `v` at `base + off`. */
     static fn putU16(base : ptr, off : i64, v : i32) : void {
         unsafe {

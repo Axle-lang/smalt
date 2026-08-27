@@ -77,7 +77,6 @@ pub class SysAudio : Closeable {
     headers : Blob;  // AUDIO_BLOCKS * WAVEHDR, contiguous
     samples : Blob;  // AUDIO_BLOCKS * block bytes, contiguous
     opened : bool;
-    queued : i32;    // blocks handed to the device and not yet reclaimed
 
     /** Open the default output device. */
     constructor() {
@@ -86,7 +85,6 @@ pub class SysAudio : Closeable {
         self.headers = new Blob((AUDIO_BLOCKS as i64) * (sizeof<WAVEHDR>() as i64));
         self.samples = new Blob((AUDIO_BLOCKS as i64) * SysAudio::blockBytes());
         self.opened = false;
-        self.queued = 0;
 
         let align : i32 = AUDIO_CHANNELS * AUDIO_SAMPLE_BYTES;
         unsafe {

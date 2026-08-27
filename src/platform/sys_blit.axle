@@ -35,7 +35,7 @@ use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
 use crate::sys::win32_types::{BITMAPINFO, BITMAPINFOHEADER};
 use crate::sys::win32_gdi::StretchDIBits;
-use crate::video::windows::win_const::{BI_RGB, DIB_RGB_COLORS, SRCCOPY};
+use crate::sys::win32_const::{BI_RGB, DIB_RGB_COLORS, SRCCOPY};
 
 /** Bits per pixel of the framebuffer format. */
 const BLIT_BIT_COUNT : i32 = 32;

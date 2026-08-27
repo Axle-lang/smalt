@@ -17,7 +17,7 @@
 // Xinerama or XRandR behind the same two functions for multi-monitor.
 
 use crate::sys::win32_user::GetSystemMetrics;
-use crate::video::windows::win_const::{SM_CXSCREEN, SM_CYSCREEN};
+use crate::sys::win32_const::{SM_CXSCREEN, SM_CYSCREEN};
 
 /** What the primary display measures. */
 pub class SysScreen {

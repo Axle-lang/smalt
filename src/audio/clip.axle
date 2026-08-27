@@ -67,15 +67,6 @@ fn ccData() : i32 {
     return 100 | (97 << 8) | (116 << 16) | (97 << 24);
 }
 
-/** A `u16` at `off`, sign-extended to the `i32` a sample is mixed as. */
-fn sampleAt(base : ptr, off : i64) : i32 {
-    let v : i32 = Raw::u16At(base, off);
-    if (v >= 32768) {
-        return v - 65536;
-    }
-    return v;
-}
-
 /**
  * One decoded sound: mono 16-bit frames at the device rate.
  *
@@ -204,11 +195,11 @@ pub class Clip : Closeable {
                 src = srcFrames - 1;
             }
             let off : i64 = dataOff + (src as i64) * CLIP_SAMPLE_BYTES * (channels as i64);
-            let v : i32 = sampleAt(base, off);
+            let v : i32 = Raw::i16At(base, off);
             if (channels > 1) {
-                v = (v + sampleAt(base, off + CLIP_SAMPLE_BYTES)) / 2;
+                v = (v + Raw::i16At(base, off + CLIP_SAMPLE_BYTES)) / 2;
             }
-            Raw::putU16(dst, (i as i64) * CLIP_SAMPLE_BYTES, v & 65535);
+            Raw::putU16(dst, (i as i64) * CLIP_SAMPLE_BYTES, v);
             i = i + 1;
         }
         self.frames = outFrames;

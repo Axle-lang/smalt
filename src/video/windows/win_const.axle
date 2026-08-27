@@ -104,21 +104,8 @@ const PM_REMOVE : i32 = 1;
 /** One notch of the wheel, `WHEEL_DELTA`. */
 const WHEEL_DELTA : i32 = 120;
 
-// ─── GDI ─────────────────────────────────────────────────────
-
-/** `DIB_RGB_COLORS` (0) — the bitmap carries literal colours, no palette. */
-const DIB_RGB_COLORS : i32 = 0;
-/** `BI_RGB` (0) — uncompressed. */
-const BI_RGB : i32 = 0;
-/** `SRCCOPY` (0x00CC0020) — the raster op that just copies. */
-const SRCCOPY : i32 = 13369376;
-
-// ─── System metrics (`SM_*`) ─────────────────────────────────
-
-/** `SM_CXSCREEN` (0) — primary display width. */
-const SM_CXSCREEN : i32 = 0;
-/** `SM_CYSCREEN` (1) — primary display height. */
-const SM_CYSCREEN : i32 = 1;
+// The GDI raster ops and the `SM_*` metrics live in `sys/win32_const`
+// instead: `platform/` reads them, and it sits below this folder.
 
 // ─── Window procedure ────────────────────────────────────────
 
