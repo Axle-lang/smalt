@@ -56,7 +56,7 @@
 | **Failure** | A subsystem that cannot start raises `PlatformError` **from its constructor** — there is no half-built object to test |
 | **Teardown** | Every handle-holding class is `Closeable`, so dropping one without `close()` is a compile error (**E0511**), not a leak found later |
 | **`unsafe`** | Only where an OS record is laid out through a typed pointer — `kernel/raw` (the accessors every other site goes through), the five `video/windows/` files, the three `platform/` seams that fill an OS struct, and `io/bmp`. Nothing above them contains one. |
-| **Size** | ~6 000 lines across 43 modules |
+| **Size** | ~7 300 lines across 53 modules |
 
 ## ✨ Highlights
 
@@ -64,6 +64,7 @@
 - 🎮 **SDL's event model, kept** — the queue is decoupled from the OS message pump, every event carries the same `kind` / `timestamp` prefix, and scancodes are physical positions, so `Scancode::W` is the key above `Scancode::S` on AZERTY too.
 - 📐 **The maths SDL never shipped** — `Vec2` `Vec3` `Vec4` `Mat4` `Quat` `Aabb` `Plane` `Frustum`, all value structs, all tested by a headless example.
 - 🎨 **A complete software 3D pipeline** — clip, project, cull, half-space fill with a reciprocal depth buffer, perspective-correct attributes, one directional light. No GPU touched, nothing to install.
+- 🔊 **Sound with no callback** — every low-latency audio API wants to call *you*, and Axle cannot hand out a function address. `waveOut` opened with `CALLBACK_NULL` reports a finished block as a flag you poll, so the mixer is a three-call cycle instead — the same shape ALSA's `snd_pcm_writei` takes.
 - 🧯 **Failure and teardown are the compiler's business** — constructors raise, `Closeable` is enforced, and `defer` covers the six ways out of `Bmp::read`.
 - 🪶 **Nothing to ship** — the produced `.exe` runs on a stock Windows box. No runtime DLL, no redistributable.
 
@@ -191,6 +192,11 @@ A program that already has a renderer should not have to adopt one to get a wind
 | `SDL_BeginGPURenderPass` … `SDL_SubmitGPUCommandBuffer` | `beginFrame` … `endFrame` |
 | `SDL_PushGPUVertexUniformData` (the MVP) | `setCamera` + a draw's `model` argument |
 | *(SDL ships no maths)* | `Vec2` `Vec3` `Vec4` `Mat4` `Quat` `Aabb` `Plane` `Frustum` |
+| `SDL_OpenAudioDevice` | `new Mixer()` — opens the default output |
+| `SDL_LoadWAV` | `Clip::load(path)`; a bad or missing file is a silent empty clip |
+| `SDL_PutAudioStreamData` | `mixer.pump()` — call it far more often than a block lasts |
+| *(SDL mixes nothing itself)* | `Mixer` — 32 voices, summed, clamped |
+| *(SDL has no 3D audio)* | `playRandPos` + `setListener` — attenuated live, every block |
 | *(SDL ships no 3D renderer)* | `Mesh` `Primitives` `Texture` `Camera` `Material` `DirectionalLight` |
 
 **Dropped on purpose:** the multi-platform driver vtable and `bootstrap[]`, `dynapi`, every callback API (`SDL_AddTimer`, `SDL_SetEventFilter`, `SDL_AddEventWatch`) — where SDL calls back, smalt polls — and the 2D `SDL_Renderer`, which has no depth buffer and no 3D transform and so cannot draw a 3D game.
@@ -210,19 +216,33 @@ Layers, bottom to top. **A module never reaches upward.**
    │  render/   device (trait) · color · vertex · mesh · texture · camera │
    │            soft/ target · present · raster · shade · device_soft     │
    ├─────────────────────────────────────────────────────────────────────┤
+   │  audio/    clip (WAV) · mixer (voices) · bank (variants)             │
+   ├─────────────────────────────────────────────────────────────────────┤
    │  math/     vec · mat · quat · geom          io/  file · bmp          │
    ├─────────────────────────────────────────────────────────────────────┤
    │  video/    window · display                                          │
-   │            windows/ class · window · pump · keymap · relative · proc │
+   │            windows/ class · window · pump · keymap · relative        │
+   │                     proc · const                                     │
    ├─────────────────────────────────────────────────────────────────────┤
-   │  core/     init · timer · event · keyboard · mouse · pump            │
+   │  core/     init · error · timer · event · keyboard · mouse · pump    │
    ├─────────────────────────────────────────────────────────────────────┤
-   │  sys/      win32_types · win32_layout_check                          │
+   │  platform/ THE PORT SEAM — one file per OS capability                │
+   │            sys_clock · sys_app · sys_screen · sys_blit               │
+   │            sys_pump · sys_audio                                      │
+   ├─────────────────────────────────────────────────────────────────────┤
+   │  sys/      win32_types · win32_const · win32_layout_check            │
    │            win32_kernel · win32_user · win32_gdi · win32_mm          │
    ├─────────────────────────────────────────────────────────────────────┤
    │  kernel/   raw ← the pointer accessors · blob · wide                 │
    └─────────────────────────────────────────────────────────────────────┘
 ```
+
+`platform/` sits below `core/` on purpose. A seam that lived beside the
+code it serves would be reachable from it, and the first shortcut past it
+would go unnoticed; from underneath it can only be called down into. That
+is also why `sys_blit` takes a bare `i32[]` rather than a `RenderTarget`,
+and why the `SM_*` and raster-op constants moved out of `video/windows/`
+and into `sys/`.
 
 **Objects vs values.** What has identity and a lifetime is a class: `Platform`, `Window`, `Events`, `Clock`, `SoftDevice`, `Mesh`, `Texture`, `Camera`, `RenderTarget`, `Blob`. What is data is a value struct: `Vec3`, `Mat4`, `Quat`, `Color`, `Vertex`, `Material`, `Event`, `Rect`, `Aabb`. Free functions appear only in the raw kernel, where the carrier is context rather than subject.
 
