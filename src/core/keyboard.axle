@@ -1,0 +1,166 @@
+// keyboard — physical key identity, and the state of every key.
+//
+// The values are SDL's own scancode numbers, and the semantics are
+// SDL's: a `Scancode` names a **position on the keyboard**, not the
+// character it produces. `Scancode::W` is the key above `Scancode::S`
+// on every layout — the `Z` key of an AZERTY board — which is exactly
+// what a movement binding wants. Text, where the layout does matter,
+// arrives as an `EventKind::TextInput` codepoint instead.
+//
+// Win32 gives the physical code in bits 16..23 of a key message's
+// `lParam`, so nothing here depends on the virtual-key code and no
+// layout is consulted (see `win_keymap`).
+
+/** Slots in the key-state array; scancodes stay under this. */
+const SCANCODE_SLOTS : i64 = 256;
+
+/**
+ * A key by physical position, numbered as SDL numbers scancodes.
+ *
+ * A key the library does not model maps to `Unknown`, which is never
+ * reported as down.
+ */
+pub enum Scancode : i32 {
+    Unknown = 0,
+    A = 4,
+    B = 5,
+    C = 6,
+    D = 7,
+    E = 8,
+    F = 9,
+    G = 10,
+    H = 11,
+    I = 12,
+    J = 13,
+    K = 14,
+    L = 15,
+    M = 16,
+    N = 17,
+    O = 18,
+    P = 19,
+    Q = 20,
+    R = 21,
+    S = 22,
+    T = 23,
+    U = 24,
+    V = 25,
+    W = 26,
+    X = 27,
+    Y = 28,
+    Z = 29,
+    Num1 = 30,
+    Num2 = 31,
+    Num3 = 32,
+    Num4 = 33,
+    Num5 = 34,
+    Num6 = 35,
+    Num7 = 36,
+    Num8 = 37,
+    Num9 = 38,
+    Num0 = 39,
+    Return = 40,
+    Escape = 41,
+    Backspace = 42,
+    Tab = 43,
+    Space = 44,
+    Minus = 45,
+    Equals = 46,
+    LeftBracket = 47,
+    RightBracket = 48,
+    Backslash = 49,
+    Semicolon = 51,
+    Apostrophe = 52,
+    Grave = 53,
+    Comma = 54,
+    Period = 55,
+    Slash = 56,
+    CapsLock = 57,
+    F1 = 58,
+    F2 = 59,
+    F3 = 60,
+    F4 = 61,
+    F5 = 62,
+    F6 = 63,
+    F7 = 64,
+    F8 = 65,
+    F9 = 66,
+    F10 = 67,
+    F11 = 68,
+    F12 = 69,
+    Insert = 73,
+    Home = 74,
+    PageUp = 75,
+    Delete = 76,
+    End = 77,
+    PageDown = 78,
+    Right = 79,
+    Left = 80,
+    Down = 81,
+    Up = 82,
+    /** The keypad's own Enter — a different key from `Return`. */
+    KeypadEnter = 88,
+    LeftControl = 224,
+    LeftShift = 225,
+    LeftAlt = 226,
+    RightControl = 228,
+    RightShift = 229,
+    RightAlt = 230,
+}
+
+/**
+ * Which keys are held, indexed by scancode — the counterpart of
+ * `SDL_GetKeyboardState`.
+ *
+ * Edge events (`KeyDown` / `KeyUp`) say *when* a key changed; this says
+ * *what is held right now*, which is what a movement loop reads.
+ */
+pub class KeyboardState {
+    down : bool[];
+
+    /** All keys released. */
+    constructor() {
+        self.down = malloc<bool>(SCANCODE_SLOTS);
+        for (i of 0..SCANCODE_SLOTS) {
+            self.down[i] = false;
+        }
+    }
+
+    /** Whether `sc` is currently held. */
+    fn isDown(self, sc : Scancode) : bool {
+        let idx = sc as i32;
+        if (idx <= 0 || idx >= SCANCODE_SLOTS) {
+            return false;
+        }
+        return self.down[idx];
+    }
+
+    /** Record `sc` as held. */
+    fn press(mut self, sc : Scancode) : void {
+        let idx = sc as i32;
+        if (idx > 0 && idx < SCANCODE_SLOTS) {
+            self.down[idx] = true;
+        }
+    }
+
+    /** Record `sc` as released. */
+    fn release(mut self, sc : Scancode) : void {
+        let idx = sc as i32;
+        if (idx > 0 && idx < SCANCODE_SLOTS) {
+            self.down[idx] = false;
+        }
+    }
+
+    /**
+     * Release everything.
+     *
+     * Called when the window loses focus: the key-up for a key released
+     * while another application had focus is delivered to that
+     * application, so without this a key held across an Alt-Tab stays
+     * held forever and the player walks into a wall.
+     */
+    fn releaseAll(mut self) : void {
+        for (i of 0..SCANCODE_SLOTS) {
+            self.down[i] = false;
+        }
+    }
+}

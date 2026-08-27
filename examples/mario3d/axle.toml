@@ -1,0 +1,9 @@
+[package]
+name = "mario3d"
+version = "0.1.0"
+
+# No `[link]`. The window, the framebuffer and the event queue come from
+# smalt, which is Axle calling Win32 directly — so there is no SDL2.dll
+# to ship and no vcpkg prefix to find.
+[dependencies]
+smalt = { path = "../.." }

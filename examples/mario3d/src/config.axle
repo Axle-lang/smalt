@@ -1,0 +1,53 @@
+// config — a 2D side-scroller in a window. World units are pixels; the
+// level is a tile grid. Physics is in pixels/frame at ~60fps. Every
+// tunable is a function (Axle has no cross-module constants).
+
+// ── Screen / tiles ──────────────────────────────────────────
+const screenW : i32 = 800;
+const screenH : i32 = 600;
+const tile : i32 = 32;
+const levelCols : i32 = 240;
+const levelRows : i32 = 18; // 18 * 32 = 576 px tall
+const maxCoins : i32 = 128;
+const maxEnemies : i32 = 64;
+
+// ── Player box (pixels) ─────────────────────────────────────
+const playerW : f64 = 22.0;
+const playerH : f64 = 40.0;
+const coinSize : f64 = 18.0;
+const enemyW : f64 = 28.0;
+const enemyH : f64 = 28.0;
+
+// ── Physics (pixels/frame) ──────────────────────────────────
+const gravity : f64 = 0.7;
+const maxFall : f64 = 13.0;
+const moveAccel : f64 = 0.9;
+const maxRun : f64 = 4.6;
+const friction : f64 = 0.6;
+const jumpVel : f64 = 13.5; // apex ≈ 4 tiles
+const stompBounce : f64 = 10.0;
+const enemySpeed : f64 = 1.1;
+const jumpBufferFrames : i32 = 6;
+const coyoteFrames : i32 = 6;
+const frameMillis : i32 = 16;
+const startLives : i32 = 3;
+
+/**
+ * A cell of the level grid. Stored in the grid as its `i32` tag, so the
+ * discriminants double as the on-grid tile codes.
+ */
+enum Tile : i32 {
+    Empty,
+    Ground,
+    Brick,
+    Question,
+    Used,
+    Pipe,
+}
+
+/** The run's outcome: still playing, reached the flag, or out of lives. */
+enum GameState {
+    Playing,
+    Won,
+    Over,
+}

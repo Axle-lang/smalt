@@ -1,0 +1,17 @@
+// win32_mm — the `winmm.dll` imports.
+//
+// `Sleep(1)` is not a millisecond: the Windows scheduler's default quantum
+// rounds it up to ~15.6 ms, which turns a 60 fps frame pacer into a 64 ms
+// stutter. `timeBeginPeriod(1)` lowers the granularity process-wide for as
+// long as it is in effect, and must be matched by `timeEndPeriod(1)` —
+// `Platform` pairs them across its constructor and `close`.
+//
+// The block names `winmm`, which is where the link line learns of it.
+
+extern "C" from "winmm" {
+    /** `MMRESULT timeBeginPeriod(UINT)` — 0 (`TIMERR_NOERROR`) on success. */
+    fn timeBeginPeriod(ms : i32) : i32;
+
+    /** `MMRESULT timeEndPeriod(UINT)` — must mirror every `timeBeginPeriod`. */
+    fn timeEndPeriod(ms : i32) : i32;
+}

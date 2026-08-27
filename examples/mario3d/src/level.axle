@@ -1,0 +1,141 @@
+// level — the tile grid, built by coordinate and mutable.
+//
+// A flat `i32[]` of tile codes (`row * cols + col`). Ground runs along
+// the bottom with pits; pipes, bricks and `?` blocks dot the course.
+// Out of bounds is a wall on the left and open air elsewhere, so the
+// player can fall into a pit (and die) but not walk off the start.
+
+use config::levelCols;
+use config::levelRows;
+use config::Tile;
+
+/** Whether tile `t` blocks movement (everything but empty air). */
+fn isSolid(t : Tile) : bool {
+    return match t {
+        Tile::Ground | Tile::Brick | Tile::Question | Tile::Used | Tile::Pipe => true,
+        Tile::Empty => false,
+    };
+}
+
+/** Recover the `Tile` from its stored grid tag. */
+fn tileOf(code : i32) : Tile {
+    return match code {
+        1 => Tile::Ground,
+        2 => Tile::Brick,
+        3 => Tile::Question,
+        4 => Tile::Used,
+        5 => Tile::Pipe,
+        _ => Tile::Empty,
+    };
+}
+
+class Level {
+    grid : i32[];
+
+    /** A fresh level: all empty air, then the course is painted in. */
+    constructor() {
+        let n : i32 = levelCols * levelRows;
+        self.grid = malloc<i32>(n);
+        let i : i32 = 0;
+        while (i < n) {
+            self.grid[i] = Tile::Empty as i32;
+            i = i + 1;
+        }
+        self.build();
+    }
+
+    /** Tile at `(col, row)`: a wall off the left edge, open air elsewhere. */
+    fn at(self, col : i32, row : i32) : Tile {
+        if (col < 0) { return Tile::Ground; }
+        if (col >= levelCols || row < 0 || row >= levelRows) {
+            return Tile::Empty;
+        }
+        return tileOf(self.grid[row * levelCols + col]);
+    }
+
+    /** Paint tile `t` at `(col, row)`, ignoring out-of-bounds writes. */
+    fn setTile(mut self, col : i32, row : i32, t : Tile) : void {
+        if (col >= 0 && col < levelCols && row >= 0 && row < levelRows) {
+            self.grid[row * levelCols + col] = t as i32;
+        }
+    }
+
+    /** Whether the tile at `(col, row)` is solid. */
+    fn solidAt(self, col : i32, row : i32) : bool {
+        return isSolid(self.at(col, row));
+    }
+
+    /** Any solid tile in column `col` over rows `rTop..rBot`? (X sweep) */
+    fn colSolid(self, col : i32, rTop : i32, rBot : i32) : bool {
+        let r : i32 = rTop;
+        while (r <= rBot) {
+            if (self.solidAt(col, r)) { return true; }
+            r = r + 1;
+        }
+        return false;
+    }
+
+    /** Any solid tile in row `row` over cols `cLeft..cRight`? (Y sweep) */
+    fn rowSolid(self, row : i32, cLeft : i32, cRight : i32) : bool {
+        let c : i32 = cLeft;
+        while (c <= cRight) {
+            if (self.solidAt(c, row)) { return true; }
+            c = c + 1;
+        }
+        return false;
+    }
+    /** Fill the tile rectangle `c0..c1 × r0..r1` with `t`. */
+    fn fillRect(mut self, c0 : i32, r0 : i32, c1 : i32, r1 : i32, t : Tile) : void {
+        let r : i32 = r0;
+        while (r <= r1) {
+            let c : i32 = c0;
+            while (c <= c1) {
+                self.setTile(c, r, t);
+                c = c + 1;
+            }
+            r = r + 1;
+        }
+    }
+
+    /** Paint the whole course: ground with pits, pipes, blocks, stairs. */
+    fn build(mut self) : void {
+        let rows : i32 = levelRows;
+        let g0 : i32 = rows - 2;
+        let cols : i32 = levelCols;
+        // Ground with pits.
+        let col : i32 = 0;
+        while (col < cols) {
+            let pit : bool = (col >= 40 && col <= 43) || (col >= 78 && col <= 81) || (col >= 120 && col <= 123) || (col >= 160 && col <= 163);
+            if (!pit) {
+                self.setTile(col, g0, Tile::Ground);
+                self.setTile(col, g0 + 1, Tile::Ground);
+            }
+            col = col + 1;
+        }
+        // Pipes (2 wide).
+        self.fillRect(22, g0 - 2, 23, g0 - 1, Tile::Pipe);
+        self.fillRect(58, g0 - 3, 59, g0 - 1, Tile::Pipe);
+        self.fillRect(104, g0 - 2, 105, g0 - 1, Tile::Pipe);
+        self.fillRect(150, g0 - 3, 151, g0 - 1, Tile::Pipe);
+        self.fillRect(190, g0 - 2, 191, g0 - 1, Tile::Pipe);
+        // Floating ? blocks and bricks (a jump above the floor).
+        let r : i32 = g0 - 4;
+        self.setTile(10, r, Tile::Question);
+        self.setTile(12, r, Tile::Brick);
+        self.setTile(13, r, Tile::Question);
+        self.setTile(14, r, Tile::Brick);
+        self.setTile(50, r, Tile::Question);
+        self.fillRect(64, r, 67, r, Tile::Brick);
+        self.setTile(66, r, Tile::Question);
+        self.setTile(95, r, Tile::Question);
+        self.setTile(130, r, Tile::Question);
+        self.setTile(132, r, Tile::Question);
+        self.fillRect(170, r, 173, r, Tile::Brick);
+        // Staircase up to the flag.
+        let s : i32 = 0;
+        while (s < 4) {
+            self.fillRect(205 + s, g0 - 1 - s, 205 + s, g0 - 1, Tile::Ground);
+            s = s + 1;
+        }
+    }
+}

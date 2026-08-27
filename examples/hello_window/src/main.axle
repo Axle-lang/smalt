@@ -1,0 +1,89 @@
+// hello_window — a window, a live event loop, and a moving picture.
+//
+// The smallest program that exercises every layer below the 3D
+// pipeline: initialisation, a window, the polled event path, the clock,
+// and a framebuffer blitted to the screen every frame.
+
+use smalt::{
+    Platform, PlatformError, Window, WindowFlags, Clock, Events, EventKind, Scancode, Color,
+    SoftDevice,
+};
+
+/** Client width at startup. */
+const VIEW_W : i32 = 960;
+/** Client height at startup. */
+const VIEW_H : i32 = 540;
+
+fn main() : i32 {
+    try {
+        return run();
+    } catch e : PlatformError {
+        println(e.message);
+        return 1;
+    }
+}
+
+/** The program proper; every startup failure leaves through `!`. */
+fn run() : i32 ! PlatformError {
+    let platform = new Platform()?;
+    let win = platform.createWindow("smalt — hello", VIEW_W, VIEW_H, WindowFlags::resizable())?;
+
+    let clock = new Clock();
+    let events = new Events();
+    let device = new SoftDevice(VIEW_W, VIEW_H);
+    let running = true;
+    let frames = 0;
+
+    while (running) {
+        events.pump(win, clock.ticks());
+        while (events.hasNext()) {
+            let e = events.next();
+            match e.kind {
+                EventKind::Quit => {
+                    running = false;
+                }
+                EventKind::KeyDown => {
+                    if (e.scancode == Scancode::Escape) {
+                        running = false;
+                    }
+                }
+                EventKind::WindowResized => {
+                    device.resize(e.width, e.height);
+                }
+                _ => {}
+            }
+        }
+
+        if (running && !win.minimised()) {
+            device.beginFrame(Color::rgb(0.02, 0.03, 0.06));
+            paint(device, clock.seconds());
+            device.endFrame(win);
+            frames += 1;
+        }
+        clock.delay(8);
+    }
+
+    println("frames drawn: ${frames}");
+
+    device.close();
+    events.close();
+    clock.close();
+    win.close();
+    platform.close();
+    return 0;
+}
+
+/** A drifting gradient, so a stalled frame loop is visible at a glance. */
+fn paint(device : SoftDevice, t : f64) : void {
+    let w = device.width();
+    let h = device.height();
+    let wave = 0.5 + 0.5 * t.sin();
+    for (y of 0..h) {
+        let v = (y as f64) / (h as f64);
+        let g = Color::channel(v * wave);
+        for (x of 0..w) {
+            let u = (x as f64) / (w as f64);
+            device.plot(x, y, Color::packBytes(Color::channel(u), g, Color::channel(1.0 - u)));
+        }
+    }
+}

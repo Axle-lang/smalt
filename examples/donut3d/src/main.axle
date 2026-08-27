@@ -1,0 +1,83 @@
+// donut3d — the terminal donut, given a real window.
+//
+// A spinning, shaded, z-buffered torus rendered by hand into the window's
+// framebuffer. It uses none of smalt's 3D pipeline — no camera, no mesh,
+// no rasteriser — on purpose: this is the example that shows the library is
+// still a *framebuffer* underneath, and that a program with its own renderer
+// can take the pixels and be left alone.
+//
+// What it does use is everything around the pixels, which is the part nobody
+// wants to write twice: a window, an event queue, a clock, and a present.
+//
+// Build & run:  axle run            (nothing to ship — smalt is Win32)
+
+use smalt::{Platform, PlatformError, Window, WindowFlags, Clock, Events, Event, EventKind, Scancode, SoftDevice};
+use scene::clearFrame;
+use scene::renderTorus;
+use config::screenW;
+use config::screenH;
+use config::spinX;
+use config::spinZ;
+use config::frameMillis;
+
+fn main() : i32 {
+    try {
+        return run();
+    } catch e : PlatformError {
+        println(e.message);
+        return 1;
+    }
+}
+
+fn run() : i32 ! PlatformError {
+    let w : i32 = screenW;
+    let h : i32 = screenH;
+
+    let platform = new Platform()?;
+    defer platform.close();
+    let win = platform.createWindow("Axle 3D — a torus, by hand", w, h, WindowFlags::none())?;
+    defer win.close();
+    let device = new SoftDevice(w, h);
+    defer device.close();
+    let clock = new Clock();
+    defer clock.close();
+    let events = new Events();
+    defer events.close();
+
+    // The depth buffer is the one allocation this program owns. The colour
+    // buffer is the device's, so there is nothing to allocate for it and
+    // nothing to copy at the end of a frame.
+    let zb : f64[] = malloc<f64>((w as i64) * (h as i64));
+
+    let a : f64 = 0.0;
+    let b : f64 = 0.0;
+    let running : bool = true;
+
+    while (running && win.isOpen()) {
+        events.pump(win, clock.ticks());
+        while (events.hasNext()) {
+            let e : Event = events.next();
+            if (e.kind == EventKind::Quit) {
+                running = false;
+            } else if (e.kind == EventKind::KeyDown) {
+                if (e.scancode == Scancode::Escape) {
+                    running = false;
+                }
+            }
+        }
+
+        if (!win.minimised()) {
+            let px : i32[] = device.pixels();
+            clearFrame(px, zb, w, h);
+            renderTorus(px, zb, w, h, a, b);
+            device.endFrame(win);
+        }
+
+        a = a + spinX;
+        b = b + spinZ;
+        clock.delay(frameMillis);
+    }
+
+    free(zb);
+    return 0;
+}

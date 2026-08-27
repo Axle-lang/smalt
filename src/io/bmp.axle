@@ -1,0 +1,232 @@
+// bmp — the one image format, as in SDL.
+//
+// SDL core decodes exactly one format: BMP (`SDL_LoadBMP`). Everything
+// else lives in the separate SDL_image library. This matches that scope
+// deliberately — a PNG decoder is an inflate implementation, and that is
+// a different project.
+//
+// Supported: uncompressed (`BI_RGB`) 24- and 32-bit images, either row
+// order. That covers what an image editor produces when asked for a BMP.
+//
+// A file that cannot be decoded yields a magenta-and-black checker
+// rather than an error. That is the missing-texture convention every
+// engine uses, and it is deliberate: a texture that fails to load should
+// be impossible to miss on screen and must not take the frame down with
+// it.
+
+use crate::io::file::AssetFile;
+use crate::kernel::blob::Blob;
+use crate::render::color::Color;
+use crate::render::texture::Texture;
+use crate::sys::win32_types::BITMAPINFOHEADER;
+
+/**
+ * `BITMAPFILEHEADER` — the 14 bytes a `.bmp` opens with.
+ *
+ * `@packed` is not a preference here, it is the format: a `WORD` followed
+ * by a `DWORD` would be padded to 16 bytes by any ordinary layout, and
+ * every offset after it — including the one that says where the pixels
+ * start — would be two bytes off. The file was written by something that
+ * packed it, so it is read by something that says so.
+ */
+@packed
+extern "C" struct BITMAPFILEHEADER {
+    /** `WORD bfType` — `BM`, little-endian, so `0x4D42`. */
+    bfType : u16;
+    /** `DWORD bfSize` — the whole file. */
+    bfSize : u32;
+    /** `WORD bfReserved1`. */
+    bfReserved1 : u16;
+    /** `WORD bfReserved2`. */
+    bfReserved2 : u16;
+    /** `DWORD bfOffBits` — where the pixel rows begin. */
+    bfOffBits : u32;
+}
+
+/**
+ * The two headers as the file lays them out, back to back.
+ *
+ * Packed for the same reason, one level up: `BITMAPINFOHEADER` is
+ * four-byte aligned, so an ordinary layout would start it at 16 and the
+ * whole DIB header would be read two bytes into itself.
+ */
+@packed
+extern "C" struct BMPHEADER {
+    /** The file header. */
+    file : BITMAPFILEHEADER;
+    /** The DIB header — shared with the present path's own use of it. */
+    info : BITMAPINFOHEADER;
+}
+
+/**
+ * `BM` read as one little-endian `WORD` — `'M' << 8 | 'B'`.
+ *
+ * One comparison rather than two, because `bfType` is one field: the pair
+ * of bytes was a consequence of addressing the header by offset.
+ */
+const BMP_MAGIC : i32 = 19778;
+/** `B`, the byte the file opens with. */
+const BMP_MAGIC_B : i32 = 66;
+/** `M`, the one after it. */
+const BMP_MAGIC_M : i32 = 77;
+/** `BI_RGB` — the only compression accepted. */
+const BMP_UNCOMPRESSED : i32 = 0;
+/** Rows are padded up to a multiple of this many bytes. */
+const BMP_ROW_ALIGN : i32 = 4;
+/** Side of the placeholder returned when a load fails. */
+const BMP_MISSING_SIZE : i32 = 64;
+/** Squares per side of the placeholder. */
+const BMP_MISSING_CELLS : i32 = 8;
+
+/** The BMP decoder. */
+pub class Bmp {
+    /**
+     * 0 when the two headers sit where the format puts them, otherwise the
+     * number of the first check that failed.
+     *
+     * These are the numbers this decoder used to name one at a time —
+     * `bfOffBits` at 10, `biWidth` at 18, and the 54 bytes the two headers
+     * cover. Reading them off the declarations instead is only an
+     * improvement if the declarations agree, and `@packed` is precisely the
+     * thing that would be silently absent: drop it and every one of these
+     * grows by two.
+     */
+    static fn verifyLayout() : i32 {
+        if (sizeof<BITMAPFILEHEADER>() != 14) { return 1; }
+        if (offsetof(BITMAPFILEHEADER, bfSize) != 2) { return 2; }
+        if (offsetof(BITMAPFILEHEADER, bfOffBits) != 10) { return 3; }
+        // The DIB header starts where the file header ends, with nothing
+        // between them — the outer record is packed for that reason alone.
+        if (offsetof(BMPHEADER, info) != 14) { return 4; }
+        if (sizeof<BMPHEADER>() != 54) { return 5; }
+        // `BM`, little-endian: the two bytes this decoder compared
+        // separately are one `WORD` field.
+        if (BMP_MAGIC != (BMP_MAGIC_M * 256) + BMP_MAGIC_B) { return 6; }
+        return 0;
+    }
+
+    /**
+     * The unmistakable magenta checker that stands in for a texture
+     * that could not be loaded.
+     */
+    static fn missing() : Texture {
+        return Texture::checker(
+            BMP_MISSING_SIZE,
+            BMP_MISSING_CELLS,
+            Color::rgb(1.0, 0.0, 1.0),
+            Color::black()
+        );
+    }
+
+    /** Bytes per row, including the padding up to a four-byte boundary. */
+    static fn stride(width : i32, bytesPerPixel : i32) : i32 {
+        let raw : i32 = width * bytesPerPixel;
+        return ((raw + BMP_ROW_ALIGN - 1) / BMP_ROW_ALIGN) * BMP_ROW_ALIGN;
+    }
+
+    /**
+     * Decode the pixels of `data` into a texture.
+     *
+     * Split from `load` so the header validation reads as a list of
+     * refusals and the pixel walk as a loop.
+     */
+    static fn decode(data : Blob, width : i32, height : i32, topDown : bool, bpp : i32) : Texture {
+        let bytesPerPixel : i32 = bpp / 8;
+        let rowBytes = Bmp::stride(width, bytesPerPixel);
+        let start : i64 = 0;
+        unsafe {
+            let h : ptr<BMPHEADER> = data.at() as ptr<BMPHEADER>;
+            start = (*h).file.bfOffBits as i64;
+        }
+        let needed : i64 = start + (rowBytes as i64) * (height as i64);
+        if (needed > data.bytes()) {
+            return Bmp::missing();
+        }
+
+        let tex = new Texture(width, height);
+        for (y of 0..height) {
+            // A positive `biHeight` means the first row in the file is
+            // the *bottom* of the image, which is the default and the
+            // reason an unflipped decoder shows everything upside down.
+            let sourceRow : i32 = y;
+            if (!topDown) {
+                sourceRow = height - 1 - y;
+            }
+            let rowStart : i64 = start + (sourceRow as i64) * (rowBytes as i64);
+            for (x of 0..width) {
+                let p : i64 = rowStart + (x as i64) * (bytesPerPixel as i64);
+                // BMP stores its channels blue-first.
+                let b = data.byteAt(p);
+                let g = data.byteAt(p + 1);
+                let r = data.byteAt(p + 2);
+                tex.put(x, y, Color::packBytes(r, g, b));
+            }
+        }
+        return tex;
+    }
+
+    /**
+     * The BMP at `path`, or the missing-texture checker.
+     *
+     * Never throws and never returns null: a caller binds the result
+     * either way and sees the failure on screen.
+     */
+    static fn load(path : string) : Texture {
+        try {
+            return Bmp::read(path)?;
+        } catch e : IOException {
+            return Bmp::missing();
+        }
+    }
+
+    /**
+     * The BMP at `path`, or `IOException` if it is missing or malformed.
+     *
+     * Split from `load` so the failures have one exit: every `return
+     * Bmp::missing()` here would be a second answer to the same question.
+     */
+    static fn read(path : string) : Texture ! IOException {
+        let data = AssetFile::readAll(path)?;
+        // Six exits, one release: a `defer` is registered against the
+        // function, so the malformed-header throws below and the success
+        // return all leave through it.
+        defer data.close();
+
+        // The two headers cover the file's first `sizeof<BMPHEADER>()`
+        // bytes, so reading fewer than that is reading past the end.
+        if (data.bytes() < sizeof<BMPHEADER>()) {
+            throw IOException("${path} is not a BMP this loader reads");
+        }
+
+        let bpp : i32 = 0;
+        let width : i32 = 0;
+        let rawHeight : i32 = 0;
+        let magic : i32 = 0;
+        let compression : i32 = 0;
+        unsafe {
+            let h : ptr<BMPHEADER> = data.at() as ptr<BMPHEADER>;
+            magic = (*h).file.bfType as i32;
+            compression = (*h).info.biCompression as i32;
+            bpp = (*h).info.biBitCount as i32;
+            width = (*h).info.biWidth;
+            rawHeight = (*h).info.biHeight;
+        }
+
+        if (magic != BMP_MAGIC) {
+            throw IOException("${path} is not a BMP this loader reads");
+        }
+        if (compression != BMP_UNCOMPRESSED) {
+            throw IOException("${path} is not a BMP this loader reads");
+        }
+        if (bpp != 24 && bpp != 32) {
+            throw IOException("${path} is not a BMP this loader reads");
+        }
+        let height = rawHeight.abs();
+        let topDown = rawHeight < 0;
+        if (width <= 0 || height <= 0) {
+            throw IOException("${path} is not a BMP this loader reads");
+        }
+
+        return Bmp::decode(data, width, height, topDown, bpp);
+    }
+}

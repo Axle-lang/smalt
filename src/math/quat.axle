@@ -1,0 +1,179 @@
+// quat — rotations that compose and interpolate without gimbal lock.
+//
+// Euler angles are fine for a first-person camera, which is why `Camera`
+// keeps a yaw and a pitch. They are wrong for anything that tumbles:
+// three sequential angles lose a degree of freedom when two axes line up
+// (gimbal lock), and interpolating them takes a path through orientation
+// space that nobody asked for. A quaternion has neither problem, which
+// is why every engine stores orientation as one.
+//
+// The convention is `(x, y, z, w)` with `w` the scalar part, and a unit
+// quaternion is assumed by `rotate` and `matrix` — construct through the
+// factories, or call `normalized` after arithmetic.
+
+use crate::math::mat::Mat4;
+use crate::math::vec::Vec3;
+use std::numeric::math;
+
+/** Below this magnitude a quaternion has no meaningful orientation. */
+const QUAT_EPSILON : f64 = 0.000000001;
+/** Above this dot product, two orientations are close enough to lerp. */
+const QUAT_SLERP_LINEAR : f64 = 0.9995;
+
+/** A rotation. */
+pub struct Quat {
+    /** Vector part, x. */
+    pub x : f64;
+    /** Vector part, y. */
+    pub y : f64;
+    /** Vector part, z. */
+    pub z : f64;
+    /** Scalar part. */
+    pub w : f64;
+
+    /** A quaternion from its four components. */
+    static fn make(x : f64, y : f64, z : f64, w : f64) : Quat {
+        return Quat { x: x, y: y, z: z, w: w };
+    }
+
+    /** No rotation. */
+    static fn identity() : Quat {
+        return Quat { x: 0.0, y: 0.0, z: 0.0, w: 1.0 };
+    }
+
+    /**
+     * A rotation of `radians` about `axis`.
+     *
+     * A degenerate axis yields the identity rather than a quaternion of
+     * NaNs, matching `Mat4::rotationAxis`.
+     */
+    static fn axisAngle(axis : Vec3, radians : f64) : Quat {
+        let a = axis.normalized();
+        if (a.lengthSquared() < QUAT_EPSILON) {
+            return Quat::identity();
+        }
+        let half : f64 = radians * 0.5;
+        let s = half.sin();
+        return Quat { x: a.x * s, y: a.y * s, z: a.z * s, w: half.cos() };
+    }
+
+    /** A rotation from yaw about +Y then pitch about +X then roll about +Z. */
+    static fn euler(yaw : f64, pitch : f64, roll : f64) : Quat {
+        let cy = (yaw * 0.5).cos();
+        let sy = (yaw * 0.5).sin();
+        let cp = (pitch * 0.5).cos();
+        let sp = (pitch * 0.5).sin();
+        let cr = (roll * 0.5).cos();
+        let sr = (roll * 0.5).sin();
+        return Quat {
+            x: sp * cy * cr + cp * sy * sr,
+            y: cp * sy * cr - sp * cy * sr,
+            z: cp * cy * sr - sp * sy * cr,
+            w: cp * cy * cr + sp * sy * sr,
+        };
+    }
+
+    /** The squared magnitude. */
+    fn lengthSquared(self) : f64 {
+        return self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w;
+    }
+
+    /** This rotation at unit magnitude, or the identity if it has none. */
+    fn normalized(self) : Quat {
+        let lenSq = self.lengthSquared();
+        if (lenSq < QUAT_EPSILON) {
+            return Quat::identity();
+        }
+        let inv : f64 = 1.0 / lenSq.sqrt();
+        return Quat { x: self.x * inv, y: self.y * inv, z: self.z * inv, w: self.w * inv };
+    }
+
+    /** The opposite rotation — the conjugate, for a unit quaternion. */
+    fn inverse(self) : Quat {
+        return Quat { x: -self.x, y: -self.y, z: -self.z, w: self.w };
+    }
+
+    /** This rotation followed by `o`. */
+    fn mul(self, o : Quat) : Quat {
+        return Quat {
+            x: self.w * o.x + self.x * o.w + self.y * o.z - self.z * o.y,
+            y: self.w * o.y - self.x * o.z + self.y * o.w + self.z * o.x,
+            z: self.w * o.z + self.x * o.y - self.y * o.x + self.z * o.w,
+            w: self.w * o.w - self.x * o.x - self.y * o.y - self.z * o.z,
+        };
+    }
+
+    /** Dot product — the cosine of half the angle between two rotations. */
+    fn dot(self, o : Quat) : f64 {
+        return self.x * o.x + self.y * o.y + self.z * o.z + self.w * o.w;
+    }
+
+    /** `v` turned by this rotation. */
+    fn rotate(self, v : Vec3) : Vec3 {
+        let u = Vec3::make(self.x, self.y, self.z);
+        let cross1 = u.cross(v);
+        let term = cross1.scaled(self.w).plus(u.cross(cross1));
+        return v.plus(term.scaled(2.0));
+    }
+
+    /** This rotation as a matrix, ready to compose with a translation. */
+    fn matrix(self) : Mat4 {
+        let xx = self.x * self.x;
+        let yy = self.y * self.y;
+        let zz = self.z * self.z;
+        let xy = self.x * self.y;
+        let xz = self.x * self.z;
+        let yz = self.y * self.z;
+        let wx = self.w * self.x;
+        let wy = self.w * self.y;
+        let wz = self.w * self.z;
+        return Mat4::rows(
+            1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy), 0.0,
+            2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx), 0.0,
+            2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy), 0.0,
+            0.0, 0.0, 0.0, 1.0
+        );
+    }
+
+    /**
+     * The shortest-path interpolation towards `o` by `t`.
+     *
+     * Two refinements matter. The sign flip picks the shorter of the two
+     * arcs between the same pair of orientations — without it an object
+     * occasionally spins the long way round. And when the two are nearly
+     * identical the sine of the angle between them approaches zero, so
+     * the interpolation falls back to a normalised linear blend rather
+     * than dividing by it.
+     */
+    fn slerp(self, o : Quat, t : f64) : Quat {
+        let target : Quat = o;
+        let cosine = self.dot(o);
+        if (cosine < 0.0) {
+            target = Quat::make(-o.x, -o.y, -o.z, -o.w);
+            cosine = -cosine;
+        }
+        if (cosine > QUAT_SLERP_LINEAR) {
+            return Quat::make(
+                self.x + (target.x - self.x) * t,
+                self.y + (target.y - self.y) * t,
+                self.z + (target.z - self.z) * t,
+                self.w + (target.w - self.w) * t
+            ).normalized();
+        }
+        let angle = cosine.acos();
+        let sine = angle.sin();
+        if (sine < QUAT_EPSILON) {
+            // A copy, not `self`: returning the receiver of a struct
+            // method hands back its address rather than its value.
+            return Quat::make(self.x, self.y, self.z, self.w);
+        }
+        let a = ((1.0 - t) * angle).sin() / sine;
+        let b = (t * angle).sin() / sine;
+        return Quat::make(
+            self.x * a + target.x * b,
+            self.y * a + target.y * b,
+            self.z * a + target.z * b,
+            self.w * a + target.w * b
+        );
+    }
+}

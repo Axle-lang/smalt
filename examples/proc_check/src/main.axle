@@ -1,0 +1,109 @@
+// proc_check — proof that the window procedure is ours, and that it runs.
+//
+// Every other example needs a person at the keyboard. This one needs
+// nobody: `Window.selfCheckProc` delivers the four *sent* messages to the
+// window with `SendMessageW`, which invokes a window procedure
+// synchronously and bypasses the queue entirely.
+//
+// That is the whole chain in one run — the class was registered with our
+// procedure's address rather than `DefWindowProcW`'s, the state block was
+// hung off the window, the procedure executed on the OS's own callback,
+// and it wrote through a raw pointer into a record both sides address for
+// themselves — followed by the event path that reads it.
+//
+// The window is hidden. None of these messages needs it visible, and two
+// of them (a focus edge on a window that never had focus, a resize with
+// no user dragging) are precisely what the polling this replaced could
+// never have seen.
+
+use smalt::{Platform, PlatformError, Window, WindowFlags, Clock, Events, EventKind, Win32Layout, Bmp};
+
+/** Client size at startup. */
+const VIEW_W : i32 = 320;
+/** ditto. */
+const VIEW_H : i32 = 200;
+/** The size the injected `WM_SIZE` reports. */
+const RESIZE_W : i32 = 640;
+/** ditto. */
+const RESIZE_H : i32 = 400;
+
+fn main() : i32 {
+    try {
+        return run();
+    } catch e : PlatformError {
+        println(e.message);
+        return 1;
+    }
+}
+
+fn run() : i32 ! PlatformError {
+    // Before anything is sent: the records the procedure and the OS both
+    // address are the records the SDK describes. Every message below writes
+    // through one of them, so a drifted declaration would corrupt memory
+    // here rather than report — checking it first is what makes the rest of
+    // this run mean something.
+    let wrong = Win32Layout::verify();
+    if (wrong != 0) {
+        println("Win32 record layout check ${wrong} failed");
+        return 3;
+    }
+    // The same question for the one file format the library reads. Its two
+    // headers are `@packed`, and without that every offset in them is two
+    // bytes further along than the format says.
+    let badBmp = Bmp::verifyLayout();
+    if (badBmp != 0) {
+        println("BMP header layout check ${badBmp} failed");
+        return 4;
+    }
+
+    let platform = new Platform()?;
+    let win = platform.createWindow("proc_check", VIEW_W, VIEW_H, WindowFlags::hidden())?;
+    let clock = new Clock();
+    let events = new Events();
+    let code = 0;
+
+    // Half one: the procedure ran and recorded what it was sent.
+    let step = win.selfCheckProc(RESIZE_W, RESIZE_H);
+    if (step != 0) {
+        println("the window procedure did not record message ${step}");
+        code = 2;
+    }
+
+    // Half two: the event path turns those records into events. The
+    // close latch was cleared by the self-check, so what reaches the
+    // queue here is the resize and the focus edges it left behind.
+    if (code == 0) {
+        events.pump(win, clock.ticks());
+        let sawResize = false;
+        while (events.hasNext()) {
+            let e = events.next();
+            if (e.kind == EventKind::WindowResized) {
+                sawResize = true;
+                if (e.width != RESIZE_W || e.height != RESIZE_H) {
+                    println("resized to ${e.width}x${e.height}");
+                    code = 3;
+                }
+            }
+        }
+        if (!sawResize) {
+            println("the procedure recorded WM_SIZE but no WindowResized arrived");
+            code = 4;
+        }
+    }
+
+    // And the window is still alive: `WM_CLOSE` was recorded, not obeyed.
+    if (code == 0 && !win.isOpen()) {
+        println("WM_CLOSE destroyed the window instead of asking");
+        code = 5;
+    }
+
+    if (code == 0) {
+        println("window procedure: WM_SIZE, WM_KILLFOCUS, WM_SETFOCUS, WM_CLOSE all seen");
+    }
+
+    events.close();
+    clock.close();
+    win.close();
+    platform.close();
+    return code;
+}

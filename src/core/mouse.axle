@@ -1,0 +1,151 @@
+// mouse — pointer position, buttons, wheel, and relative motion.
+//
+// Two coordinate stories, as in SDL. `x` / `y` are the pointer's
+// position in the window's client area, which is what a menu or a
+// cursor needs. `dx` / `dy` are the motion accumulated since the last
+// pump, which is what a first-person camera needs — and the two are not
+// interchangeable: a camera driven by absolute position stops turning
+// the moment the pointer reaches the edge of the screen.
+//
+// Relative mode keeps the pointer pinned to the centre of the window and
+// hidden, so motion never runs out of room. That is a per-frame recentre
+// rather than a raw-input device registration, which keeps the whole
+// mechanism inside the polled model the library is built on.
+
+/** Buttons, numbered as SDL numbers them. */
+pub enum MouseButton : i32 {
+    Left = 1,
+    Middle = 2,
+    Right = 3,
+    X1 = 4,
+    X2 = 5,
+}
+
+/**
+ * The pointer's state — the counterpart of `SDL_GetMouseState` plus
+ * `SDL_GetRelativeMouseState`.
+ */
+pub class MouseState {
+    x : i32;
+    y : i32;
+    dx : i32;
+    dy : i32;
+    wheel : i32;
+    buttons : i32;
+    relative : bool;
+    primed : bool;
+
+    /** Pointer at the origin, nothing held, position not yet known. */
+    constructor() {
+        self.x = 0;
+        self.y = 0;
+        self.dx = 0;
+        self.dy = 0;
+        self.wheel = 0;
+        self.buttons = 0;
+        self.relative = false;
+        self.primed = false;
+    }
+
+    /**
+     * Whether a real pointer position has been seen yet.
+     *
+     * The first motion message must not produce a delta: the previous
+     * position is the constructor's `(0, 0)`, not anywhere the pointer
+     * has been, and a camera fed that delta snaps violently on the first
+     * mouse move of the program.
+     */
+    fn isPrimed(self) : bool {
+        return self.primed;
+    }
+
+    /** The bit `b` occupies in the button mask. */
+    static fn maskOf(b : MouseButton) : i32 {
+        return 1 << ((b as i32) - 1);
+    }
+
+    /** Pointer x, in client pixels. */
+    fn posX(self) : i32 {
+        return self.x;
+    }
+
+    /** Pointer y, in client pixels. */
+    fn posY(self) : i32 {
+        return self.y;
+    }
+
+    /** Horizontal motion accumulated since the previous pump. */
+    fn deltaX(self) : i32 {
+        return self.dx;
+    }
+
+    /** Vertical motion accumulated since the previous pump. */
+    fn deltaY(self) : i32 {
+        return self.dy;
+    }
+
+    /** Wheel notches since the previous pump; positive is away from the user. */
+    fn wheelDelta(self) : i32 {
+        return self.wheel;
+    }
+
+    /** Whether `b` is held. */
+    fn isDown(self, b : MouseButton) : bool {
+        return (self.buttons & MouseState::maskOf(b)) != 0;
+    }
+
+    /** Whether the pointer is pinned and hidden for relative motion. */
+    fn isRelative(self) : bool {
+        return self.relative;
+    }
+
+    /** Record `b` as held. */
+    fn press(mut self, b : MouseButton) : void {
+        self.buttons |= MouseState::maskOf(b);
+    }
+
+    /** Record `b` as released. */
+    fn release(mut self, b : MouseButton) : void {
+        self.buttons &= ~MouseState::maskOf(b);
+    }
+
+    /** Move the pointer to a client-area position, accumulating the delta. */
+    fn moveTo(mut self, nx : i32, ny : i32) : void {
+        if (self.primed) {
+            self.dx += nx - self.x;
+            self.dy += ny - self.y;
+        }
+        self.x = nx;
+        self.y = ny;
+        self.primed = true;
+    }
+
+    /** Place the pointer without producing motion — the relative-mode recentre. */
+    fn warpTo(mut self, nx : i32, ny : i32) : void {
+        self.x = nx;
+        self.y = ny;
+        self.primed = true;
+    }
+
+    /** Accumulate `notches` of wheel travel. */
+    fn scroll(mut self, notches : i32) : void {
+        self.wheel += notches;
+    }
+
+    /** Enter or leave relative mode. */
+    fn setRelative(mut self, on : bool) : void {
+        self.relative = on;
+    }
+
+    /** Drop the per-frame accumulators. Called at the top of every pump. */
+    fn newFrame(mut self) : void {
+        self.dx = 0;
+        self.dy = 0;
+        self.wheel = 0;
+    }
+
+    /** Release every button — the focus-loss counterpart of `releaseAll`. */
+    fn releaseAll(mut self) : void {
+        self.buttons = 0;
+    }
+}

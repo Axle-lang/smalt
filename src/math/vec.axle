@@ -1,0 +1,229 @@
+// vec — 2, 3 and 4 component vectors.
+//
+// SDL ships no vector maths at all: every SDL-based 3D game brings its
+// own. This is that, in Axle.
+//
+// They are `struct`s, so they are values — copied on assignment, stored
+// inline in an array, never aliased and never heap-allocated. Axle has
+// no operator overloading, so every operation is a named method:
+// `a.plus(b)`, not `a + b`. That is more verbose to write and, for what
+// it is worth, unambiguous to read.
+//
+// Everything is `f64`, because `sin()` and friends are `f64`-only.
+//
+// The one hazard worth naming: **division traps in Axle**. Normalising a
+// zero-length vector would abort the process rather than yield NaN, so
+// every operation that divides checks first and answers a defined value.
+
+/** Below this length a vector is treated as having no direction. */
+const VEC_EPSILON : f64 = 0.000000001;
+
+/** A point or direction in the plane. */
+pub struct Vec2 {
+    /** Horizontal component. */
+    pub x : f64;
+    /** Vertical component. */
+    pub y : f64;
+
+    /** A vector from its components. */
+    static fn make(x : f64, y : f64) : Vec2 {
+        return Vec2 { x: x, y: y };
+    }
+
+    /** The origin. */
+    static fn zero() : Vec2 {
+        return Vec2 { x: 0.0, y: 0.0 };
+    }
+
+    /** Component-wise sum. */
+    fn plus(self, o : Vec2) : Vec2 {
+        return Vec2 { x: self.x + o.x, y: self.y + o.y };
+    }
+
+    /** Component-wise difference. */
+    fn minus(self, o : Vec2) : Vec2 {
+        return Vec2 { x: self.x - o.x, y: self.y - o.y };
+    }
+
+    /** This vector scaled by `k`. */
+    fn scaled(self, k : f64) : Vec2 {
+        return Vec2 { x: self.x * k, y: self.y * k };
+    }
+
+    /** Dot product. */
+    fn dot(self, o : Vec2) : f64 {
+        return self.x * o.x + self.y * o.y;
+    }
+
+    /** Euclidean length. */
+    fn length(self) : f64 {
+        return (self.x * self.x + self.y * self.y).sqrt();
+    }
+}
+
+/** A point or direction in space. */
+pub struct Vec3 {
+    /** X component. */
+    pub x : f64;
+    /** Y component. */
+    pub y : f64;
+    /** Z component. */
+    pub z : f64;
+
+    /** A vector from its components. */
+    static fn make(x : f64, y : f64, z : f64) : Vec3 {
+        return Vec3 { x: x, y: y, z: z };
+    }
+
+    /** The origin. */
+    static fn zero() : Vec3 {
+        return Vec3 { x: 0.0, y: 0.0, z: 0.0 };
+    }
+
+    /** The same value in all three components. */
+    static fn splat(v : f64) : Vec3 {
+        return Vec3 { x: v, y: v, z: v };
+    }
+
+    /** The +X axis. */
+    static fn unitX() : Vec3 {
+        return Vec3 { x: 1.0, y: 0.0, z: 0.0 };
+    }
+
+    /** The +Y axis — up, in this library's convention. */
+    static fn unitY() : Vec3 {
+        return Vec3 { x: 0.0, y: 1.0, z: 0.0 };
+    }
+
+    /** The +Z axis. */
+    static fn unitZ() : Vec3 {
+        return Vec3 { x: 0.0, y: 0.0, z: 1.0 };
+    }
+
+    /** Component-wise sum. */
+    fn plus(self, o : Vec3) : Vec3 {
+        return Vec3 { x: self.x + o.x, y: self.y + o.y, z: self.z + o.z };
+    }
+
+    /** Component-wise difference. */
+    fn minus(self, o : Vec3) : Vec3 {
+        return Vec3 { x: self.x - o.x, y: self.y - o.y, z: self.z - o.z };
+    }
+
+    /** Component-wise product — a colour tint or a non-uniform scale. */
+    fn times(self, o : Vec3) : Vec3 {
+        return Vec3 { x: self.x * o.x, y: self.y * o.y, z: self.z * o.z };
+    }
+
+    /** This vector scaled by `k`. */
+    fn scaled(self, k : f64) : Vec3 {
+        return Vec3 { x: self.x * k, y: self.y * k, z: self.z * k };
+    }
+
+    /** This vector pointing the other way. */
+    fn negated(self) : Vec3 {
+        return Vec3 { x: -self.x, y: -self.y, z: -self.z };
+    }
+
+    /** Dot product — the cosine of the angle between, times both lengths. */
+    fn dot(self, o : Vec3) : f64 {
+        return self.x * o.x + self.y * o.y + self.z * o.z;
+    }
+
+    /** Cross product — a vector perpendicular to both, right-handed. */
+    fn cross(self, o : Vec3) : Vec3 {
+        return Vec3 {
+            x: self.y * o.z - self.z * o.y,
+            y: self.z * o.x - self.x * o.z,
+            z: self.x * o.y - self.y * o.x,
+        };
+    }
+
+    /** Squared length — the comparison form, with no square root. */
+    fn lengthSquared(self) : f64 {
+        return self.x * self.x + self.y * self.y + self.z * self.z;
+    }
+
+    /** Euclidean length. */
+    fn length(self) : f64 {
+        return self.lengthSquared().sqrt();
+    }
+
+    /** Distance to `o`. */
+    fn distanceTo(self, o : Vec3) : f64 {
+        return self.minus(o).length();
+    }
+
+    /**
+     * This vector at unit length.
+     *
+     * A vector shorter than `VEC_EPSILON` has no meaningful direction,
+     * and dividing by its length would trap. It answers the zero vector,
+     * which every consumer here (a normal, a light direction, a view
+     * axis) treats as "no contribution" rather than propagating a NaN.
+     */
+    fn normalized(self) : Vec3 {
+        let len = self.length();
+        if (len < VEC_EPSILON) {
+            return Vec3::zero();
+        }
+        return self.scaled(1.0 / len);
+    }
+
+    /** Linear interpolation towards `o`, `t` in 0..1. */
+    fn lerp(self, o : Vec3, t : f64) : Vec3 {
+        return self.plus(o.minus(self).scaled(t));
+    }
+
+    /** This vector mirrored about the surface normal `n` (unit length). */
+    fn reflected(self, n : Vec3) : Vec3 {
+        return self.minus(n.scaled(2.0 * self.dot(n)));
+    }
+}
+
+/** A homogeneous point — a `Vec3` with the `w` a projection needs. */
+pub struct Vec4 {
+    /** X component. */
+    pub x : f64;
+    /** Y component. */
+    pub y : f64;
+    /** Z component. */
+    pub z : f64;
+    /** Homogeneous component; 1 for a position, 0 for a direction. */
+    pub w : f64;
+
+    /** A vector from its components. */
+    static fn make(x : f64, y : f64, z : f64, w : f64) : Vec4 {
+        return Vec4 { x: x, y: y, z: z, w: w };
+    }
+
+    /** `v` as a position (`w` = 1). */
+    static fn point(v : Vec3) : Vec4 {
+        return Vec4 { x: v.x, y: v.y, z: v.z, w: 1.0 };
+    }
+
+    /** `v` as a direction (`w` = 0), so a translation cannot move it. */
+    static fn direction(v : Vec3) : Vec4 {
+        return Vec4 { x: v.x, y: v.y, z: v.z, w: 0.0 };
+    }
+
+    /** The x, y and z components, ignoring `w`. */
+    fn xyz(self) : Vec3 {
+        return Vec3 { x: self.x, y: self.y, z: self.z };
+    }
+
+    /** Component-wise sum. */
+    fn plus(self, o : Vec4) : Vec4 {
+        return Vec4 { x: self.x + o.x, y: self.y + o.y, z: self.z + o.z, w: self.w + o.w };
+    }
+
+    /** This vector scaled by `k`. */
+    fn scaled(self, k : f64) : Vec4 {
+        return Vec4 { x: self.x * k, y: self.y * k, z: self.z * k, w: self.w * k };
+    }
+
+    /** Dot product across all four components. */
+    fn dot(self, o : Vec4) : f64 {
+        return self.x * o.x + self.y * o.y + self.z * o.z + self.w * o.w;
+    }
+}

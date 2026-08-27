@@ -1,0 +1,90 @@
+// shade — the fragment shader, written as a function instead of a string.
+//
+// An SDL_GPU program would hand precompiled SPIR-V or DXIL to the
+// driver here. There is no driver: this runs per fragment, on the CPU,
+// in Axle, which is why it is a small Blinn-Phong and not a material
+// graph.
+//
+// The model: albedo (material colour, optionally times a texel) lit by
+// one directional light, plus a constant ambient term so surfaces facing
+// away are not pure black, plus an optional Blinn-Phong highlight.
+
+use crate::math::vec::Vec3;
+use crate::render::color::Color;
+use crate::render::texture::Texture;
+use crate::render::vertex::{DirectionalLight, Material};
+use std::numeric::math;
+
+/** Below this, a highlight is not worth the `pow`. */
+const SHADE_MIN_SPECULAR : f64 = 0.0001;
+
+/**
+ * Everything a fragment needs that does not vary across it: the surface
+ * it belongs to, the light on it, and where the viewer is.
+ *
+ * Bundled because they travel together through every draw call, and
+ * because six positional arguments of the same type is how a `light` and
+ * an `eye` end up swapped.
+ */
+pub struct Shading {
+    /** The surface being drawn. */
+    pub material : Material;
+    /** The one light in the scene. */
+    pub light : DirectionalLight;
+    /** Where the camera is, for the specular term. */
+    pub eye : Vec3;
+
+    /** The shading state for a material, a light and a viewpoint. */
+    static fn make(material : Material, light : DirectionalLight, eye : Vec3) : Shading {
+        return Shading { material: material, light: light, eye: eye };
+    }
+}
+
+/** The per-fragment lighting. */
+pub class Shader {
+    /**
+     * The colour of one fragment, packed for the framebuffer.
+     *
+     * `normal` need not arrive normalised — interpolating three unit
+     * vectors across a triangle does not produce a unit vector, and
+     * skipping the renormalisation is what makes a large smooth-shaded
+     * face look faceted.
+     */
+    static fn fragment(
+        sh : Shading,
+        tex : Texture,
+        u : f64,
+        v : f64,
+        normal : Vec3,
+        world : Vec3
+    ) : i32 {
+        let albedo : Color = sh.material.albedo;
+        if (sh.material.textured) {
+            albedo = albedo.times(Color::unpack(tex.sampleNearest(u, v)));
+        }
+
+        let n = normal.normalized();
+        // The light *travels* along `direction`, so the vector towards
+        // the light is its opposite.
+        let toLight : Vec3 = sh.light.direction.negated();
+        let diffuse = n.dot(toLight);
+        if (diffuse < 0.0) {
+            diffuse = 0.0;
+        }
+
+        let lit : Color = sh.light.color.scaled(diffuse);
+        let ambient = Color::white().scaled(sh.material.ambient);
+        let out = albedo.times(ambient.plus(lit));
+
+        if (sh.material.specular > SHADE_MIN_SPECULAR && diffuse > 0.0) {
+            let toEye : Vec3 = sh.eye.minus(world).normalized();
+            let half = toLight.plus(toEye).normalized();
+            let cosine = n.dot(half);
+            if (cosine > 0.0) {
+                let power = cosine.pow(sh.material.shininess);
+                out = out.plus(sh.light.color.scaled(power * sh.material.specular));
+            }
+        }
+        return out.packed();
+    }
+}

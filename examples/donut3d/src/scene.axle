@@ -1,0 +1,103 @@
+// scene — the classic donut, z-buffered and shaded, written straight into
+// the device's own colour buffer.
+//
+// The maths is the terminal donut's, unchanged: two nested sweeps over the
+// torus surface, a rotation, a perspective divide, and a Lambert term. What
+// differs is where the result lands. There is no mesh here and no rasteriser
+// — the program plots points, which is the case `SoftDevice::pixels()` exists
+// for: the framebuffer is an `i32[]`, so a plot is an array store and the
+// depth test is a read of a second array. No upload step, no second copy of
+// the window's worth of pixels, and no pointer arithmetic to get either
+// wrong.
+
+use smalt::Color;
+use config::halfW;
+use config::halfH;
+use config::tubeR;
+use config::ringR;
+use config::viewDist;
+use config::projScale;
+use config::thetaStep;
+use config::phiStep;
+
+/** A full turn in radians — the upper bound of both surface sweeps. */
+const twoPi : f64 = 6.283185307;
+
+/** Warm glow colour from Lambert brightness (0 .. ~1.4). */
+fn shade(lum : f64) : i32 {
+    let l : f64 = lum;
+    if (l > 1.0) { l = 1.0; }
+    let r : i32 = (40.0 + 215.0 * l).floorToInt() as i32;
+    let g : i32 = (20.0 + 180.0 * l * l).floorToInt() as i32;
+    let b : i32 = (25.0 + 90.0 * l * l * l).floorToInt() as i32;
+    return Color::packBytes(r, g, b);
+}
+
+/**
+ * Clear the colour buffer to the background and reset the depth buffer.
+ *
+ * Depth is kept as reciprocal-z, so nearer is *greater* and the cleared value
+ * is `0.0` — the far plane. That is why the test in `renderTorus` reads `>`
+ * where a linear depth buffer would read `<`.
+ */
+fn clearFrame(px : i32[], zb : f64[], w : i32, h : i32) : void {
+    let bg : i32 = Color::packBytes(8, 12, 28);
+    let n : i32 = w * h;
+    let i : i32 = 0;
+    while (i < n) {
+        px[i] = bg;
+        zb[i] = 0.0;
+        i = i + 1;
+    }
+}
+
+/**
+ * Rasterise the torus rotated by `a` (about X) and `b` (about Z), depth
+ * tested against `zb`.
+ */
+fn renderTorus(px : i32[], zb : f64[], w : i32, h : i32, a : f64, b : f64) : void {
+    let sA : f64 = a.sin();
+    let cA : f64 = a.cos();
+    let sB : f64 = b.sin();
+    let cB : f64 = b.cos();
+    let r1 : f64 = tubeR;
+    let r2 : f64 = ringR;
+    let k2 : f64 = viewDist;
+    let scale : f64 = projScale;
+    let cx : f64 = halfW;
+    let cy : f64 = halfH;
+
+    let theta : f64 = 0.0;
+    while (theta < twoPi) {
+        let ct : f64 = theta.cos();
+        let st : f64 = theta.sin();
+        let circleX : f64 = r2 + r1 * ct;
+        let circleY : f64 = r1 * st;
+
+        let phi : f64 = 0.0;
+        while (phi < twoPi) {
+            let cp : f64 = phi.cos();
+            let sp : f64 = phi.sin();
+
+            let x : f64 = circleX * (cB * cp + sA * sB * sp) - circleY * cA * sB;
+            let y : f64 = circleX * (sB * cp - sA * cB * sp) + circleY * cA * cB;
+            let z : f64 = k2 + cA * circleX * sp + circleY * sA;
+            let ooz : f64 = 1.0 / z;
+
+            let sx : i32 = (cx + scale * ooz * x).floorToInt() as i32;
+            let sy : i32 = (cy - scale * ooz * y).floorToInt() as i32;
+
+            let lum : f64 = cp * ct * sB - cA * ct * sp - sA * st + cB * (cA * st - ct * sA * sp);
+
+            if (lum > 0.0 && sx >= 0 && sx < w && sy >= 0 && sy < h) {
+                let idx : i32 = sy * w + sx;
+                if (ooz > zb[idx]) {
+                    zb[idx] = ooz;
+                    px[idx] = shade(lum);
+                }
+            }
+            phi = phi + phiStep;
+        }
+        theta = theta + thetaStep;
+    }
+}

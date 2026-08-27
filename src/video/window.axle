@@ -1,0 +1,236 @@
+// window — the portable window object.
+//
+// The counterpart of SDL's `SDL_Window`: a size, a title, a flag word,
+// and an opaque native handle. Everything Win32 about it is delegated to
+// `video::windows::win_window`, so this file reads as the API a game
+// sees and nothing else.
+//
+// A failed creation raises `PlatformError` from the constructor, so a Window
+// that exists is a window that opened: the methods below hold no
+// half-built state, and the caller handles the failure once, where it
+// happens. The OS handles are not reclaimed by the synthesised
+// destructor, so a Window is `Closeable` and the compiler (E0511)
+// refuses a path that drops one without `close()`.
+
+use crate::core::error::PlatformError;
+use crate::kernel::raw::Raw;
+use crate::video::windows::win_proc::{selfCheck, WinProcBlock};
+use crate::video::windows::win_window::WinWindow;
+
+/** Default flags: a fixed-size, visible window. */
+const WINDOW_NONE : i32 = 0;
+/** The user may resize the window; the framebuffer follows. */
+const WINDOW_RESIZABLE : i32 = 1;
+/** No caption, no border — the shape a fullscreen-ish game wants. */
+const WINDOW_BORDERLESS : i32 = 2;
+/** Create the window hidden; `show()` reveals it. */
+const WINDOW_HIDDEN : i32 = 4;
+
+/**
+ * The window creation flags, as `SDL_WindowFlags` would spell them.
+ *
+ * These are static accessors rather than exported constants because a
+ * `pub const` does not cross a crate boundary in Axle (E0035) — a
+ * limitation of the language, not a design choice. They combine with
+ * `|` exactly like SDL's flag word:
+ *
+ * ```
+ * platform.createWindow("game", 1280, 720,
+ *     WindowFlags::resizable() | WindowFlags::hidden());
+ * ```
+ */
+pub class WindowFlags {
+    /** A fixed-size, immediately visible window. */
+    static fn none() : i32 {
+        return WINDOW_NONE;
+    }
+
+    /** The user may resize the window; the framebuffer follows. */
+    static fn resizable() : i32 {
+        return WINDOW_RESIZABLE;
+    }
+
+    /** No caption and no border. */
+    static fn borderless() : i32 {
+        return WINDOW_BORDERLESS;
+    }
+
+    /** Start hidden; `Window.show()` reveals it. */
+    static fn hidden() : i32 {
+        return WINDOW_HIDDEN;
+    }
+}
+
+/**
+ * An on-screen window and its drawing surface.
+ *
+ * Holds raw OS handles, which the synthesised destructor does not
+ * reclaim — the `Closeable` contract is what releases them.
+ */
+pub class Window : Closeable {
+    hwnd : ptr;
+    hdc : ptr;
+    w : i32;
+    h : i32;
+    /**
+     * What the window procedure recorded, waiting for the next pump.
+     *
+     * The OS holds this block's *address*, so it is a resource with a
+     * lifetime this class spells rather than a field the compiler is
+     * free to move.
+     */
+    proc : WinProcBlock;
+
+    /**
+     * Create a window with a `w` by `h` **client** area.
+     *
+     * `instance` is the module handle `Platform` holds; a game never builds
+     * one of these directly, it calls `Platform.createWindow`.
+     */
+    constructor(instance : ptr, title : string, w : i32, h : i32, flags : i32) ! PlatformError {
+        self.w = w;
+        self.h = h;
+        let style = WinWindow::styleFor(
+            (flags & WINDOW_RESIZABLE) != 0,
+            (flags & WINDOW_BORDERLESS) != 0
+        );
+        self.proc = new WinProcBlock();
+        self.hwnd = WinWindow::create(instance, title, w, h, style);
+        if (Raw::isNil(self.hwnd)) {
+            self.proc.close();
+            throw PlatformError("CreateWindowExW refused a ${w}x${h} window");
+        }
+        // From here on the procedure can find this window's block. The
+        // messages that arrived during creation went to `DefWindowProcW`
+        // with nothing to record — which is why the size below is read
+        // from the OS rather than waited for.
+        WinWindow::attachProcState(self.hwnd, self.proc.at());
+        self.hdc = WinWindow::context(self.hwnd);
+        if ((flags & WINDOW_HIDDEN) == 0) {
+            WinWindow::show(self.hwnd);
+        }
+    }
+
+    /** Client-area width, in pixels. */
+    fn width(self) : i32 {
+        return self.w;
+    }
+
+    /** Client-area height, in pixels. */
+    fn height(self) : i32 {
+        return self.h;
+    }
+
+    /** The native handle, for the layers that need it (`present`, `pump`). */
+    fn handle(self) : ptr {
+        return self.hwnd;
+    }
+
+    /** The device context the framebuffer is blitted through. */
+    fn context(self) : ptr {
+        return self.hdc;
+    }
+
+    /**
+     * Whether the window still exists.
+     *
+     * The procedure records `WM_CLOSE` instead of obeying it, so a close
+     * is a *request*: the handle stays valid until the game calls
+     * `close()`, which is what lets it prompt, save, or refuse.
+     */
+    fn isOpen(self) : bool {
+        return !self.proc.destroyed() && WinWindow::alive(self.hwnd);
+    }
+
+    /** Whether the window is minimised — the frame to skip. */
+    fn minimised(self) : bool {
+        return self.proc.minimised();
+    }
+
+    /** Whether the window holds input focus. */
+    fn focused(self) : bool {
+        return self.proc.focused();
+    }
+
+    /** Whether the user asked to close the window, clearing the request. */
+    fn takeCloseRequest(mut self) : bool {
+        return self.proc.takeClose();
+    }
+
+    /** Whether a focus edge is waiting, clearing it. */
+    fn takeFocusEdge(mut self) : bool {
+        return self.proc.takeFocusEdge();
+    }
+
+    /** Whether a minimise / restore edge is waiting, clearing it. */
+    fn takeMinimiseEdge(mut self) : bool {
+        return self.proc.takeMinimiseEdge();
+    }
+
+    /** Make a hidden window visible and bring it forward. */
+    fn show(mut self) : void {
+        WinWindow::show(self.hwnd);
+    }
+
+    /** Hide the window without destroying it. */
+    fn hide(mut self) : void {
+        WinWindow::hide(self.hwnd);
+    }
+
+    /** Replace the title bar text. */
+    fn setTitle(mut self, title : string) : void {
+        WinWindow::retitle(self.hwnd, title);
+    }
+
+    /**
+     * Take the resize the window procedure recorded, if there is one.
+     *
+     * Answers whether the client size changed. The size comes from the
+     * `WM_SIZE` itself rather than from a `GetClientRect` diff, so a
+     * window dragged through twenty intermediate sizes reports the last
+     * one and not a poll's idea of it.
+     */
+    fn syncSize(mut self) : bool {
+        if (!self.proc.takeResize()) {
+            return false;
+        }
+        let nw = self.proc.width();
+        let nh = self.proc.height();
+        if (nw <= 0 || nh <= 0) {
+            return false;
+        }
+        if (nw == self.w && nh == self.h) {
+            return false;
+        }
+        self.w = nw;
+        self.h = nh;
+        return true;
+    }
+
+    /**
+     * Run the window procedure's self-check against this window — 0 when
+     * every sent message was recorded, otherwise which one was not.
+     *
+     * A platform library is allowed to be asked whether its platform
+     * layer works here, and this is the only part of it a program cannot
+     * exercise on its own: the `WM_*` a procedure sees arrive from the
+     * OS, not from the frame loop. `examples/proc_check` is one call to
+     * this plus a pump, and it needs no user at the keyboard.
+     *
+     * The window is left as it was found — the close is recorded, not
+     * obeyed — but the size *is* adopted, and one resize is left waiting
+     * for the next pump. So this is called before a frame loop and not
+     * during one.
+     */
+    fn selfCheckProc(mut self, width : i32, height : i32) : i32 {
+        return selfCheck(self.hwnd, self.proc, width, height);
+    }
+
+    /** Destroy the window and release the procedure's block. */
+    fn close(self) : void {
+        if (WinWindow::alive(self.hwnd)) {
+            WinWindow::destroy(self.hwnd);
+        }
+        self.proc.close();
+    }
+}

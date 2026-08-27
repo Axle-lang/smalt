@@ -1,0 +1,21 @@
+// config — window size, torus geometry, projection, animation.
+//
+// Pure `f64` tunables for the software 3D renderer. Half-extents are
+// given directly as floats so the hot path needs no int→float casts.
+
+const screenW : i32 = 800;
+const screenH : i32 = 600;
+const halfW : f64 = 400.0;
+const halfH : f64 = 300.0;
+
+const tubeR : f64 = 1.0;       // R1 — tube radius
+const ringR : f64 = 2.0;       // R2 — ring radius
+const viewDist : f64 = 5.0;    // K2 — camera distance
+const projScale : f64 = 240.0; // pixels per unit at the screen plane
+
+const thetaStep : f64 = 0.05; // around the tube
+const phiStep : f64 = 0.015;  // around the ring
+
+const spinX : f64 = 0.04;
+const spinZ : f64 = 0.02;
+const frameMillis : i32 = 16;

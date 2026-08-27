@@ -1,0 +1,300 @@
+// mat — 4x4 matrices: model, view and projection.
+//
+// Sixteen named fields rather than a `f64[16]`. A struct is a value, so
+// a matrix costs no allocation, copies cleanly and can sit inline in an
+// array; addressing it by name also means a transposition typo is a
+// compile error rather than a scene that is subtly inside out.
+//
+// Conventions, stated once because everything downstream depends on them:
+//
+//   * **Row-major storage**, `mRC` = row R, column C.
+//   * **Column-vector multiplication**: a point is transformed as
+//     `v' = M * v`, so composing reads right-to-left —
+//     `projection.mul(view).mul(model)`.
+//   * **Right-handed space**, the camera looking down **-Z**, +Y up.
+//     That is OpenGL's convention and SDL's GPU convention.
+//
+// Every constructor that divides guards its divisor first: division
+// traps in Axle, so a zero aspect ratio or a zero-depth frustum would
+// abort the process rather than produce an infinity.
+
+use crate::math::vec::{Vec3, Vec4};
+use std::numeric::math;
+
+/** Below this, a divisor is treated as zero and the safe fallback is used. */
+const MAT_EPSILON : f64 = 0.000000001;
+
+/** A 4x4 transform. */
+pub struct Mat4 {
+    /** Row 0, column 0. */
+    pub m00 : f64;
+    /** Row 0, column 1. */
+    pub m01 : f64;
+    /** Row 0, column 2. */
+    pub m02 : f64;
+    /** Row 0, column 3. */
+    pub m03 : f64;
+    /** Row 1, column 0. */
+    pub m10 : f64;
+    /** Row 1, column 1. */
+    pub m11 : f64;
+    /** Row 1, column 2. */
+    pub m12 : f64;
+    /** Row 1, column 3. */
+    pub m13 : f64;
+    /** Row 2, column 0. */
+    pub m20 : f64;
+    /** Row 2, column 1. */
+    pub m21 : f64;
+    /** Row 2, column 2. */
+    pub m22 : f64;
+    /** Row 2, column 3. */
+    pub m23 : f64;
+    /** Row 3, column 0. */
+    pub m30 : f64;
+    /** Row 3, column 1. */
+    pub m31 : f64;
+    /** Row 3, column 2. */
+    pub m32 : f64;
+    /** Row 3, column 3. */
+    pub m33 : f64;
+
+    /** A matrix from sixteen values, in row-major order. */
+    static fn rows(
+        m00 : f64, m01 : f64, m02 : f64, m03 : f64,
+        m10 : f64, m11 : f64, m12 : f64, m13 : f64,
+        m20 : f64, m21 : f64, m22 : f64, m23 : f64,
+        m30 : f64, m31 : f64, m32 : f64, m33 : f64
+    ) : Mat4 {
+        return Mat4 {
+            m00: m00, m01: m01, m02: m02, m03: m03,
+            m10: m10, m11: m11, m12: m12, m13: m13,
+            m20: m20, m21: m21, m22: m22, m23: m23,
+            m30: m30, m31: m31, m32: m32, m33: m33,
+        };
+    }
+
+    /** The identity. */
+    static fn identity() : Mat4 {
+        return Mat4::rows(
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        );
+    }
+
+    /** A translation by `v`. */
+    static fn translation(v : Vec3) : Mat4 {
+        return Mat4::rows(
+            1.0, 0.0, 0.0, v.x,
+            0.0, 1.0, 0.0, v.y,
+            0.0, 0.0, 1.0, v.z,
+            0.0, 0.0, 0.0, 1.0
+        );
+    }
+
+    /** A non-uniform scale by `v`. */
+    static fn scaling(v : Vec3) : Mat4 {
+        return Mat4::rows(
+            v.x, 0.0, 0.0, 0.0,
+            0.0, v.y, 0.0, 0.0,
+            0.0, 0.0, v.z, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        );
+    }
+
+    /** A rotation of `radians` about +X. */
+    static fn rotationX(radians : f64) : Mat4 {
+        let c = radians.cos();
+        let s = radians.sin();
+        return Mat4::rows(
+            1.0, 0.0, 0.0, 0.0,
+            0.0, c, -s, 0.0,
+            0.0, s, c, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        );
+    }
+
+    /** A rotation of `radians` about +Y. */
+    static fn rotationY(radians : f64) : Mat4 {
+        let c = radians.cos();
+        let s = radians.sin();
+        return Mat4::rows(
+            c, 0.0, s, 0.0,
+            0.0, 1.0, 0.0, 0.0, -s, 0.0, c, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        );
+    }
+
+    /** A rotation of `radians` about +Z. */
+    static fn rotationZ(radians : f64) : Mat4 {
+        let c = radians.cos();
+        let s = radians.sin();
+        return Mat4::rows(
+            c, -s, 0.0, 0.0,
+            s, c, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        );
+    }
+
+    /**
+     * A rotation of `radians` about an arbitrary `axis`.
+     *
+     * The axis is normalised here; a degenerate one yields the identity
+     * rather than a matrix of NaNs.
+     */
+    static fn rotationAxis(axis : Vec3, radians : f64) : Mat4 {
+        let a = axis.normalized();
+        if (a.lengthSquared() < MAT_EPSILON) {
+            return Mat4::identity();
+        }
+        let c = radians.cos();
+        let s = radians.sin();
+        let t : f64 = 1.0 - c;
+        return Mat4::rows(
+            t * a.x * a.x + c, t * a.x * a.y - s * a.z, t * a.x * a.z + s * a.y, 0.0,
+            t * a.x * a.y + s * a.z, t * a.y * a.y + c, t * a.y * a.z - s * a.x, 0.0,
+            t * a.x * a.z - s * a.y, t * a.y * a.z + s * a.x, t * a.z * a.z + c, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        );
+    }
+
+    /**
+     * A right-handed perspective projection.
+     *
+     * `fovY` is the vertical field of view in radians; `near` and `far`
+     * are positive distances in front of the camera. A degenerate
+     * argument — a zero field of view, a zero aspect, a zero-depth
+     * frustum — yields the identity instead of trapping on the divide.
+     */
+    static fn perspective(fovY : f64, aspect : f64, near : f64, far : f64) : Mat4 {
+        let half = (fovY * 0.5).tan();
+        let depth : f64 = near - far;
+        if (half < MAT_EPSILON || aspect < MAT_EPSILON) {
+            return Mat4::identity();
+        }
+        if (depth > -MAT_EPSILON) {
+            return Mat4::identity();
+        }
+        let f : f64 = 1.0 / half;
+        return Mat4::rows(
+            f / aspect, 0.0, 0.0, 0.0,
+            0.0, f, 0.0, 0.0,
+            0.0, 0.0, (far + near) / depth, (2.0 * far * near) / depth,
+            0.0, 0.0, -1.0, 0.0
+        );
+    }
+
+    /**
+     * A right-handed orthographic projection — shadow maps and 2D overlays.
+     */
+    static fn orthographic(
+        left : f64,
+        right : f64,
+        bottom : f64,
+        top : f64,
+        near : f64,
+        far : f64
+    ) : Mat4 {
+        let rl : f64 = right - left;
+        let tb : f64 = top - bottom;
+        let zRange : f64 = far - near;
+        if (rl.abs() < MAT_EPSILON) {
+            return Mat4::identity();
+        }
+        if (tb.abs() < MAT_EPSILON) {
+            return Mat4::identity();
+        }
+        if (zRange.abs() < MAT_EPSILON) {
+            return Mat4::identity();
+        }
+        return Mat4::rows(
+            2.0 / rl, 0.0, 0.0, -(right + left) / rl,
+            0.0, 2.0 / tb, 0.0, -(top + bottom) / tb,
+            0.0, 0.0, -2.0 / zRange, -(far + near) / zRange,
+            0.0, 0.0, 0.0, 1.0
+        );
+    }
+
+    /**
+     * A view matrix placing the camera at `eye` looking at `target`.
+     *
+     * `up` only has to be non-parallel to the view direction; the true
+     * up axis is rebuilt from the cross products. A parallel `up` — the
+     * camera looking straight down while up is +Y — degenerates, and the
+     * identity is returned rather than a scene that flips inside out.
+     */
+    static fn lookAt(eye : Vec3, target : Vec3, up : Vec3) : Mat4 {
+        let forward = target.minus(eye).normalized();
+        if (forward.lengthSquared() < MAT_EPSILON) {
+            return Mat4::identity();
+        }
+        let right = forward.cross(up).normalized();
+        if (right.lengthSquared() < MAT_EPSILON) {
+            return Mat4::identity();
+        }
+        let trueUp = right.cross(forward);
+        return Mat4::rows(
+            right.x, right.y, right.z, -right.dot(eye),
+            trueUp.x, trueUp.y, trueUp.z, -trueUp.dot(eye), -forward.x, -forward.y, -forward.z, forward.dot(eye),
+            0.0, 0.0, 0.0, 1.0
+        );
+    }
+
+    /** This matrix times `o` — apply `o` first, then this. */
+    fn mul(self, o : Mat4) : Mat4 {
+        return Mat4::rows(
+            self.m00 * o.m00 + self.m01 * o.m10 + self.m02 * o.m20 + self.m03 * o.m30,
+            self.m00 * o.m01 + self.m01 * o.m11 + self.m02 * o.m21 + self.m03 * o.m31,
+            self.m00 * o.m02 + self.m01 * o.m12 + self.m02 * o.m22 + self.m03 * o.m32,
+            self.m00 * o.m03 + self.m01 * o.m13 + self.m02 * o.m23 + self.m03 * o.m33,
+
+            self.m10 * o.m00 + self.m11 * o.m10 + self.m12 * o.m20 + self.m13 * o.m30,
+            self.m10 * o.m01 + self.m11 * o.m11 + self.m12 * o.m21 + self.m13 * o.m31,
+            self.m10 * o.m02 + self.m11 * o.m12 + self.m12 * o.m22 + self.m13 * o.m32,
+            self.m10 * o.m03 + self.m11 * o.m13 + self.m12 * o.m23 + self.m13 * o.m33,
+
+            self.m20 * o.m00 + self.m21 * o.m10 + self.m22 * o.m20 + self.m23 * o.m30,
+            self.m20 * o.m01 + self.m21 * o.m11 + self.m22 * o.m21 + self.m23 * o.m31,
+            self.m20 * o.m02 + self.m21 * o.m12 + self.m22 * o.m22 + self.m23 * o.m32,
+            self.m20 * o.m03 + self.m21 * o.m13 + self.m22 * o.m23 + self.m23 * o.m33,
+
+            self.m30 * o.m00 + self.m31 * o.m10 + self.m32 * o.m20 + self.m33 * o.m30,
+            self.m30 * o.m01 + self.m31 * o.m11 + self.m32 * o.m21 + self.m33 * o.m31,
+            self.m30 * o.m02 + self.m31 * o.m12 + self.m32 * o.m22 + self.m33 * o.m32,
+            self.m30 * o.m03 + self.m31 * o.m13 + self.m32 * o.m23 + self.m33 * o.m33
+        );
+    }
+
+    /** This matrix applied to a homogeneous vector. */
+    fn apply(self, v : Vec4) : Vec4 {
+        return Vec4 {
+            x: self.m00 * v.x + self.m01 * v.y + self.m02 * v.z + self.m03 * v.w,
+            y: self.m10 * v.x + self.m11 * v.y + self.m12 * v.z + self.m13 * v.w,
+            z: self.m20 * v.x + self.m21 * v.y + self.m22 * v.z + self.m23 * v.w,
+            w: self.m30 * v.x + self.m31 * v.y + self.m32 * v.z + self.m33 * v.w,
+        };
+    }
+
+    /** This matrix applied to a position (translation included). */
+    fn applyPoint(self, v : Vec3) : Vec3 {
+        return self.apply(Vec4::point(v)).xyz();
+    }
+
+    /** This matrix applied to a direction (translation ignored). */
+    fn applyDirection(self, v : Vec3) : Vec3 {
+        return self.apply(Vec4::direction(v)).xyz();
+    }
+
+    /** The transpose — the inverse of a rotation, and the normal matrix's half. */
+    fn transposed(self) : Mat4 {
+        return Mat4::rows(
+            self.m00, self.m10, self.m20, self.m30,
+            self.m01, self.m11, self.m21, self.m31,
+            self.m02, self.m12, self.m22, self.m32,
+            self.m03, self.m13, self.m23, self.m33
+        );
+    }
+}

@@ -1,0 +1,141 @@
+// target — the colour and depth buffers the rasteriser writes.
+//
+// Both are flat `T[]` addressed `y * width + x`: Axle has no 2D array,
+// and a flat buffer is what the blit wants anyway. `malloc<T>(n)` yields
+// a bounds-checked array that the synthesised destructor reclaims, so
+// unlike the `Blob`s that carry Win32 structs, these are not `Closeable`.
+//
+// **`color` is released by hand, `depth` is not.** The compiler frees the
+// superseded value of an owned field on reassignment, but only for a field
+// it can prove is never aliased out of the object. `pixels()` hands the
+// colour buffer to the blit, which disqualifies `color` program-wide — so
+// `resize` would abandon `w * h * 4` bytes on every size change, while
+// `depth`, which no one reads out, is reclaimed for free. The refusal is
+// the compiler being conservative in the right direction: it cannot know
+// the blit is finished with the buffer, and a free under a live alias is
+// worse than a leak. `resize` knows, and says so.
+//
+// Depth is stored as **reciprocal depth** (1/w), and the test is
+// `greater wins`. That is not a stylistic inversion of the usual
+// `z-less-than`: only the reciprocal interpolates linearly in screen
+// space, so this is the value the rasteriser can step per pixel, and
+// keeping the buffer in the same units means the test is a comparison
+// rather than a division per fragment.
+
+/** The reciprocal depth of an empty pixel — nothing is further than this. */
+const DEPTH_CLEARED : f64 = 0.0;
+
+/**
+ * A colour buffer and its depth buffer.
+ *
+ * Resizing reallocates both; the contents do not survive, which is what
+ * a resize means for a frame that is about to be redrawn anyway.
+ */
+pub class RenderTarget {
+    color : i32[];
+    depth : f64[];
+    w : i32;
+    h : i32;
+
+    /** Buffers for a `w` by `h` frame. */
+    constructor(w : i32, h : i32) {
+        self.w = w;
+        self.h = h;
+        let count = (w as i64) * h;
+        self.color = malloc<i32>(count);
+        self.depth = malloc<f64>(count);
+    }
+
+    /** Frame width, in pixels. */
+    fn width(self) : i32 {
+        return self.w;
+    }
+
+    /** Frame height, in pixels. */
+    fn height(self) : i32 {
+        return self.h;
+    }
+
+    /** Pixels in the frame. */
+    fn pixelCount(self) : i64 {
+        return (self.w as i64) * self.h;
+    }
+
+    /** The colour buffer, for the blit. */
+    fn pixels(self) : i32[] {
+        return self.color;
+    }
+
+    /**
+     * Reallocate for a `w` by `h` frame.
+     *
+     * A no-op when the size is unchanged, so the resize poll can call it
+     * every frame. A zero or negative size is refused rather than
+     * allocating an empty buffer the rasteriser would then divide by.
+     *
+     * The colour buffer is freed here and the depth buffer is not, for the
+     * reason the module header gives: `pixels()` aliases `color` out, so
+     * the compiler will not reclaim it. Nothing holds the old buffer at
+     * this point — a resize is drained from the event queue before the
+     * frame that blits, so the pointer the last blit read is dead by now.
+     */
+    fn resize(mut self, w : i32, h : i32) : void {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        if (w == self.w && h == self.h) {
+            return;
+        }
+        self.w = w;
+        self.h = h;
+        let count = (w as i64) * h;
+        free(self.color);
+        self.color = malloc<i32>(count);
+        self.depth = malloc<f64>(count);
+    }
+
+    /** Fill the colour buffer with `packed` and empty the depth buffer. */
+    fn clear(mut self, packed : i32) : void {
+        for (i of 0..self.pixelCount()) {
+            self.color[i] = packed;
+            self.depth[i] = DEPTH_CLEARED;
+        }
+    }
+
+    /**
+     * Write `packed` at (`x`, `y`) if `invDepth` is nearer than what is
+     * already there, and record the new depth.
+     *
+     * The bounds test lives here rather than in the caller because every
+     * caller would otherwise repeat it, and a rasteriser that clips its
+     * spans still emits the odd edge pixel one column out.
+     */
+    fn shade(mut self, x : i32, y : i32, invDepth : f64, packed : i32) : bool {
+        if (x < 0 || y < 0 || x >= self.w || y >= self.h) {
+            return false;
+        }
+        let idx = (y as i64) * self.w + x;
+        if (invDepth <= self.depth[idx]) {
+            return false;
+        }
+        self.depth[idx] = invDepth;
+        self.color[idx] = packed;
+        return true;
+    }
+
+    /** Write `packed` at (`x`, `y`) with no depth test — for overlays. */
+    fn plot(mut self, x : i32, y : i32, packed : i32) : void {
+        if (x < 0 || y < 0 || x >= self.w || y >= self.h) {
+            return;
+        }
+        self.color[(y as i64) * self.w + x] = packed;
+    }
+
+    /** The reciprocal depth recorded at (`x`, `y`), or 0 outside the frame. */
+    fn depthAt(self, x : i32, y : i32) : f64 {
+        if (x < 0 || y < 0 || x >= self.w || y >= self.h) {
+            return DEPTH_CLEARED;
+        }
+        return self.depth[(y as i64) * self.w + x];
+    }
+}

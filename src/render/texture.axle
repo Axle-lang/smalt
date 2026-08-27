@@ -1,0 +1,132 @@
+// texture — a CPU image, and how a fragment reads it.
+//
+// Pixels are packed `0x00RRGGBB` in a flat `i32[]`, addressed
+// `y * width + x` — the framebuffer's format, so a texture can be blitted
+// or sampled without conversion.
+//
+// Two filters. Nearest is one fetch and the right choice for pixel art
+// and for a debug checker. Bilinear is four fetches and a blend, which
+// is what stops a floor texture from crawling as the camera moves.
+//
+// Coordinates wrap. A `u` of 1.5 samples the same texel as 0.5, which
+// is what lets a mesh tile a texture by handing out UVs beyond 1 rather
+// than needing a separate address mode.
+
+use crate::render::color::Color;
+
+/** The smallest texture that can be bound — one white texel. */
+const TEXTURE_UNIT_SIZE : i32 = 1;
+
+/** A sampled image. */
+pub class Texture {
+    texels : i32[];
+    w : i32;
+    h : i32;
+
+    /** A `w` by `h` texture, black. */
+    constructor(w : i32, h : i32) {
+        self.w = w.max(TEXTURE_UNIT_SIZE);
+        self.h = h.max(TEXTURE_UNIT_SIZE);
+        self.texels = malloc<i32>((self.w as i64) * (self.h as i64));
+    }
+
+    /** Texture width, in texels. */
+    fn width(self) : i32 {
+        return self.w;
+    }
+
+    /** Texture height, in texels. */
+    fn height(self) : i32 {
+        return self.h;
+    }
+
+    /** Write one texel; out-of-range coordinates are ignored. */
+    fn put(mut self, x : i32, y : i32, packed : i32) : void {
+        if (x < 0 || y < 0 || x >= self.w || y >= self.h) {
+            return;
+        }
+        self.texels[(y as i64) * self.w + x] = packed;
+    }
+
+    /** Fill every texel with `packed`. */
+    fn fill(mut self, packed : i32) : void {
+        let count : i64 = (self.w as i64) * (self.h as i64);
+        for (i of 0..count) {
+            self.texels[i] = packed;
+        }
+    }
+
+    /** One texel by integer coordinate, wrapped into range. */
+    fn texel(self, x : i32, y : i32) : i32 {
+        let tx : i32 = x % self.w;
+        let ty : i32 = y % self.h;
+        if (tx < 0) {
+            tx += self.w;
+        }
+        if (ty < 0) {
+            ty += self.h;
+        }
+        return self.texels[(ty as i64) * self.w + tx];
+    }
+
+    /**
+     * The texel nearest (`u`, `v`), wrapped.
+     *
+     * `.floorToInt()` rather than a cast: a float-to-int `as` is
+     * rejected in Axle, and truncation would fold the whole strip
+     * between -1 and 1 onto the same texel.
+     */
+    fn sampleNearest(self, u : f64, v : f64) : i32 {
+        let x = (u * (self.w as f64)).floorToInt() as i32;
+        let y = (v * (self.h as f64)).floorToInt() as i32;
+        return self.texel(x, y);
+    }
+
+    /** The four texels around (`u`, `v`), blended. */
+    fn sampleLinear(self, u : f64, v : f64) : i32 {
+        let fx : f64 = u * (self.w as f64) - 0.5;
+        let fy : f64 = v * (self.h as f64) - 0.5;
+        let x0 = fx.floorToInt() as i32;
+        let y0 = fy.floorToInt() as i32;
+        let tx : f64 = fx - (fx.floorToInt() as f64);
+        let ty : f64 = fy - (fy.floorToInt() as f64);
+
+        let c00 = Color::unpack(self.texel(x0, y0));
+        let c10 = Color::unpack(self.texel(x0 + 1, y0));
+        let c01 = Color::unpack(self.texel(x0, y0 + 1));
+        let c11 = Color::unpack(self.texel(x0 + 1, y0 + 1));
+
+        let top = c00.scaled(1.0 - tx).plus(c10.scaled(tx));
+        let bottom = c01.scaled(1.0 - tx).plus(c11.scaled(tx));
+        return top.scaled(1.0 - ty).plus(bottom.scaled(ty)).packed();
+    }
+
+    /** A one-texel white texture — what an untextured material binds. */
+    static fn white() : Texture {
+        let t = new Texture(TEXTURE_UNIT_SIZE, TEXTURE_UNIT_SIZE);
+        t.fill(Color::packBytes(255, 255, 255));
+        return t;
+    }
+
+    /**
+     * A two-colour checkerboard of `size` texels with `cells` squares to
+     * a side — the standard test pattern for whether UVs and perspective
+     * correction are right.
+     */
+    static fn checker(size : i32, cells : i32, a : Color, b : Color) : Texture {
+        let t = new Texture(size, size);
+        let packedA = a.packed();
+        let packedB = b.packed();
+        let step = (size / cells).max(1);
+        for (y of 0..size) {
+            for (x of 0..size) {
+                if (((x / step) + (y / step)) % 2 == 0) {
+                    t.put(x, y, packedA);
+                } else {
+                    t.put(x, y, packedB);
+                }
+            }
+        }
+        return t;
+    }
+}

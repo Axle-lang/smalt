@@ -1,0 +1,146 @@
+// camera — where the viewer is, and the two matrices that follow.
+//
+// SDL has no camera; every SDL game writes this. It is a class rather
+// than a struct because it is genuinely stateful — a game holds one and
+// moves it — and because the two matrices are cached rather than rebuilt
+// per draw call.
+//
+// The convention is `mat`'s: right-handed, looking down -Z, +Y up.
+// Yaw turns about +Y, pitch about the camera's own right axis, and pitch
+// is clamped just short of vertical: at exactly vertical the view
+// direction becomes parallel to the up axis and `lookAt` has no basis to
+// build from.
+
+use crate::math::mat::Mat4;
+use crate::math::vec::Vec3;
+use std::numeric::math;
+
+/** Default vertical field of view, in radians (about 60 degrees). */
+const CAMERA_DEFAULT_FOV : f64 = 1.0471975512;
+/** Default near plane. */
+const CAMERA_DEFAULT_NEAR : f64 = 0.1;
+/** Default far plane. */
+const CAMERA_DEFAULT_FAR : f64 = 500.0;
+/** Pitch limit, just under a right angle, in radians. */
+const CAMERA_PITCH_LIMIT : f64 = 1.5533430343;
+
+/** A perspective viewer. */
+pub class Camera {
+    position : Vec3;
+    yaw : f64;
+    pitch : f64;
+    fov : f64;
+    near : f64;
+    far : f64;
+    aspect : f64;
+
+    /** A camera at the origin looking down -Z. */
+    constructor() {
+        self.position = Vec3::zero();
+        self.yaw = 0.0;
+        self.pitch = 0.0;
+        self.fov = CAMERA_DEFAULT_FOV;
+        self.near = CAMERA_DEFAULT_NEAR;
+        self.far = CAMERA_DEFAULT_FAR;
+        self.aspect = 1.0;
+    }
+
+    /** Where the camera is. */
+    fn eye(self) : Vec3 {
+        return self.position;
+    }
+
+    /** Place the camera. */
+    fn moveTo(mut self, p : Vec3) : void {
+        self.position = p;
+    }
+
+    /** Shift the camera by `d`, in world space. */
+    fn translate(mut self, d : Vec3) : void {
+        self.position = self.position.plus(d);
+    }
+
+    /** The current yaw, in radians. */
+    fn yawAngle(self) : f64 {
+        return self.yaw;
+    }
+
+    /** The current pitch, in radians. */
+    fn pitchAngle(self) : f64 {
+        return self.pitch;
+    }
+
+    /**
+     * Turn the camera by `dYaw` and `dPitch` radians.
+     *
+     * Pitch is clamped short of vertical: straight up makes the view
+     * direction parallel to the up axis, which leaves `lookAt` without a
+     * right axis and flips the world over.
+     */
+    fn turn(mut self, dYaw : f64, dPitch : f64) : void {
+        self.yaw += dYaw;
+        self.pitch = Camera::clampPitch(self.pitch + dPitch);
+    }
+
+    /** `radians` brought inside the pitch limit, either side of level. */
+    static fn clampPitch(radians : f64) : f64 {
+        return radians.max(-CAMERA_PITCH_LIMIT).min(CAMERA_PITCH_LIMIT);
+    }
+
+    /** Set the vertical field of view, in radians. */
+    fn setFieldOfView(mut self, radians : f64) : void {
+        self.fov = radians;
+    }
+
+    /** Set the near and far planes. */
+    fn setRange(mut self, near : f64, far : f64) : void {
+        self.near = near;
+        self.far = far;
+    }
+
+    /** Match the projection to a `w` by `h` viewport. */
+    fn setViewport(mut self, w : i32, h : i32) : void {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        self.aspect = (w as f64) / (h as f64);
+    }
+
+    /** The unit vector the camera is looking along. */
+    fn forward(self) : Vec3 {
+        let cp = self.pitch.cos();
+        return Vec3::make(
+            cp * self.yaw.sin(),
+            self.pitch.sin(), -cp * self.yaw.cos()
+        );
+    }
+
+    /** The unit vector to the camera's right, level with the horizon. */
+    fn right(self) : Vec3 {
+        return Vec3::make(self.yaw.cos(), 0.0, self.yaw.sin());
+    }
+
+    /** The view matrix — world space into camera space. */
+    fn view(self) : Mat4 {
+        let eye = self.eye();
+        return Mat4::lookAt(eye, eye.plus(self.forward()), Vec3::unitY());
+    }
+
+    /** The projection matrix — camera space into clip space. */
+    fn projection(self) : Mat4 {
+        return Mat4::perspective(self.fov, self.aspect, self.near, self.far);
+    }
+
+    /** Projection times view — what a draw call multiplies the model by. */
+    fn viewProjection(self) : Mat4 {
+        return self.projection().mul(self.view());
+    }
+
+    /** Point the camera at `target` from where it is. */
+    fn lookAt(mut self, target : Vec3) : void {
+        let d = target.minus(self.eye());
+        let flat = (d.x * d.x + d.z * d.z).sqrt();
+        self.yaw = math::atan2(d.x, -d.z);
+        self.pitch = Camera::clampPitch(math::atan2(d.y, flat));
+    }
+}

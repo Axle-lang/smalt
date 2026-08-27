@@ -1,0 +1,58 @@
+// device — the rendering backend seam.
+//
+// This is the one place smalt keeps SDL's driver pattern. SDL wires
+// every subsystem through a vtable (`SDL_VideoDevice`, `SDL_GPUDevice`)
+// because it supports two dozen platforms; on a Windows-only target that
+// indirection is cost without benefit, so the *video* seam here is a
+// file boundary (`video/windows/`) rather than a runtime vtable.
+//
+// Rendering is the exception, and it is a real one: a second backend is
+// genuinely reachable. `opengl32.dll` exports the whole of OpenGL 1.1 as
+// named symbols — `glDrawArrays`, `glTexImage2D`, `glEnable`,
+// `glLoadMatrixf` — so a hardware-accelerated `GlDevice` can be written
+// against the same contract with the FFI Axle already has. What is *not*
+// reachable is anything above GL 1.1: every later entry point must be
+// fetched with `wglGetProcAddress` and called through the returned
+// address, and Axle cannot call an address it obtained at run time.
+//
+// The trait is used at parameter positions, never as a field type: a
+// `SoftDevice` is held concretely by whoever owns it, and passed as a
+// `RenderDevice` to code that does not care which backend it is.
+
+use crate::math::mat::Mat4;
+use crate::render::camera::Camera;
+use crate::render::color::Color;
+use crate::render::mesh::Mesh;
+use crate::render::texture::Texture;
+use crate::render::vertex::Material;
+use crate::video::window::Window;
+use std::numeric::math;
+
+/**
+ * What a rendering backend must be able to do.
+ *
+ * The shape is SDL_GPU's: bind the state that holds for the frame, then
+ * issue draws that carry only what varies per object.
+ */
+trait RenderDevice {
+    /** Framebuffer width, in pixels. */
+    fn width(self) : i32;
+
+    /** Framebuffer height, in pixels. */
+    fn height(self) : i32;
+
+    /** Match the framebuffer to a new client size. */
+    fn resize(mut self, w : i32, h : i32) : void;
+
+    /** Bind the camera whose view and projection the next draws use. */
+    fn setCamera(mut self, camera : Camera) : void;
+
+    /** Clear colour and depth, opening a frame. */
+    fn beginFrame(mut self, background : Color) : void;
+
+    /** Draw `mesh` positioned by `model`, sampling `tex`. */
+    fn drawMesh(mut self, mesh : Mesh, model : Mat4, tex : Texture, material : Material) : void;
+
+    /** Hand the finished frame to `win`, closing the frame. */
+    fn endFrame(mut self, win : Window) : void;
+}

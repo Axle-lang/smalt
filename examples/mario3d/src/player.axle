@@ -1,0 +1,142 @@
+// player — the hero: a pixel-space AABB with run/jump physics and
+// per-axis tile collision against the level. `(x, y)` is the box's
+// top-left in world pixels; +y is down (screen space). Move one axis,
+// resolve against the tiles it overlaps, then the next — so the player
+// slides along walls and lands cleanly.
+
+use level::Level;
+use level::isSolid;
+use config::tile;
+use config::playerW;
+use config::playerH;
+use config::moveAccel;
+use config::maxRun;
+use config::friction;
+use config::jumpVel;
+use config::gravity;
+use config::maxFall;
+use config::stompBounce;
+
+/** The hero: a pixel-space AABB with run/jump physics and a bonk record. */
+class Player {
+    x        : f64;
+    y        : f64;
+    vx       : f64;
+    vy       : f64;
+    onGround : bool;
+    alive    : bool;
+    bonkCol  : i32;
+    bonkRow  : i32;
+
+    /** Spawn the box at `(x, y)`, motionless and airborne. */
+    constructor(x : f64, y : f64) {
+        self.x = x;
+        self.y = y;
+        self.vx = 0.0;
+        self.vy = 0.0;
+        self.onGround = false;
+        self.alive = true;
+        self.bonkCol = -1;
+        self.bonkRow = -1;
+    }
+    /** Teleport to `(x, y)` and reset velocity (used on respawn). */
+    fn placeAt(mut self, x : f64, y : f64) : void {
+        self.x = x;
+        self.y = y;
+        self.vx = 0.0;
+        self.vy = 0.0;
+        self.onGround = false;
+    }
+
+    /** Accelerate toward `dir` (-1/0/+1); coast to a stop when idle. */
+    fn accelerate(mut self, dir : f64) : void {
+        if (dir > 0.5) {
+            self.vx = self.vx + moveAccel;
+            if (self.vx > maxRun) { self.vx = maxRun; }
+        } else if (dir < -0.5) {
+            self.vx = self.vx - moveAccel;
+            if (self.vx < -maxRun) {
+                self.vx = -maxRun;
+            }
+        } else if (self.vx > friction) {
+            self.vx = self.vx - friction;
+        } else if (self.vx < -friction) {
+            self.vx = self.vx + friction;
+        } else {
+            self.vx = 0.0;
+        }
+    }
+    /** Launch upward off the ground at the fixed jump velocity. */
+    fn jump(mut self) : void {
+        self.vy = -jumpVel;
+        self.onGround = false;
+    }
+
+    /** Small upward kick after stomping an enemy. */
+    fn bounce(mut self) : void {
+        self.vy = -stompBounce;
+    }
+
+    /** Apply horizontal velocity, then resolve against walls. */
+    fn stepX(mut self, level : Level) : void {
+        let t : f64 = tile as f64;
+        let w : f64 = playerW;
+        let h : f64 = playerH;
+        self.x = self.x + self.vx;
+        let top : i32 = (self.y / t).floorToInt() as i32;
+        let bot : i32 = ((self.y + h - 1.0) / t).floorToInt() as i32;
+        if (self.vx > 0.0) {
+            let rc : i32 = ((self.x + w - 1.0) / t).floorToInt() as i32;
+            if (level.colSolid(rc, top, bot)) {
+                self.x = (rc as f64) * t - w;
+                self.vx = 0.0;
+            }
+        } else if (self.vx < 0.0) {
+            let lc : i32 = (self.x / t).floorToInt() as i32;
+            if (level.colSolid(lc, top, bot)) {
+                self.x = ((lc + 1) as f64) * t;
+                self.vx = 0.0;
+            }
+        }
+    }
+
+    /** Apply gravity + vertical velocity, then land or bonk. */
+    fn stepY(mut self, level : Level) : void {
+        let t : f64 = tile as f64;
+        let w : f64 = playerW;
+        let h : f64 = playerH;
+        self.vy = self.vy + gravity;
+        if (self.vy > maxFall) { self.vy = maxFall; }
+        self.onGround = false;
+        self.bonkCol = -1;
+        self.bonkRow = -1;
+        self.y = self.y + self.vy;
+        let left : i32 = (self.x / t).floorToInt() as i32;
+        let right : i32 = ((self.x + w - 1.0) / t).floorToInt() as i32;
+        if (self.vy > 0.0) {
+            let br : i32 = ((self.y + h - 1.0) / t).floorToInt() as i32;
+            if (level.rowSolid(br, left, right)) {
+                self.y = (br as f64) * t - h;
+                self.vy = 0.0;
+                self.onGround = true;
+            }
+        } else if (self.vy < 0.0) {
+            let tr : i32 = (self.y / t).floorToInt() as i32;
+            if (level.rowSolid(tr, left, right)) {
+                self.y = ((tr + 1) as f64) * t;
+                self.vy = 0.0;
+                self.bonkRow = tr;
+                if (isSolid(level.at(left, tr))) {
+                    self.bonkCol = left;
+                } else {
+                    self.bonkCol = right;
+                }
+            }
+        }
+    }
+
+    /** AABB overlap of the player box with world rect (rx, ry, rw, rh). */
+    fn overlapsRect(self, rx : f64, ry : f64, rw : f64, rh : f64) : bool {
+        return self.x < rx + rw && self.x + playerW > rx && self.y < ry + rh && self.y + playerH > ry;
+    }
+}

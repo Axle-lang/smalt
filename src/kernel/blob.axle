@@ -1,0 +1,97 @@
+// blob — an owned block of libc memory, whose address outlives the call.
+//
+// Every Win32 structure the library hands to the OS (`MSG`, `WNDCLASSEXW`,
+// `RECT`, `POINT`, `BITMAPINFO`, a UTF-16 string) is a Blob read as the
+// record it holds — `sys/win32_types` declares those, and a `ptr<MSG>` over
+// a Blob's base is how the two sides address the same bytes.
+//
+// So what a Blob supplies is not a shape, it is an **address that stays
+// put**: the OS is handed one and reads it after the call that took it, and
+// a value the compiler is free to move cannot be that. The record says where
+// each field is; the Blob says the bytes will still be there.
+//
+// A raw `ptr` field is not reclaimed by the synthesised destructor, so a
+// Blob is a **resource**: it implements `Closeable`, and the compiler
+// refuses (E0511) a path that lets one leave scope without `close()`.
+// That is stricter than a destructor would be, and it has to be: the
+// address of a blob is routinely stored *inside another blob* on its way
+// to the OS — a window class name lives in the `WNDCLASSEXW` that
+// `RegisterClassExW` reads — and a compiler-chosen release point is
+// taken at the last mention of the binding, which is before the call
+// that reads the copy. Where the OS is finished with the bytes is the
+// author's knowledge, so the release is the author's to spell.
+//
+// The remaining accessors read a width out of a block that is *not* a
+// record — a UTF-16 code unit, a byte of a file. They carry the Win32 width
+// vocabulary (byte / word / dword / qword) rather than the Axle one, because
+// `i32` and `i64` are language keywords and cannot name a method.
+
+use crate::kernel::raw::Raw;
+use std::ffi::runtime::panicMsg;
+
+/**
+ * A fixed-size, zero-initialised block of libc memory.
+ *
+ * A Blob that exists is live: a refused allocation aborts the process
+ * rather than yielding a half-object every accessor would have to test.
+ * That is the right shape for the sizes here — the largest is a
+ * `BITMAPINFO` — where a failure means the process is out of address
+ * space, not that this call should be retried.
+ */
+class Blob : Closeable {
+    base : ptr;
+    size : i64;
+
+    /** Take `size` bytes and zero them. */
+    constructor(size : i64) {
+        if (size <= 0) {
+            panicMsg("smalt: a Blob must be at least one byte");
+        }
+        self.base = Raw::take(size);
+        if (Raw::isNil(self.base)) {
+            panicMsg("smalt: out of memory taking a Blob");
+        }
+        self.size = size;
+        Raw::clear(self.base, size);
+    }
+
+    /** How many bytes the block holds. */
+    fn bytes(self) : i64 {
+        return self.size;
+    }
+
+    /** The block's address, for the FFI call that consumes it. */
+    fn at(self) : ptr {
+        return self.base;
+    }
+
+    /** The unsigned byte at `off`. */
+    fn byteAt(self, off : i64) : i32 {
+        return Raw::u8At(self.base, off);
+    }
+
+    /** The unsigned 16-bit word at `off`. */
+    fn wordAt(self, off : i64) : i32 {
+        return Raw::u16At(self.base, off);
+    }
+
+    /** Store the low 16 bits of `v` at `off`. */
+    fn setWord(mut self, off : i64, v : i32) : void {
+        Raw::putU16(self.base, off, v);
+    }
+
+    /** The 32-bit word at `off`. */
+    fn dwordAt(self, off : i64) : i32 {
+        return Raw::i32At(self.base, off);
+    }
+
+    /** The 64-bit word at `off`. */
+    fn qwordAt(self, off : i64) : i64 {
+        return Raw::i64At(self.base, off);
+    }
+
+    /** Release the block. */
+    fn close(self) : void {
+        Raw::release(self.base);
+    }
+}

@@ -1,0 +1,77 @@
+// mario3d — a side-scrolling platformer, drawn by hand into the window's
+// framebuffer.
+//
+// Like `donut3d`, this example uses none of smalt's 3D pipeline: the game
+// is 2D and owns its own renderer, so it takes `SoftDevice::pixels()` and
+// fills the buffer itself. What it takes from the library is the window, the
+// event queue, the clock, the present — and the keyboard, which is the piece
+// a game needs in a shape no event queue gives it: not "a key went down" but
+// "is this key held right now", asked every frame by the physics.
+//
+// Controls:  arrows or A / D move, Space / W / Up jump, Escape quits.
+// Collect coins, stomp goombas from above (a side hit costs a life), mind the
+// pits, and reach the green flag to win.
+//
+// Build & run:  axle run            (nothing to ship — smalt is Win32)
+
+use smalt::{Platform, PlatformError, Window, WindowFlags, Clock, Events, Event, EventKind, Scancode, SoftDevice};
+use game::World;
+use render::render;
+use config::screenW;
+use config::screenH;
+use config::frameMillis;
+
+fn main() : i32 {
+    try {
+        return run();
+    } catch e : PlatformError {
+        println(e.message);
+        return 1;
+    }
+}
+
+fn run() : i32 ! PlatformError {
+    let w : i32 = screenW;
+    let h : i32 = screenH;
+
+    let platform = new Platform()?;
+    defer platform.close();
+    let win = platform.createWindow("Axle Mario", w, h, WindowFlags::none())?;
+    defer win.close();
+    let device = new SoftDevice(w, h);
+    defer device.close();
+    let clock = new Clock();
+    defer clock.close();
+    let events = new Events();
+    defer events.close();
+
+    println("Axle Mario — arrows/A-D move, Space jump, Esc quit.");
+
+    let world : World = new World();
+    let running : bool = true;
+
+    while (running && win.isOpen()) {
+        // The queue is drained first so the held-key state `world.update`
+        // reads is this frame's, not the previous one's.
+        events.pump(win, clock.ticks());
+        while (events.hasNext()) {
+            let e : Event = events.next();
+            if (e.kind == EventKind::Quit) {
+                running = false;
+            }
+        }
+        if (events.isKeyDown(Scancode::Escape)) {
+            running = false;
+        }
+
+        world.update(events);
+
+        if (!win.minimised()) {
+            render(world, device.pixels(), w, h);
+            device.endFrame(win);
+        }
+        clock.delay(frameMillis);
+    }
+
+    return 0;
+}

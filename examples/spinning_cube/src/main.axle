@@ -1,0 +1,165 @@
+// spinning_cube — the whole library, in one program.
+//
+// A textured cube turning on a tiled ground plane, lit by one
+// directional light, drawn by the software rasteriser into a window
+// that smalt created from raw Win32. Nothing here links SDL.
+//
+// Controls: WASD to move, Space and Shift for up and down, Tab to
+// capture the mouse and look around, Escape to quit.
+
+use smalt::{
+    Platform, PlatformError, Window, WindowFlags, Clock, Events, Event, EventKind, Scancode,
+    Color, SoftDevice, Camera, Mesh, Primitives, Texture, Material, DirectionalLight,
+    Mat4, Vec3,
+};
+
+/** Client width at startup. */
+const VIEW_W : i32 = 1024;
+/** Client height at startup. */
+const VIEW_H : i32 = 640;
+/** Metres per second the camera walks. */
+const WALK_SPEED : f64 = 4.0;
+/** Radians of turn per pixel of mouse motion. */
+const LOOK_SPEED : f64 = 0.0035;
+/** Microseconds in a 60 Hz frame. */
+const FRAME_BUDGET_US : i64 = 16667;
+/** Microseconds in a second, for the frame counter. */
+const ONE_SECOND_US : i64 = 1000000;
+
+fn main() : i32 {
+    try {
+        return run();
+    } catch e : PlatformError {
+        println(e.message);
+        return 1;
+    }
+}
+
+/** The program proper; every startup failure leaves through `!`. */
+fn run() : i32 ! PlatformError {
+    let platform = new Platform()?;
+    let win = platform.createWindow("smalt — cube", VIEW_W, VIEW_H, WindowFlags::resizable())?;
+
+    let clock = new Clock();
+    let events = new Events();
+    let device = new SoftDevice(VIEW_W, VIEW_H);
+
+    let camera = new Camera();
+    camera.moveTo(Vec3::make(0.0, 1.6, 4.5));
+    camera.lookAt(Vec3::make(0.0, 0.8, 0.0));
+    camera.setViewport(VIEW_W, VIEW_H);
+
+    let cube = Primitives::cube(1.6);
+    let ground = Primitives::ground(24.0, 12.0);
+    let crate1 = Texture::checker(128, 8, Color::rgb(0.90, 0.62, 0.28), Color::rgb(0.34, 0.22, 0.12));
+    let tiles = Texture::checker(128, 2, Color::rgb(0.30, 0.33, 0.38), Color::rgb(0.18, 0.20, 0.24));
+
+    let cubeMaterial = Material::glossy(0.35, 48.0);
+    let groundMaterial = Material::textured();
+    device.setLight(DirectionalLight::noon());
+
+    let running = true;
+    let looking = false;
+    let spin : f64 = 0.0;
+    let frames : i64 = 0;
+    let fpsMark : i64 = 0;
+    let last = clock.micros();
+
+    while (running) {
+        let now = clock.micros();
+        let dt = ((now - last) as f64) / (ONE_SECOND_US as f64);
+        last = now;
+
+        events.pump(win, clock.ticks());
+        while (events.hasNext()) {
+            let e = events.next();
+            match e.kind {
+                EventKind::Quit => {
+                    running = false;
+                }
+                EventKind::KeyDown => {
+                    if (e.scancode == Scancode::Escape) {
+                        running = false;
+                    }
+                    if (e.scancode == Scancode::Tab && !e.repeat) {
+                        looking = !looking;
+                        events.setRelativeMouse(looking);
+                    }
+                }
+                EventKind::WindowResized => {
+                    device.resize(e.width, e.height);
+                    camera.setViewport(e.width, e.height);
+                }
+                _ => {}
+            }
+        }
+
+        if (looking) {
+            camera.turn(
+                (events.mouseDX() as f64) * LOOK_SPEED,
+                -(events.mouseDY() as f64) * LOOK_SPEED
+            );
+        }
+        walk(camera, events, dt);
+
+        spin += dt * 0.7;
+        frames += 1;
+        if (now - fpsMark >= ONE_SECOND_US) {
+            win.setTitle("smalt — cube — ${frames} fps");
+            frames = 0;
+            fpsMark = now;
+        }
+
+        if (!win.minimised()) {
+            device.setCamera(camera);
+            device.beginFrame(Color::rgb(0.05, 0.07, 0.11));
+            device.drawMesh(ground, Mat4::identity(), tiles, groundMaterial);
+            device.drawMesh(cube, cubeModel(spin), crate1, cubeMaterial);
+            device.endFrame(win);
+        }
+
+        clock.delayUntil(now + FRAME_BUDGET_US);
+    }
+
+    device.close();
+    events.close();
+    clock.close();
+    win.close();
+    platform.close();
+    return 0;
+}
+
+/** The cube's transform: turning about Y, nodding about X, held above the floor. */
+fn cubeModel(spin : f64) : Mat4 {
+    return Mat4::translation(Vec3::make(0.0, 1.1, 0.0))
+        .mul(Mat4::rotationY(spin))
+        .mul(Mat4::rotationX(spin * 0.55));
+}
+
+/** Move the camera from the held keys, framerate-independently. */
+fn walk(camera : Camera, events : Events, dt : f64) : void {
+    let step = WALK_SPEED * dt;
+    let forward = camera.forward();
+    let right = camera.right();
+    let move = Vec3::zero();
+
+    if (events.isKeyDown(Scancode::W)) {
+        move = move.plus(forward);
+    }
+    if (events.isKeyDown(Scancode::S)) {
+        move = move.minus(forward);
+    }
+    if (events.isKeyDown(Scancode::D)) {
+        move = move.plus(right);
+    }
+    if (events.isKeyDown(Scancode::A)) {
+        move = move.minus(right);
+    }
+    if (events.isKeyDown(Scancode::Space)) {
+        move = move.plus(Vec3::unitY());
+    }
+    if (events.isKeyDown(Scancode::LeftShift)) {
+        move = move.minus(Vec3::unitY());
+    }
+    camera.translate(move.normalized().scaled(step));
+}

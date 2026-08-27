@@ -1,0 +1,45 @@
+// win32_kernel — the `kernel32.dll` imports.
+//
+// Declarations only: this layer states the C ABI and nothing else, so the
+// shape of an import is verifiable against MSDN by reading one line.
+//
+// The block names the DLL, and each member is a bare `fn` — the marker
+// belongs to the block, and the symbol is the name as written. Nothing here
+// repeats the function's own name back to the linker.
+//
+// `BOOL` returns cross as `i32` and are compared `!= 0`; every handle
+// (`HMODULE`, `HANDLE`) crosses as `ptr`; the out-parameters
+// (`LARGE_INTEGER *`) take the address of a `Blob`, typed as what they write.
+
+extern "C" from "kernel32" {
+    /** `HMODULE GetModuleHandleW(LPCWSTR)` — NULL asks for the running image. */
+    fn GetModuleHandleW(name : ptr) : ptr;
+
+    /**
+     * `FARPROC GetProcAddress(HMODULE, LPCSTR)`.
+     *
+     * The export name is ANSI, so an Axle `string` crosses unchanged.
+     */
+    fn GetProcAddress(module : ptr, name : string) : ptr;
+
+    /** `HMODULE LoadLibraryW(LPCWSTR)`. */
+    fn LoadLibraryW(name : ptr) : ptr;
+
+    /**
+     * `BOOL QueryPerformanceCounter(LARGE_INTEGER *)` — the monotonic tick.
+     *
+     * A `LARGE_INTEGER` is a union whose only member this code reads is the
+     * 64-bit `QuadPart`, so the parameter is the `i64` it writes rather
+     * than an untyped block the caller has to remember the width of.
+     */
+    fn QueryPerformanceCounter(out : ptr<i64>) : i32;
+
+    /** `BOOL QueryPerformanceFrequency(LARGE_INTEGER *)` — ticks per second. */
+    fn QueryPerformanceFrequency(out : ptr<i64>) : i32;
+
+    /** `void Sleep(DWORD)` — millisecond granularity, see `win32_mm`. */
+    fn Sleep(ms : i32) : void;
+
+    /** `DWORD GetLastError(void)`. */
+    fn GetLastError() : i32;
+}

@@ -1,0 +1,283 @@
+// game — the World: owns the level, the player, the coins, the enemies
+// and the rules. Reads the keyboard each frame, runs the player physics,
+// patrols enemies, handles coins, stomps and damage, the goal, respawns,
+// and the side-scrolling camera. Coins and enemies are kept in raw
+// parallel buffers; everything is pixel-space.
+
+use smalt::{Events, Scancode};
+use level::Level;
+use player::Player;
+use config::screenW;
+use config::screenH;
+use config::tile;
+use config::levelCols;
+use config::levelRows;
+use config::playerW;
+use config::playerH;
+use config::coinSize;
+use config::enemyW;
+use config::enemyH;
+use config::enemySpeed;
+use config::jumpBufferFrames;
+use config::coyoteFrames;
+use config::startLives;
+use config::GameState;
+use config::Tile;
+use config::maxCoins;
+use config::maxEnemies;
+
+/**
+ * The whole run: the level, the hero, the coins and enemies (in raw
+ * parallel buffers), and the rules that advance them each frame.
+ */
+class World {
+    level      : Level;
+    player     : Player;
+    camX       : f64;
+    state      : GameState;
+    lives      : i32;
+    coinCount  : i32;
+    jumpBuffer : i32;
+    coyote     : i32;
+    startX     : f64;
+    startY     : f64;
+    goalX      : f64;
+    goalY      : f64;
+    goalW      : f64;
+    goalH      : f64;
+
+    cx     : f64[];
+    cy     : f64[];
+    cAlive : i32[];
+    nCoins : i32;
+
+    eX       : f64[];
+    eY       : f64[];
+    eDir     : f64[];
+    eMinX    : f64[];
+    eMaxX    : f64[];
+    eAlive   : i32[];
+    nEnemies : i32;
+
+    /** Build the level, spawn the hero, and lay out coins and enemies. */
+    constructor() {
+        self.level = new Level();
+        self.camX = 0.0;
+        self.state = GameState::Playing;
+        self.lives = startLives;
+        self.coinCount = 0;
+        self.jumpBuffer = 0;
+        self.coyote = 0;
+
+        self.cx = malloc<f64>(maxCoins);
+        self.cy = malloc<f64>(maxCoins);
+        self.cAlive = malloc<i32>(maxCoins);
+        self.nCoins = 0;
+
+        self.eX = malloc<f64>(maxEnemies);
+        self.eY = malloc<f64>(maxEnemies);
+        self.eDir = malloc<f64>(maxEnemies);
+        self.eMinX = malloc<f64>(maxEnemies);
+        self.eMaxX = malloc<f64>(maxEnemies);
+        self.eAlive = malloc<i32>(maxEnemies);
+        self.nEnemies = 0;
+
+        let t : f64 = tile as f64;
+        let groundTop : f64 = ((levelRows - 2) as f64) * t;
+        self.startX = 2.0 * t;
+        self.startY = groundTop - playerH;
+        self.player = new Player(self.startX, self.startY);
+
+        self.populate(t, groundTop);
+
+        // Goal flag past the staircase.
+        self.goalX = 211.0 * t;
+        self.goalY = groundTop - 6.0 * t;
+        self.goalW = 0.5 * t;
+        self.goalH = 6.0 * t;
+    }
+
+    /** Scatter the coins and patrolling enemies across the course. */
+    fn populate(mut self, t : f64, groundTop : f64) : void {
+        let r4 : f64 = groundTop - 4.0 * t; // row of the floating blocks
+        // Coins (some over pits, some by the blocks).
+        self.addCoin(10.0 * t + 8.0, r4 - t);
+        self.addCoin(13.0 * t + 8.0, r4 - t);
+        self.addCoin(41.0 * t, groundTop - 3.0 * t); // over pit 1
+        self.addCoin(42.0 * t, groundTop - 3.0 * t);
+        self.addCoin(50.0 * t + 8.0, r4 - t);
+        self.addCoin(79.0 * t, groundTop - 3.0 * t); // over pit 2
+        self.addCoin(95.0 * t + 8.0, r4 - t);
+        self.addCoin(121.0 * t, groundTop - 3.0 * t); // over pit 3
+        self.addCoin(130.0 * t + 8.0, r4 - t);
+        self.addCoin(132.0 * t + 8.0, r4 - t);
+
+        // Enemies patrolling on the ground.
+        self.addEnemy(28.0 * t, groundTop, 26.0 * t, 36.0 * t);
+        self.addEnemy(66.0 * t, groundTop, 62.0 * t, 74.0 * t);
+        self.addEnemy(96.0 * t, groundTop, 90.0 * t, 100.0 * t);
+        self.addEnemy(135.0 * t, groundTop, 128.0 * t, 145.0 * t);
+        self.addEnemy(175.0 * t, groundTop, 168.0 * t, 185.0 * t);
+    }
+    /** Add a live coin at world position `(px, py)`. */
+    fn addCoin(mut self, px : f64, py : f64) : void {
+        let i : i32 = self.nCoins;
+        self.cx[i] = px;
+        self.cy[i] = py;
+        self.cAlive[i] = 1;
+        self.nCoins = i + 1;
+    }
+
+    /** Add a goomba at `px` patrolling between `lo` and `hi`. */
+    fn addEnemy(mut self, px : f64, groundTop : f64, lo : f64, hi : f64) : void {
+        let i : i32 = self.nEnemies;
+        self.eX[i] = px;
+        self.eY[i] = groundTop - enemyH;
+        self.eDir[i] = 1.0;
+        self.eMinX[i] = lo;
+        self.eMaxX[i] = hi;
+        self.eAlive[i] = 1;
+        self.nEnemies = i + 1;
+    }
+
+    // ── Update ──────────────────────────────────────────────────
+    fn update(mut self, events : Events) : void {
+        if (self.state != GameState::Playing) { return; }
+
+        let dir : f64 = 0.0;
+        if (events.isKeyDown(Scancode::D) || events.isKeyDown(Scancode::Right)) {
+            dir = 1.0;
+        }
+        if (events.isKeyDown(Scancode::A) || events.isKeyDown(Scancode::Left)) {
+            dir = dir - 1.0;
+        }
+        self.player.accelerate(dir);
+
+        let jumpHeld : bool = events.isKeyDown(Scancode::Space) || events.isKeyDown(Scancode::W) || events.isKeyDown(Scancode::Up);
+        if (jumpHeld) {
+            self.jumpBuffer = jumpBufferFrames;
+        }
+        if (self.player.onGround) {
+            self.coyote = coyoteFrames;
+        } else if (self.coyote > 0) {
+            self.coyote = self.coyote - 1;
+        }
+        if (self.jumpBuffer > 0 && self.coyote > 0) {
+            self.player.jump();
+            self.jumpBuffer = 0;
+            self.coyote = 0;
+        }
+        if (self.jumpBuffer > 0) {
+            self.jumpBuffer = self.jumpBuffer - 1;
+        }
+
+        self.player.stepX(self.level);
+        self.player.stepY(self.level);
+
+        // ? block bumped from below → spent block + coin.
+        if (self.player.bonkRow >= 0) {
+            if (self.level.at(self.player.bonkCol, self.player.bonkRow) == Tile::Question) {
+                self.level.setTile(self.player.bonkCol, self.player.bonkRow, Tile::Used);
+                self.coinCount = self.coinCount + 1;
+            }
+        }
+
+        self.updateEnemies();
+        self.checkEnemies();
+        self.checkCoins();
+        self.checkGoal();
+        if (self.player.y > (screenH as f64) + 40.0) {
+            self.loseLife();
+        }
+        self.updateCamera();
+    }
+
+    /** Whether scancode `sc` is currently held in keyboard state `kb`. */
+    /** Advance each live enemy along its patrol, reversing at the bounds. */
+    fn updateEnemies(mut self) : void {
+        let i : i32 = 0;
+        while (i < self.nEnemies) {
+            if (self.eAlive[i] == 1) {
+                let x : f64 = self.eX[i] + self.eDir[i] * enemySpeed;
+                if (x > self.eMaxX[i]) {
+                    x = self.eMaxX[i];
+                    self.eDir[i] = -1.0;
+                }
+                if (x < self.eMinX[i]) {
+                    x = self.eMinX[i];
+                    self.eDir[i] = 1.0;
+                }
+                self.eX[i] = x;
+            }
+            i = i + 1;
+        }
+    }
+
+    /** Stomp enemies landed on from above; otherwise take damage. */
+    fn checkEnemies(mut self) : void {
+        let i : i32 = 0;
+        while (i < self.nEnemies) {
+            if (self.eAlive[i] == 1) {
+                let ex : f64 = self.eX[i];
+                let ey : f64 = self.eY[i];
+                if (self.player.overlapsRect(ex, ey, enemyW, enemyH)) {
+                    let feet : f64 = self.player.y + playerH;
+                    if (self.player.vy > 0.0 && feet < ey + enemyH * 0.6) {
+                        self.eAlive[i] = 0;
+                        self.coinCount = self.coinCount + 1;
+                        self.player.bounce();
+                    } else {
+                        self.loseLife();
+                    }
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    /** Collect any coin the player overlaps. */
+    fn checkCoins(mut self) : void {
+        let i : i32 = 0;
+        while (i < self.nCoins) {
+            if (self.cAlive[i] == 1) {
+                if (self.player.overlapsRect(
+                    self.cx[i],
+                    self.cy[i],
+                    coinSize,
+                    coinSize
+                )) {
+                    self.cAlive[i] = 0;
+                    self.coinCount = self.coinCount + 1;
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    /** Win the run when the player reaches the goal flag. */
+    fn checkGoal(mut self) : void {
+        if (self.player.overlapsRect(self.goalX, self.goalY, self.goalW, self.goalH)) {
+            self.state = GameState::Won;
+        }
+    }
+
+    /** Lose a life; respawn at the start, or end the run at zero. */
+    fn loseLife(mut self) : void {
+        self.lives = self.lives - 1;
+        if (self.lives <= 0) {
+            self.state = GameState::Over;
+        } else {
+            self.player.placeAt(self.startX, self.startY);
+        }
+    }
+
+    /** Follow the player horizontally, clamped to the level bounds. */
+    fn updateCamera(mut self) : void {
+        let half : f64 = (screenW as f64) * 0.5;
+        let cam : f64 = self.player.x + playerW * 0.5 - half;
+        if (cam < 0.0) { cam = 0.0; }
+        let maxCam : f64 = (levelCols as f64) * (tile as f64) - (screenW as f64);
+        if (cam > maxCam) { cam = maxCam; }
+        self.camX = cam;
+    }
+}

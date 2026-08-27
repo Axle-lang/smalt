@@ -1,0 +1,183 @@
+// device_soft — the software rendering device.
+//
+// The counterpart of an `SDL_GPUDevice`, and the object a game actually
+// talks to. It owns the frame's storage, and it follows SDL_GPU's shape:
+// **bind state, then draw**. The camera and the light are set once a
+// frame; a draw call carries only what varies per object — its mesh, its
+// transform, its texture and its material.
+//
+// The resize policy lives here rather than in the window, because it is
+// a rendering decision: the target is reallocated to match the client
+// area, and until it is, `Presenter` scales the old framebuffer so no
+// frame is dropped for want of a buffer.
+
+use crate::math::mat::Mat4;
+use crate::math::vec::{Vec3, Vec4};
+use crate::render::camera::Camera;
+use crate::render::color::Color;
+use crate::render::device::RenderDevice;
+use crate::render::mesh::Mesh;
+use crate::render::soft::present::Presenter;
+use crate::render::soft::raster::{ClipVertex, Raster};
+use crate::render::soft::shade::Shading;
+use crate::render::soft::target::RenderTarget;
+use crate::render::texture::Texture;
+use crate::render::vertex::{DirectionalLight, Material, Vertex};
+use crate::video::window::Window;
+use std::numeric::math;
+
+/** Indices per triangle. */
+const DEVICE_TRIANGLE_CORNERS : i32 = 3;
+
+/**
+ * A CPU rasteriser drawing into its own framebuffer.
+ *
+ * The frame shape:
+ *
+ * ```
+ * device.setCamera(camera);
+ * device.setLight(DirectionalLight::noon());
+ * device.beginFrame(Color::rgb(0.05, 0.06, 0.1));
+ * device.drawMesh(cube, model, texture, Material::textured());
+ * device.endFrame(win);
+ * ```
+ */
+pub class SoftDevice : RenderDevice, Closeable {
+    target : RenderTarget;
+    presenter : Presenter;
+    blank : Texture;
+    viewProj : Mat4;
+    eyeX : f64;
+    eyeY : f64;
+    eyeZ : f64;
+    light : DirectionalLight;
+
+    /** A device drawing at `w` by `h`, with a default light and no camera. */
+    constructor(w : i32, h : i32) {
+        self.target = new RenderTarget(w, h);
+        self.presenter = new Presenter();
+        self.blank = Texture::white();
+        self.viewProj = Mat4::identity();
+        self.eyeX = 0.0;
+        self.eyeY = 0.0;
+        self.eyeZ = 0.0;
+        self.light = DirectionalLight::noon();
+    }
+
+    /** Framebuffer width, in pixels. */
+    fn width(self) : i32 {
+        return self.target.width();
+    }
+
+    /** Framebuffer height, in pixels. */
+    fn height(self) : i32 {
+        return self.target.height();
+    }
+
+    /** Match the framebuffer to a new client size. */
+    fn resize(mut self, w : i32, h : i32) : void {
+        self.target.resize(w, h);
+    }
+
+    /** Bind the camera whose view and projection the next draws use. */
+    fn setCamera(mut self, camera : Camera) : void {
+        self.viewProj = camera.viewProjection();
+        let eye = camera.eye();
+        self.eyeX = eye.x;
+        self.eyeY = eye.y;
+        self.eyeZ = eye.z;
+    }
+
+    /** Bind the scene's light. */
+    fn setLight(mut self, light : DirectionalLight) : void {
+        self.light = light;
+    }
+
+    /** Clear colour and depth, opening a frame. */
+    fn beginFrame(mut self, background : Color) : void {
+        self.target.clear(background.packed());
+    }
+
+    /**
+     * The colour buffer itself, for a caller drawing its own 2-D.
+     *
+     * The 3-D path never needs this — `plot` and the rasteriser write
+     * through the target. What needs it is a program that *is* the
+     * renderer: a UI, a text console, an image viewer. Handing back the
+     * `i32[]` rather than an address keeps the writes bounds-checked and
+     * keeps `unsafe` out of the caller, which is the whole difference
+     * between this and a streaming texture's locked pointer.
+     *
+     * The array aliases the framebuffer: writes land in the next
+     * `endFrame`. It is invalidated by `resize`, so re-read it after one.
+     */
+    fn pixels(mut self) : i32[] {
+        return self.target.pixels();
+    }
+
+    /** Write a packed pixel with no depth test — overlays and diagnostics. */
+    fn plot(mut self, x : i32, y : i32, packed : i32) : void {
+        self.target.plot(x, y, packed);
+    }
+
+    /**
+     * One vertex through the vertex stage.
+     *
+     * The normal is transformed by the model matrix as a *direction*, so
+     * a translation cannot move it. That is exact for the rigid and
+     * uniformly-scaled transforms a game uses; a non-uniform scale would
+     * need the inverse transpose, which is not built here because
+     * nothing in the library produces one.
+     */
+    static fn toClip(v : Vertex, mvp : Mat4, model : Mat4) : ClipVertex {
+        let clip = mvp.apply(Vec4::point(v.position));
+        let world = model.applyPoint(v.position);
+        let normal = model.applyDirection(v.normal);
+        return ClipVertex::make(
+            clip.x, clip.y, clip.z, clip.w,
+            world.x, world.y, world.z,
+            normal.x, normal.y, normal.z,
+            v.uv.x, v.uv.y
+        );
+    }
+
+    /** Draw `mesh` positioned by `model`, sampling `tex`. */
+    fn drawMesh(mut self, mesh : Mesh, model : Mat4, tex : Texture, material : Material) : void {
+        let mvp = self.viewProj.mul(model);
+        let sh = Shading::make(
+            material,
+            self.light,
+            Vec3::make(self.eyeX, self.eyeY, self.eyeZ)
+        );
+        let count = mesh.triangles();
+        for (t of 0..count) {
+            let base : i32 = t * DEVICE_TRIANGLE_CORNERS;
+            Raster::triangle(
+                self.target,
+                tex,
+                sh,
+                SoftDevice::toClip(mesh.vertex(mesh.index(base)), mvp, model),
+                SoftDevice::toClip(mesh.vertex(mesh.index(base + 1)), mvp, model),
+                SoftDevice::toClip(mesh.vertex(mesh.index(base + 2)), mvp, model)
+            );
+        }
+    }
+
+    /** Draw `mesh` with no texture — the material's albedo alone. */
+    fn drawMeshFlat(mut self, mesh : Mesh, model : Mat4, material : Material) : void {
+        self.drawMesh(mesh, model, self.blank, material);
+    }
+
+    /** Blit the finished frame into `win`, closing the frame. */
+    fn endFrame(mut self, win : Window) : void {
+        if (!win.isOpen()) {
+            return;
+        }
+        self.presenter.present(win.context(), self.target, win.width(), win.height());
+    }
+
+    /** Release what the device holds. */
+    fn close(self) : void {
+        self.presenter.close();
+    }
+}

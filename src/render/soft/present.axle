@@ -1,0 +1,122 @@
+// present — the framebuffer onto the screen, in one GDI call.
+//
+// `StretchDIBits` reads the library's own `i32[]` directly, so there is
+// no DIB section, no memory DC, no `SelectObject`, and therefore no GDI
+// object that could leak. It also scales, which is what lets a resized
+// window keep drawing at the framebuffer's resolution until the target
+// is reallocated.
+//
+// `biHeight` is stored **negative**. A positive height declares a
+// bottom-up bitmap, the DIB default, and would put row 0 at the bottom
+// of the window — the classic upside-down first frame.
+
+use crate::kernel::blob::Blob;
+use crate::sys::win32_types::{BITMAPINFO, BITMAPINFOHEADER};
+use crate::kernel::raw::Raw;
+use crate::render::soft::target::RenderTarget;
+use crate::sys::win32_gdi::StretchDIBits;
+use crate::video::windows::win_const::{BI_RGB, DIB_RGB_COLORS, SRCCOPY};
+
+/** Bits per pixel of the framebuffer format. */
+const PRESENT_BIT_COUNT : i32 = 32;
+/** Colour planes; the format has always required exactly one. */
+const PRESENT_PLANES : i32 = 1;
+
+/**
+ * The blit path.
+ *
+ * Owns the `BITMAPINFO` describing the framebuffer, rewritten only when
+ * the framebuffer's size changes.
+ */
+pub class Presenter : Closeable {
+    info : Blob;
+    describedW : i32;
+    describedH : i32;
+
+    /** A presenter with no format described yet. */
+    constructor() {
+        self.info = new Blob(sizeof<BITMAPINFO>());
+        self.describedW = 0;
+        self.describedH = 0;
+        unsafe {
+            let bmi = self.header();
+            // `biSize` is the header validating itself, and it is now the
+            // header's own `sizeof` — the one number a DIB call fails on
+            // with no diagnosis is the one number nobody types any more.
+            (*bmi).bmiHeader.biSize = sizeof<BITMAPINFOHEADER>() as u32;
+            (*bmi).bmiHeader.biPlanes = PRESENT_PLANES as u16;
+            (*bmi).bmiHeader.biBitCount = PRESENT_BIT_COUNT as u16;
+            (*bmi).bmiHeader.biCompression = BI_RGB as u32;
+        }
+    }
+
+    /** Point the header at a `w` by `h`, top-down framebuffer. */
+    fn describe(mut self, w : i32, h : i32) : void {
+        if (w == self.describedW && h == self.describedH) {
+            return;
+        }
+        unsafe {
+            let bmi = self.header();
+            (*bmi).bmiHeader.biWidth = w;
+            // Negative height declares the rows top-down, so row 0 is the
+            // top of the screen rather than the bottom.
+            (*bmi).bmiHeader.biHeight = -h;
+        }
+        self.describedW = w;
+        self.describedH = h;
+    }
+
+    /**
+     * Blit `target` into the `dstW` by `dstH` client area of `hdc`.
+     *
+     * Scales when the two differ, which is what absorbs a window resize
+     * for the frame between the resize event and the target's
+     * reallocation.
+     */
+    fn present(mut self, hdc : ptr, target : RenderTarget, dstW : i32, dstH : i32) : void {
+        if (Raw::isNil(hdc) || dstW <= 0 || dstH <= 0) {
+            return;
+        }
+        let w = target.width();
+        let h = target.height();
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        self.describe(w, h);
+        unsafe {
+            StretchDIBits(
+                hdc,
+                0,
+                0,
+                dstW,
+                dstH,
+                0,
+                0,
+                w,
+                h,
+                Raw::pixelsOf(target.pixels()),
+                self.header(),
+                DIB_RGB_COLORS,
+                SRCCOPY
+            );
+        }
+    }
+
+    /**
+     * The block, read as the record it holds.
+     *
+     * The cast lives here and only here: the block *is* a `BITMAPINFO` for
+     * the whole life of this object, and repeating that claim at each of
+     * the three places that use it would be three places to get it wrong.
+     */
+    fn header(self) : ptr<BITMAPINFO> {
+        unsafe {
+            return self.info.at() as ptr<BITMAPINFO>;
+        }
+    }
+
+    /** Release the header block. */
+    fn close(self) : void {
+        self.info.close();
+    }
+}

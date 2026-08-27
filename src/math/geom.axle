@@ -1,0 +1,224 @@
+// geom — rectangles, boxes, planes, and the frustum that culls by them.
+//
+// SDL provides `SDL_Rect` and its intersection helpers, and stops there:
+// there is no `SDL_AABB` and no frustum, because SDL does not know what
+// a scene is. A 3D game needs both, and needs them before it needs
+// anything else in this file — the cheapest triangle is the one never
+// submitted.
+//
+// `Frustum` extracts its six planes from a view-projection matrix by the
+// Gribb–Hartmann method: each plane is a sum or difference of two rows,
+// which falls out of the observation that a point is inside the frustum
+// exactly when its clip-space coordinates satisfy `-w <= c <= w`.
+
+use crate::math::mat::Mat4;
+use crate::math::vec::Vec3;
+use std::numeric::math;
+
+/** Below this, a plane normal has no direction and the plane is skipped. */
+const GEOM_EPSILON : f64 = 0.000000001;
+
+/** An axis-aligned rectangle in pixels — the `SDL_Rect` counterpart. */
+pub struct Rect {
+    /** Left edge. */
+    pub x : i32;
+    /** Top edge. */
+    pub y : i32;
+    /** Width; a rectangle with a non-positive extent is empty. */
+    pub w : i32;
+    /** Height. */
+    pub h : i32;
+
+    /** A rectangle from its corner and extent. */
+    static fn make(x : i32, y : i32, w : i32, h : i32) : Rect {
+        return Rect { x: x, y: y, w: w, h: h };
+    }
+
+    /** Whether the rectangle encloses any pixel at all. */
+    fn isEmpty(self) : bool {
+        return self.w <= 0 || self.h <= 0;
+    }
+
+    /** Whether (`px`, `py`) is inside. */
+    fn contains(self, px : i32, py : i32) : bool {
+        return px >= self.x && py >= self.y && px < self.x + self.w && py < self.y + self.h;
+    }
+
+    /** Whether this rectangle overlaps `o`. */
+    fn overlaps(self, o : Rect) : bool {
+        if (self.isEmpty() || o.isEmpty()) {
+            return false;
+        }
+        if (self.x + self.w <= o.x || o.x + o.w <= self.x) {
+            return false;
+        }
+        return !(self.y + self.h <= o.y || o.y + o.h <= self.y);
+    }
+}
+
+/** An axis-aligned bounding box — the unit of broad-phase culling. */
+pub struct Aabb {
+    /** Corner with the smallest coordinates. */
+    pub min : Vec3;
+    /** Corner with the largest coordinates. */
+    pub max : Vec3;
+
+    /** A box from its two corners. */
+    static fn make(min : Vec3, max : Vec3) : Aabb {
+        return Aabb { min: min, max: max };
+    }
+
+    /** A box of `size` centred on `centre`. */
+    static fn around(centre : Vec3, size : Vec3) : Aabb {
+        let half = size.scaled(0.5);
+        return Aabb { min: centre.minus(half), max: centre.plus(half) };
+    }
+
+    /** The midpoint. */
+    fn centre(self) : Vec3 {
+        return self.min.plus(self.max).scaled(0.5);
+    }
+
+    /** The full extent along each axis. */
+    fn size(self) : Vec3 {
+        return self.max.minus(self.min);
+    }
+
+    /** The radius of the sphere that encloses this box. */
+    fn boundingRadius(self) : f64 {
+        return self.size().scaled(0.5).length();
+    }
+
+    /** Whether `p` is inside. */
+    fn contains(self, p : Vec3) : bool {
+        if (p.x < self.min.x || p.x > self.max.x) {
+            return false;
+        }
+        if (p.y < self.min.y || p.y > self.max.y) {
+            return false;
+        }
+        return p.z >= self.min.z && p.z <= self.max.z;
+    }
+
+    /** Whether this box overlaps `o` — the broad phase of a collision test. */
+    fn overlaps(self, o : Aabb) : bool {
+        if (self.max.x < o.min.x || o.max.x < self.min.x) {
+            return false;
+        }
+        if (self.max.y < o.min.y || o.max.y < self.min.y) {
+            return false;
+        }
+        return !(self.max.z < o.min.z || o.max.z < self.min.z);
+    }
+
+    /** This box grown to enclose `p`. */
+    fn including(self, p : Vec3) : Aabb {
+        return Aabb {
+            min: Vec3::make(
+                self.min.x.min(p.x),
+                self.min.y.min(p.y),
+                self.min.z.min(p.z)
+            ),
+            max: Vec3::make(
+                self.max.x.max(p.x),
+                self.max.y.max(p.y),
+                self.max.z.max(p.z)
+            ),
+        };
+    }
+}
+
+/** A plane, as a unit normal and a distance along it from the origin. */
+pub struct Plane {
+    /** Unit normal; the positive side is the side it points to. */
+    pub normal : Vec3;
+    /** Signed distance from the origin along the normal. */
+    pub d : f64;
+
+    /** A plane from the four coefficients of `ax + by + cz + d = 0`, normalised. */
+    static fn coefficients(a : f64, b : f64, c : f64, d : f64) : Plane {
+        let n = Vec3::make(a, b, c);
+        let len = n.length();
+        if (len < GEOM_EPSILON) {
+            return Plane { normal: Vec3::unitY(), d: 0.0 };
+        }
+        let inv : f64 = 1.0 / len;
+        return Plane { normal: n.scaled(inv), d: d * inv };
+    }
+
+    /** How far `p` lies on the normal's side; negative is behind. */
+    fn distanceTo(self, p : Vec3) : f64 {
+        return self.normal.dot(p) + self.d;
+    }
+}
+
+/**
+ * The six planes bounding what the camera can see.
+ *
+ * Normals point inwards, so a point is inside the frustum when its
+ * distance to every plane is non-negative.
+ */
+pub struct Frustum {
+    /** Left plane. */
+    pub left : Plane;
+    /** Right plane. */
+    pub right : Plane;
+    /** Bottom plane. */
+    pub bottom : Plane;
+    /** Top plane. */
+    pub top : Plane;
+    /** Near plane. */
+    pub near : Plane;
+    /** Far plane. */
+    pub far : Plane;
+
+    /**
+     * The frustum of a view-projection matrix.
+     *
+     * Each plane is a row of the matrix added to or subtracted from the
+     * last row — the algebraic form of the clip-space test
+     * `-w <= c <= w`.
+     */
+    static fn ofMatrix(m : Mat4) : Frustum {
+        return Frustum {
+            left: Plane::coefficients(m.m30 + m.m00, m.m31 + m.m01, m.m32 + m.m02, m.m33 + m.m03),
+            right: Plane::coefficients(m.m30 - m.m00, m.m31 - m.m01, m.m32 - m.m02, m.m33 - m.m03),
+            bottom: Plane::coefficients(m.m30 + m.m10, m.m31 + m.m11, m.m32 + m.m12, m.m33 + m.m13),
+            top: Plane::coefficients(m.m30 - m.m10, m.m31 - m.m11, m.m32 - m.m12, m.m33 - m.m13),
+            near: Plane::coefficients(m.m30 + m.m20, m.m31 + m.m21, m.m32 + m.m22, m.m33 + m.m23),
+            far: Plane::coefficients(m.m30 - m.m20, m.m31 - m.m21, m.m32 - m.m22, m.m33 - m.m23),
+        };
+    }
+
+    /**
+     * Whether a sphere of `radius` at `centre` is at all visible.
+     *
+     * Conservative in the safe direction: it can answer `true` for a
+     * sphere just outside a corner, which costs a few wasted triangles.
+     * It never answers `false` for something visible, which would make
+     * geometry vanish.
+     */
+    fn touchesSphere(self, centre : Vec3, radius : f64) : bool {
+        if (self.left.distanceTo(centre) < -radius) {
+            return false;
+        }
+        if (self.right.distanceTo(centre) < -radius) {
+            return false;
+        }
+        if (self.bottom.distanceTo(centre) < -radius) {
+            return false;
+        }
+        if (self.top.distanceTo(centre) < -radius) {
+            return false;
+        }
+        if (self.near.distanceTo(centre) < -radius) {
+            return false;
+        }
+        return self.far.distanceTo(centre) >= -radius;
+    }
+
+    /** Whether `box` is at all visible, tested through its bounding sphere. */
+    fn touchesBox(self, box : Aabb) : bool {
+        return self.touchesSphere(box.centre(), box.boundingRadius());
+    }
+}

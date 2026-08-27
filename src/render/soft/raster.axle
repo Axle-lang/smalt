@@ -1,0 +1,394 @@
+// raster — clip, project, and fill one triangle.
+//
+// The stage an SDL_GPU render pass would hand to the hardware. It is
+// written out here because there is no hardware to hand it to.
+//
+// Three things in this file are the difference between a picture and a
+// mess, and each is commented where it happens:
+//
+//   1. **Near clipping before the divide.** A vertex behind the camera
+//      has `w <= 0`; projecting it divides by zero — which *traps* in
+//      Axle rather than yielding infinity — and even a small positive
+//      `w` throws the vertex to a coordinate that overflows the
+//      rasteriser. Triangles are clipped against `w >= RASTER_MIN_W`
+//      first, which is also what stops geometry behind the viewer
+//      appearing mirrored in front of it.
+//
+//   2. **Perspective-correct interpolation.** Screen-space linear
+//      interpolation of a texture coordinate is wrong for anything not
+//      parallel to the screen — the classic warped-floor artefact of
+//      1995. Attributes are carried divided by `w`, interpolated
+//      linearly (which *is* correct in that space), and divided by the
+//      interpolated `1/w` per fragment.
+//
+//   3. **A depth test before the shade, not after.** Shading a fragment
+//      that then loses the depth test is the single largest waste in a
+//      software rasteriser drawing a closed mesh.
+
+use crate::math::vec::Vec3;
+use crate::render::soft::shade::{Shader, Shading};
+use crate::render::soft::target::RenderTarget;
+use crate::render::texture::Texture;
+use std::numeric::math;
+
+/** The near plane, in clip-space `w`. Nothing nearer is drawn. */
+const RASTER_MIN_W : f64 = 0.0001;
+/** A triangle with less screen area than this is degenerate. */
+const RASTER_MIN_AREA : f64 = 0.000001;
+/** Guard for the interpolated reciprocal depth. */
+const RASTER_MIN_INV_W : f64 = 0.0000000001;
+
+/**
+ * A vertex after transformation, before projection.
+ *
+ * Carries clip-space position plus the attributes a fragment needs in
+ * world space — the normal and position for lighting, the texture
+ * coordinate for sampling.
+ */
+pub struct ClipVertex {
+    /** Clip-space x. */
+    pub cx : f64;
+    /** Clip-space y. */
+    pub cy : f64;
+    /** Clip-space z. */
+    pub cz : f64;
+    /** Clip-space w — the view-space depth this projection divides by. */
+    pub cw : f64;
+    /** World-space x, for the specular term. */
+    pub wx : f64;
+    /** World-space y. */
+    pub wy : f64;
+    /** World-space z. */
+    pub wz : f64;
+    /** World-space normal x. */
+    pub nx : f64;
+    /** World-space normal y. */
+    pub ny : f64;
+    /** World-space normal z. */
+    pub nz : f64;
+    /** Texture coordinate u. */
+    pub u : f64;
+    /** Texture coordinate v. */
+    pub v : f64;
+
+    /** A clip vertex from its parts. */
+    static fn make(
+        cx : f64, cy : f64, cz : f64, cw : f64,
+        wx : f64, wy : f64, wz : f64,
+        nx : f64, ny : f64, nz : f64,
+        u : f64, v : f64
+    ) : ClipVertex {
+        return ClipVertex {
+            cx: cx, cy: cy, cz: cz, cw: cw,
+            wx: wx, wy: wy, wz: wz,
+            nx: nx, ny: ny, nz: nz,
+            u: u, v: v,
+        };
+    }
+
+    /** This vertex interpolated towards `o` by `t`. */
+    fn lerp(self, o : ClipVertex, t : f64) : ClipVertex {
+        return ClipVertex {
+            cx: self.cx + (o.cx - self.cx) * t,
+            cy: self.cy + (o.cy - self.cy) * t,
+            cz: self.cz + (o.cz - self.cz) * t,
+            cw: self.cw + (o.cw - self.cw) * t,
+            wx: self.wx + (o.wx - self.wx) * t,
+            wy: self.wy + (o.wy - self.wy) * t,
+            wz: self.wz + (o.wz - self.wz) * t,
+            nx: self.nx + (o.nx - self.nx) * t,
+            ny: self.ny + (o.ny - self.ny) * t,
+            nz: self.nz + (o.nz - self.nz) * t,
+            u: self.u + (o.u - self.u) * t,
+            v: self.v + (o.v - self.v) * t,
+        };
+    }
+
+    /** Whether this vertex is in front of the near plane. */
+    fn visible(self) : bool {
+        return self.cw >= RASTER_MIN_W;
+    }
+}
+
+/**
+ * A vertex in pixels, with its attributes already divided by `w`.
+ *
+ * Storing the attributes pre-divided is what makes the per-fragment work
+ * a multiply-add and one reciprocal instead of a division per attribute.
+ */
+pub struct ScreenVertex {
+    /** Pixel x. */
+    pub sx : f64;
+    /** Pixel y. */
+    pub sy : f64;
+    /** Reciprocal depth, 1/w — the value the depth buffer stores. */
+    pub invW : f64;
+    /** World x, divided by w. */
+    pub wx : f64;
+    /** World y, divided by w. */
+    pub wy : f64;
+    /** World z, divided by w. */
+    pub wz : f64;
+    /** Normal x, divided by w. */
+    pub nx : f64;
+    /** Normal y, divided by w. */
+    pub ny : f64;
+    /** Normal z, divided by w. */
+    pub nz : f64;
+    /** Texture u, divided by w. */
+    pub u : f64;
+    /** Texture v, divided by w. */
+    pub v : f64;
+}
+
+/** Clipping, projection, and the scanline fill. */
+pub class Raster {
+    /**
+     * The point where the segment `a`→`b` crosses the near plane.
+     *
+     * The denominator cannot vanish: this is only called when exactly
+     * one endpoint is in front of the plane, so the two `w` values
+     * differ by at least the epsilon that separates them.
+     */
+    static fn crossing(a : ClipVertex, b : ClipVertex) : ClipVertex {
+        let span : f64 = b.cw - a.cw;
+        if (span > -RASTER_MIN_W && span < RASTER_MIN_W) {
+            // Degenerate: both endpoints sit on the plane. Interpolating
+            // by zero yields a copy of `a` — returning `a` itself would
+            // be handing back a borrow that outlives the call.
+            return a.lerp(b, 0.0);
+        }
+        return a.lerp(b, (RASTER_MIN_W - a.cw) / span);
+    }
+
+    /**
+     * A clip vertex projected into pixels.
+     *
+     * `cw` is at least `RASTER_MIN_W` — the caller clips first — so the
+     * reciprocal here is safe.
+     */
+    static fn project(v : ClipVertex, halfW : f64, halfH : f64) : ScreenVertex {
+        let iw : f64 = 1.0 / v.cw;
+        return ScreenVertex {
+            sx: (v.cx * iw + 1.0) * halfW,
+            sy: (1.0 - v.cy * iw) * halfH,
+            invW: iw,
+            wx: v.wx * iw,
+            wy: v.wy * iw,
+            wz: v.wz * iw,
+            nx: v.nx * iw,
+            ny: v.ny * iw,
+            nz: v.nz * iw,
+            u: v.u * iw,
+            v: v.v * iw,
+        };
+    }
+
+    /** The least of three. */
+    static fn least3(a : f64, b : f64, c : f64) : f64 {
+        return a.min(b.min(c));
+    }
+
+    /** The greatest of three. */
+    static fn most3(a : f64, b : f64, c : f64) : f64 {
+        return a.max(b.max(c));
+    }
+
+    /** `v` held between `lo` and `hi`. */
+    static fn clampInt(v : i64, lo : i32, hi : i32) : i32 {
+        if (v < (lo as i64)) {
+            return lo;
+        }
+        if (v > (hi as i64)) {
+            return hi;
+        }
+        return v as i32;
+    }
+
+    /**
+     * Fill the screen-space triangle `a`, `b`, `c`.
+     *
+     * Half-space edge functions over the bounding box: a pixel is inside
+     * when all three barycentric weights share the sign of the area,
+     * which after dividing by the area means all three are non-negative
+     * — so the same test serves both windings.
+     */
+    static fn fill(
+        target : RenderTarget,
+        tex : Texture,
+        sh : Shading,
+        a : ScreenVertex,
+        b : ScreenVertex,
+        c : ScreenVertex
+    ) : void {
+        let area : f64 = (b.sx - a.sx) * (c.sy - a.sy) - (b.sy - a.sy) * (c.sx - a.sx);
+        if (area.abs() < RASTER_MIN_AREA) {
+            return;
+        }
+        // The viewport transform flips y, so a triangle wound
+        // counter-clockwise in normalised device coordinates — the
+        // front-facing convention — has *negative* area here.
+        if (sh.material.cullBackface && area > 0.0) {
+            return;
+        }
+        let invArea : f64 = 1.0 / area;
+
+        let minX = Raster::clampInt((Raster::least3(a.sx, b.sx, c.sx)).floorToInt(), 0, target.width() - 1);
+        let maxX = Raster::clampInt((Raster::most3(a.sx, b.sx, c.sx)).ceilToInt(), 0, target.width() - 1);
+        let minY = Raster::clampInt((Raster::least3(a.sy, b.sy, c.sy)).floorToInt(), 0, target.height() - 1);
+        let maxY = Raster::clampInt((Raster::most3(a.sy, b.sy, c.sy)).ceilToInt(), 0, target.height() - 1);
+        if (minX > maxX || minY > maxY) {
+            return;
+        }
+
+        for (y of minY..=maxY) {
+            let py : f64 = (y as f64) + 0.5;
+            for (x of minX..=maxX) {
+                let px : f64 = (x as f64) + 0.5;
+
+                let e0 : f64 = ((c.sx - b.sx) * (py - b.sy) - (c.sy - b.sy) * (px - b.sx)) * invArea;
+                if (e0 < 0.0) {
+                    continue;
+                }
+                let e1 : f64 = ((a.sx - c.sx) * (py - c.sy) - (a.sy - c.sy) * (px - c.sx)) * invArea;
+                if (e1 < 0.0) {
+                    continue;
+                }
+                let e2 : f64 = ((b.sx - a.sx) * (py - a.sy) - (b.sy - a.sy) * (px - a.sx)) * invArea;
+                if (e2 < 0.0) {
+                    continue;
+                }
+
+                let iw : f64 = e0 * a.invW + e1 * b.invW + e2 * c.invW;
+                if (iw < RASTER_MIN_INV_W) {
+                    continue;
+                }
+                // Depth first: a fragment that loses here must not pay
+                // for a texture fetch and a lighting evaluation.
+                if (iw <= target.depthAt(x, y)) {
+                    continue;
+                }
+
+                let w : f64 = 1.0 / iw;
+                let u : f64 = (e0 * a.u + e1 * b.u + e2 * c.u) * w;
+                let v : f64 = (e0 * a.v + e1 * b.v + e2 * c.v) * w;
+                let normal = Vec3::make(
+                    (e0 * a.nx + e1 * b.nx + e2 * c.nx) * w,
+                    (e0 * a.ny + e1 * b.ny + e2 * c.ny) * w,
+                    (e0 * a.nz + e1 * b.nz + e2 * c.nz) * w
+                );
+                let world = Vec3::make(
+                    (e0 * a.wx + e1 * b.wx + e2 * c.wx) * w,
+                    (e0 * a.wy + e1 * b.wy + e2 * c.wy) * w,
+                    (e0 * a.wz + e1 * b.wz + e2 * c.wz) * w
+                );
+                target.shade(x, y, iw, Shader::fragment(sh, tex, u, v, normal, world));
+            }
+        }
+    }
+
+    /** Project three clipped vertices and fill them. */
+    static fn emit(
+        target : RenderTarget,
+        tex : Texture,
+        sh : Shading,
+        a : ClipVertex,
+        b : ClipVertex,
+        c : ClipVertex
+    ) : void {
+        let halfW : f64 = (target.width() as f64) * 0.5;
+        let halfH : f64 = (target.height() as f64) * 0.5;
+        Raster::fill(
+            target,
+            tex,
+            sh,
+            Raster::project(a, halfW, halfH),
+            Raster::project(b, halfW, halfH),
+            Raster::project(c, halfW, halfH)
+        );
+    }
+
+    /**
+     * One vertex in front of the near plane: the clipped polygon is a
+     * triangle, and the winding is preserved by walking the original
+     * order `a` → `b` → `c` → `a`.
+     */
+    static fn clipOne(
+        target : RenderTarget,
+        tex : Texture,
+        sh : Shading,
+        a : ClipVertex,
+        b : ClipVertex,
+        c : ClipVertex
+    ) : void {
+        Raster::emit(target, tex, sh, a, Raster::crossing(a, b), Raster::crossing(c, a));
+    }
+
+    /**
+     * Two vertices in front: the clipped polygon is a quadrilateral,
+     * fanned into two triangles from `a`.
+     */
+    static fn clipTwo(
+        target : RenderTarget,
+        tex : Texture,
+        sh : Shading,
+        a : ClipVertex,
+        b : ClipVertex,
+        c : ClipVertex
+    ) : void {
+        let bc = Raster::crossing(b, c);
+        let ca = Raster::crossing(a, c);
+        Raster::emit(target, tex, sh, a, b, bc);
+        Raster::emit(target, tex, sh, a, bc, ca);
+    }
+
+    /**
+     * Draw one transformed triangle, clipping it against the near plane
+     * first.
+     *
+     * The rotations below keep the surviving vertices in their original
+     * cyclic order, so a clipped triangle keeps the winding its
+     * back-face test depends on.
+     */
+    static fn triangle(
+        target : RenderTarget,
+        tex : Texture,
+        sh : Shading,
+        v0 : ClipVertex,
+        v1 : ClipVertex,
+        v2 : ClipVertex
+    ) : void {
+        let in0 = v0.visible();
+        let in1 = v1.visible();
+        let in2 = v2.visible();
+
+        if (in0 && in1 && in2) {
+            Raster::emit(target, tex, sh, v0, v1, v2);
+            return;
+        }
+        if (!in0 && !in1 && !in2) {
+            return;
+        }
+        if (in0 && !in1 && !in2) {
+            Raster::clipOne(target, tex, sh, v0, v1, v2);
+            return;
+        }
+        if (in1 && !in0 && !in2) {
+            Raster::clipOne(target, tex, sh, v1, v2, v0);
+            return;
+        }
+        if (in2 && !in0 && !in1) {
+            Raster::clipOne(target, tex, sh, v2, v0, v1);
+            return;
+        }
+        if (!in0) {
+            Raster::clipTwo(target, tex, sh, v1, v2, v0);
+            return;
+        }
+        if (!in1) {
+            Raster::clipTwo(target, tex, sh, v2, v0, v1);
+            return;
+        }
+        Raster::clipTwo(target, tex, sh, v0, v1, v2);
+    }
+}

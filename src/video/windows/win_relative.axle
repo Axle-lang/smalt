@@ -1,0 +1,56 @@
+// win_relative — pinning and hiding the pointer for relative mouse mode.
+//
+// SDL registers a raw-input device for this. smalt recentres
+// instead: at the end of every pump the pointer is warped back to the
+// middle of the client area, so the next frame's motion is measured from
+// a position that can never be against a screen edge.
+//
+// The cost of the simpler mechanism is honest to state: motion is
+// quantised to whole pixels and a very fast flick can still clamp for
+// one frame. What it buys is that the whole feature stays inside the
+// polled model — no `WM_INPUT`, no device registration, no buffer to
+// size.
+
+use crate::kernel::blob::Blob;
+use crate::sys::win32_types::POINT;
+use crate::sys::win32_user::{ClientToScreen, SetCursorPos, ShowCursor};
+
+/** Pointer confinement and visibility. */
+class WinRelative {
+    /**
+     * Move the pointer to the client-area point (`x`, `y`).
+     *
+     * The point is converted through `ClientToScreen` because
+     * `SetCursorPos` speaks screen coordinates — passing client
+     * coordinates puts the pointer in the wrong place on any window that
+     * is not at the origin.
+     */
+    static fn recentre(hwnd : ptr, x : i32, y : i32) : void {
+        let block = new Blob(sizeof<POINT>());
+        defer block.close();
+        unsafe {
+            let point : ptr<POINT> = block.at() as ptr<POINT>;
+            (*point).x = x;
+            (*point).y = y;
+            if (ClientToScreen(hwnd, point) != 0) {
+                SetCursorPos((*point).x, (*point).y);
+            }
+        }
+    }
+
+    /**
+     * Show or hide the pointer.
+     *
+     * `ShowCursor` keeps an internal counter rather than a flag, so the
+     * calls must balance — one hide needs exactly one show. `Events`
+     * guarantees that by ignoring a mode change that is already in
+     * effect.
+     */
+    static fn showCursor(visible : bool) : void {
+        if (visible) {
+            ShowCursor(1);
+        } else {
+            ShowCursor(0);
+        }
+    }
+}

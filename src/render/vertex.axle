@@ -1,0 +1,122 @@
+// vertex — what a mesh stores per corner, and what shades it.
+//
+// A vertex carries position, normal and texture coordinate. There is no
+// per-vertex colour: a tint belongs to the material, and paying 24 bytes
+// a corner for a constant is what turns a mesh into a memory problem.
+//
+// `Material` and `DirectionalLight` live here too, because they are the
+// other half of the same question — a fragment's colour is a vertex
+// attribute meeting a material meeting a light.
+
+use crate::math::vec::{Vec2, Vec3};
+use crate::render::color::Color;
+use std::numeric::math;
+
+/** One corner of a triangle. */
+pub struct Vertex {
+    /** Position, in the mesh's own space. */
+    pub position : Vec3;
+    /** Unit normal, in the mesh's own space. */
+    pub normal : Vec3;
+    /** Texture coordinate; (0,0) is the top-left texel. */
+    pub uv : Vec2;
+
+    /** A vertex from its three attributes. */
+    static fn make(position : Vec3, normal : Vec3, uv : Vec2) : Vertex {
+        return Vertex { position: position, normal: normal, uv: uv };
+    }
+
+    /** A vertex with no meaningful attributes — the fill value of a fresh mesh. */
+    static fn empty() : Vertex {
+        return Vertex {
+            position: Vec3::zero(),
+            normal: Vec3::unitY(),
+            uv: Vec2::zero(),
+        };
+    }
+}
+
+/**
+ * How a surface answers light.
+ *
+ * `textured` selects whether the bound texture is sampled at all; an
+ * untextured material is shaded from `albedo` alone, which is what a
+ * flat-coloured level geometry wants and costs no texture fetch.
+ */
+pub struct Material {
+    /** Base colour, multiplied with the texel when `textured`. */
+    pub albedo : Color;
+    /** How much of the albedo survives with no light on it, 0..1. */
+    pub ambient : f64;
+    /** Strength of the specular highlight, 0 for a matte surface. */
+    pub specular : f64;
+    /** Tightness of the highlight; larger is smaller and sharper. */
+    pub shininess : f64;
+    /** Whether to sample the bound texture. */
+    pub textured : bool;
+    /** Whether to discard triangles facing away from the camera. */
+    pub cullBackface : bool;
+
+    /** A matte, untextured surface of colour `albedo`. */
+    static fn matte(albedo : Color) : Material {
+        return Material {
+            albedo: albedo,
+            ambient: 0.18,
+            specular: 0.0,
+            shininess: 16.0,
+            textured: false,
+            cullBackface: true,
+        };
+    }
+
+    /** A matte, textured surface; the texel is tinted white by default. */
+    static fn textured() : Material {
+        return Material {
+            albedo: Color::white(),
+            ambient: 0.18,
+            specular: 0.0,
+            shininess: 16.0,
+            textured: true,
+            cullBackface: true,
+        };
+    }
+
+    /** A textured surface with a highlight. */
+    static fn glossy(specular : f64, shininess : f64) : Material {
+        return Material {
+            albedo: Color::white(),
+            ambient: 0.15,
+            specular: specular,
+            shininess: shininess,
+            textured: true,
+            cullBackface: true,
+        };
+    }
+}
+
+/**
+ * A light infinitely far away — the sun.
+ *
+ * `direction` is the direction the light **travels**, so a light coming
+ * down from above points along -Y. Naming it the other way round is the
+ * classic source of a scene lit from underneath.
+ */
+pub struct DirectionalLight {
+    /** The direction the light travels; normalised on construction. */
+    pub direction : Vec3;
+    /** The light's colour and intensity. */
+    pub color : Color;
+
+    /** A light of `color` travelling along `direction`. */
+    static fn make(direction : Vec3, color : Color) : DirectionalLight {
+        return DirectionalLight { direction: direction.normalized(), color: color };
+    }
+
+    /** A plain white light from above and slightly to the front-left. */
+    static fn noon() : DirectionalLight {
+        return DirectionalLight::make(
+            Vec3::make(-0.4, -1.0, -0.35),
+            Color::rgb(1.0, 0.98, 0.92)
+        );
+    }
+}

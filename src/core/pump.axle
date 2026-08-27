@@ -1,0 +1,205 @@
+// pump — the event subsystem: one call a frame, everything that happened.
+//
+// `Events` is what a game holds. It owns the queue, the keyboard and
+// mouse state, and the reusable `MSG` block, and it is where the two
+// halves of the input story are joined:
+//
+//   * the **posted** messages, drained by `WinPump::drain` — every
+//     keyboard and mouse input;
+//   * the **sent** messages, which never reach a queue and are recorded
+//     by the window procedure as they arrive (`video::windows::win_proc`).
+//
+// The second half used to be *reconstructed* here, by diffing the client
+// rect, the foreground window and the iconic flag against the previous
+// frame — the library could not install a procedure, so the only notice
+// it got of a resize was that the numbers had changed by the time it
+// next looked. That is gone: what arrives now is the `WM_SIZE` itself,
+// with the size Windows sent, and a close is a *request* the game can
+// refuse rather than a window already destroyed.
+//
+// `pump` still takes the window, as `SDL_PumpEvents` reaches into the
+// video driver: the edges live on the window's procedure block.
+
+use crate::core::event::{Event, EventKind, EventQueue};
+use crate::core::keyboard::{KeyboardState, Scancode};
+use crate::core::mouse::{MouseButton, MouseState};
+use crate::kernel::blob::Blob;
+use crate::sys::win32_types::MSG;
+use crate::video::window::Window;
+use crate::video::windows::win_pump::WinPump;
+use crate::video::windows::win_relative::WinRelative;
+
+/**
+ * The event subsystem.
+ *
+ * The frame shape a game writes:
+ *
+ * ```
+ * events.pump(win, clock.ticks());
+ * while (events.hasNext()) {
+ *     let e = events.next();
+ *     ...
+ * }
+ * if (events.isKeyDown(Scancode::W)) { ... }
+ * ```
+ *
+ * Edge events come out of the queue; held state is read straight off
+ * this object, exactly as SDL splits `SDL_PollEvent` from
+ * `SDL_GetKeyboardState`.
+ */
+pub class Events : Closeable {
+    queue : EventQueue;
+    keys : KeyboardState;
+    mouse : MouseState;
+    msg : Blob;
+    sentQuit : bool;
+
+    /** A pump with an empty queue and nothing held. */
+    constructor() {
+        self.queue = new EventQueue();
+        self.keys = new KeyboardState();
+        self.mouse = new MouseState();
+        self.msg = new Blob(sizeof<MSG>());
+        self.sentQuit = false;
+    }
+
+    /** Whether an event is waiting. */
+    fn hasNext(self) : bool {
+        return self.queue.hasNext();
+    }
+
+    /** The next event, or the empty event when none is waiting. */
+    fn next(mut self) : Event {
+        return self.queue.next();
+    }
+
+    /** Whether the physical key `sc` is held. */
+    fn isKeyDown(self, sc : Scancode) : bool {
+        return self.keys.isDown(sc);
+    }
+
+    /** Whether the mouse button `b` is held. */
+    fn isButtonDown(self, b : MouseButton) : bool {
+        return self.mouse.isDown(b);
+    }
+
+    /** Pointer x, in client pixels. */
+    fn mouseX(self) : i32 {
+        return self.mouse.posX();
+    }
+
+    /** Pointer y, in client pixels. */
+    fn mouseY(self) : i32 {
+        return self.mouse.posY();
+    }
+
+    /** Horizontal pointer motion during the last pump. */
+    fn mouseDX(self) : i32 {
+        return self.mouse.deltaX();
+    }
+
+    /** Vertical pointer motion during the last pump. */
+    fn mouseDY(self) : i32 {
+        return self.mouse.deltaY();
+    }
+
+    /** Wheel notches during the last pump. */
+    fn mouseWheel(self) : i32 {
+        return self.mouse.wheelDelta();
+    }
+
+    /** Whether the pointer is pinned and hidden for relative motion. */
+    fn isRelativeMouse(self) : bool {
+        return self.mouse.isRelative();
+    }
+
+    /**
+     * Pin and hide the pointer so motion never runs out of screen —
+     * `SDL_SetWindowRelativeMouseMode`.
+     *
+     * The pointer is recentred at the end of every pump while this is
+     * on, so `mouseDX` / `mouseDY` keep reporting motion however far the
+     * player turns.
+     */
+    fn setRelativeMouse(mut self, on : bool) : void {
+        if (self.mouse.isRelative() == on) {
+            return;
+        }
+        self.mouse.setRelative(on);
+        WinRelative::showCursor(!on);
+    }
+
+    /**
+     * Collect everything that happened since the previous call.
+     *
+     * `stamp` is the timestamp events are marked with — a game passes
+     * `clock.ticks()`.
+     */
+    fn pump(mut self, win : Window, stamp : i64) : void {
+        self.mouse.newFrame();
+        WinPump::drain(self.msg, stamp, self.queue, self.keys, self.mouse);
+
+        // A close the user asked for. The procedure records `WM_CLOSE`
+        // rather than obeying it, so the window is still alive here and
+        // the game decides — which is the difference between `Quit` being
+        // an event and being an obituary.
+        if (win.takeCloseRequest()) {
+            if (!self.sentQuit) {
+                self.queue.push(Event { kind: EventKind::Quit, timestamp: stamp });
+                self.sentQuit = true;
+            }
+        }
+
+        if (!win.isOpen()) {
+            if (!self.sentQuit) {
+                self.queue.push(Event { kind: EventKind::Quit, timestamp: stamp });
+                self.sentQuit = true;
+            }
+            return;
+        }
+
+        if (win.syncSize()) {
+            self.queue.push(Event {
+                kind: EventKind::WindowResized,
+                timestamp: stamp,
+                width: win.width(),
+                height: win.height(),
+            });
+        }
+
+        let focused = win.focused();
+        if (win.takeFocusEdge()) {
+            if (focused) {
+                self.queue.push(Event { kind: EventKind::WindowFocusGained, timestamp: stamp });
+            } else {
+                // The key-up for anything held now goes to whichever
+                // application took focus, so releasing here is what stops
+                // the player walking into a wall after an Alt-Tab.
+                self.keys.releaseAll();
+                self.mouse.releaseAll();
+                self.queue.push(Event { kind: EventKind::WindowFocusLost, timestamp: stamp });
+            }
+        }
+
+        let minimised = win.minimised();
+        if (win.takeMinimiseEdge()) {
+            if (minimised) {
+                self.queue.push(Event { kind: EventKind::WindowMinimised, timestamp: stamp });
+            } else {
+                self.queue.push(Event { kind: EventKind::WindowRestored, timestamp: stamp });
+            }
+        }
+
+        if (self.mouse.isRelative() && focused && !minimised) {
+            let cx = win.width() / 2;
+            let cy = win.height() / 2;
+            WinRelative::recentre(win.handle(), cx, cy);
+            self.mouse.warpTo(cx, cy);
+        }
+    }
+
+    /** Release the message block. */
+    fn close(self) : void {
+        self.msg.close();
+    }
+}

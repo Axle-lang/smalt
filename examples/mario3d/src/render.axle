@@ -1,0 +1,186 @@
+// render — draw the world into the ARGB framebuffer with a horizontal
+// scroll. Tiles, coins, enemies and the hero are filled rectangles; the
+// hero is a little multi-colour sprite. A small HUD shows coins, lives
+// and the outcome banner.
+
+use smalt::Color;
+use game::World;
+use config::screenW;
+use config::levelRows;
+use config::tile;
+use config::playerW;
+use config::playerH;
+use config::coinSize;
+use config::enemyW;
+use config::enemyH;
+use config::Tile;
+use config::GameState;
+
+/** Fill an axis-aligned rectangle (screen pixels), clipped to the view. */
+fn fillRect(
+    px : i32[],
+    w : i32,
+    h : i32,
+    x : i32,
+    y : i32,
+    rw : i32,
+    rh : i32,
+    color : i32
+) : void {
+    let x0 : i32 = x;
+    let y0 : i32 = y;
+    let x1 : i32 = x + rw;
+    let y1 : i32 = y + rh;
+    if (x0 < 0) { x0 = 0; }
+    if (y0 < 0) { y0 = 0; }
+    if (x1 > w) { x1 = w; }
+    if (y1 > h) { y1 = h; }
+    let yy : i32 = y0;
+    while (yy < y1) {
+        let rowbase : i32 = yy * w;
+        let xx : i32 = x0;
+        while (xx < x1) {
+            px[rowbase + xx] = color;
+            xx = xx + 1;
+        }
+        yy = yy + 1;
+    }
+}
+
+/** Fill colour for tile `t`; ground grows grass where the tile above is open. */
+fn tileColor(t : Tile, grassy : bool) : i32 {
+    return match t {
+        Tile::Ground => grassColor(grassy),
+        Tile::Brick => Color::packBytes(176, 100, 64),
+        Tile::Question => Color::packBytes(228, 180, 50),
+        Tile::Used => Color::packBytes(120, 110, 96),
+        Tile::Pipe => Color::packBytes(60, 170, 80),
+        Tile::Empty => Color::packBytes(0, 0, 0),
+    };
+}
+
+/** Grass green on the exposed top of ground, brown dirt below. */
+fn grassColor(grassy : bool) : i32 {
+    if (grassy) { return Color::packBytes(96, 180, 84); }
+    return Color::packBytes(150, 100, 60);
+}
+
+/** Render `world` to the framebuffer. */
+fn render(world : World, px : i32[], w : i32, h : i32) : void {
+    fillRect(px, w, h, 0, 0, w, h, Color::packBytes(112, 168, 240));
+    let t : i32 = tile;
+    let camI : i32 = world.camX.floorToInt() as i32;
+    let c0 : i32 = camI / t;
+    let c1 : i32 = c0 + w / t + 2;
+    let rows : i32 = levelRows;
+
+    let r : i32 = 0;
+    while (r < rows) {
+        let c : i32 = c0;
+        while (c < c1) {
+            let code : Tile = world.level.at(c, r);
+            if (code != Tile::Empty) {
+                let sx : i32 = c * t - camI;
+                let sy : i32 = r * t;
+                let grassy : bool = world.level.at(c, r - 1) == Tile::Empty;
+                fillRect(px, w, h, sx, sy, t, t, tileColor(code, grassy));
+
+                // brick / ? blocks get a small inset for relief
+                match code {
+                    Tile::Brick => {
+                        fillRect(px, w, h, sx + 2, sy + 2, t - 4, t - 4, Color::packBytes(150, 80, 48));
+                    }
+                    Tile::Question => {
+                        fillRect(px, w, h, sx + t / 2 - 2, sy + 6, 4, t - 14, Color::packBytes(90, 60, 10));
+                    }
+                    _ => {}
+                }
+            }
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+
+    // Goal flag.
+    let gx : i32 = world.goalX.floorToInt() as i32 - camI;
+    let gy : i32 = world.goalY.floorToInt() as i32;
+    let gh : i32 = world.goalH.floorToInt() as i32;
+    fillRect(px, w, h, gx, gy, 4, gh, Color::packBytes(220, 220, 230));
+    fillRect(px, w, h, gx + 4, gy, 26, 16, Color::packBytes(50, 200, 90));
+
+    // Coins.
+    let cs : i32 = coinSize.floorToInt() as i32;
+    let i : i32 = 0;
+    while (i < world.nCoins) {
+        if (world.cAlive[i] == 1) {
+            let x : i32 = (world.cx[i]).floorToInt() as i32 - camI;
+            let y : i32 = (world.cy[i]).floorToInt() as i32;
+            fillRect(px, w, h, x, y, cs, cs, Color::packBytes(248, 216, 72));
+            fillRect(px, w, h, x + cs / 2 - 2, y + 3, 4, cs - 6, Color::packBytes(200, 150, 30));
+        }
+        i = i + 1;
+    }
+
+    // Enemies (goombas).
+    let ew : i32 = enemyW.floorToInt() as i32;
+    let eh : i32 = enemyH.floorToInt() as i32;
+    let e : i32 = 0;
+    while (e < world.nEnemies) {
+        if (world.eAlive[e] == 1) {
+            let x : i32 = (world.eX[e]).floorToInt() as i32 - camI;
+            let y : i32 = (world.eY[e]).floorToInt() as i32;
+            fillRect(px, w, h, x, y, ew, eh, Color::packBytes(150, 92, 50));
+            fillRect(px, w, h, x, y + eh - 6, ew, 6, Color::packBytes(70, 44, 24));  // feet
+            fillRect(px, w, h, x + 5, y + 7, 5, 6, Color::packBytes(245, 245, 245)); // eyes
+            fillRect(px, w, h, x + ew - 10, y + 7, 5, 6, Color::packBytes(245, 245, 245));
+            fillRect(px, w, h, x + 7, y + 9, 2, 3, Color::packBytes(20, 20, 20));
+            fillRect(px, w, h, x + ew - 8, y + 9, 2, 3, Color::packBytes(20, 20, 20));
+        }
+        e = e + 1;
+    }
+
+    drawPlayer(world, px, w, h, camI);
+    drawHud(world, px, w, h);
+}
+
+/** A small Mario sprite: red cap, skin face, red shirt, blue overalls. */
+fn drawPlayer(world : World, px : i32[], w : i32, h : i32, camI : i32) : void {
+    let pw : i32 = playerW.floorToInt() as i32;
+    let ph : i32 = playerH.floorToInt() as i32;
+    let x : i32 = world.player.x.floorToInt() as i32 - camI;
+    let y : i32 = world.player.y.floorToInt() as i32;
+    let red : i32 = Color::packBytes(216, 56, 44);
+    let skin : i32 = Color::packBytes(244, 200, 158);
+    let blue : i32 = Color::packBytes(48, 80, 200);
+    fillRect(px, w, h, x, y, pw, 9, red); // cap
+    fillRect(px, w, h, x + 2, y + 9, pw - 4, 11, skin); // face
+    fillRect(px, w, h, x + pw - 7, y + 12, 3, 3, Color::packBytes(20, 20, 20)); // eye
+    fillRect(px, w, h, x, y + 20, pw, 9, red); // shirt
+    fillRect(px, w, h, x, y + 29, pw, ph - 29, blue); // overalls
+}
+
+/** Draw the coin/life counters and the win/lose banner. */
+fn drawHud(world : World, px : i32[], w : i32, h : i32) : void {
+    let gold : i32 = Color::packBytes(248, 216, 72);
+    let i : i32 = 0;
+    while (i < world.coinCount) {
+        fillRect(px, w, h, 12 + i * 16, 12, 12, 12, gold);
+        i = i + 1;
+    }
+    let red : i32 = Color::packBytes(216, 56, 44);
+    let j : i32 = 0;
+    while (j < world.lives) {
+        fillRect(px, w, h, w - 24 - j * 18, 12, 12, 12, red);
+        j = j + 1;
+    }
+
+    match world.state {
+        GameState::Won => {
+            fillRect(px, w, h, 0, h / 2 - 18, w, 36, Color::packBytes(60, 200, 90));
+        }
+        GameState::Over => {
+            fillRect(px, w, h, 0, h / 2 - 18, w, 36, Color::packBytes(200, 50, 50));
+        }
+        GameState::Playing => {}
+    }
+}

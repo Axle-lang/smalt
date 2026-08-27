@@ -1,0 +1,39 @@
+// smalt — a window, an event queue and a software 3D renderer, on Win32.
+//
+// This file is the crate's wiring header: it names every module so the
+// build pulls the whole tree into the compilation unit, and carries no
+// logic of its own. What each module owns is documented in its own
+// header; the map of the library is in the README.
+//
+// Layers, bottom to top — a module never reaches upward:
+//
+//   kernel   raw memory, owned blocks, UTF-16
+//   sys      the Win32 records, and the imports, one block per DLL
+//   core     init, time, the event queue, keyboard and mouse state
+//   video    the window, and the Win32 driver behind it
+//   math     vectors, matrices, quaternions, geometry
+//   render   meshes, textures, the camera, and the software rasteriser
+
+use crate::kernel::{raw, blob, wide};
+
+use crate::sys::{win32_types, win32_layout_check, win32_kernel, win32_user, win32_gdi, win32_mm};
+
+use crate::core::{error, init, timer, event, keyboard, mouse, pump};
+
+use crate::video::{window, display};
+use crate::video::windows::{
+    win_const, win_class, win_proc, win_window, win_keymap, win_pump, win_relative,
+};
+
+use crate::render::color;
+use crate::render::soft::{target, present, device_soft};
+
+use crate::math::{vec, mat};
+
+use crate::render::{device, vertex, texture, mesh, camera};
+use crate::render::soft::{shade, raster};
+
+use crate::math::{quat, geom};
+
+use crate::io::{file, bmp};
+use std::numeric::math;

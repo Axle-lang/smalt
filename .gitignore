@@ -1,0 +1,18 @@
+# Build output — `axle build` writes here, per package and per example.
+target/
+**/target/
+
+# Produced binaries and their debug info.
+*.exe
+*.pdb
+*.ilk
+*.obj
+*.o
+*.ll
+*.bc
+
+# Editors / OS.
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

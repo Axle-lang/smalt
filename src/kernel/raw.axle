@@ -1,0 +1,171 @@
+// raw — the whole unsafe surface of the library, in one file.
+//
+// Everything above this module addresses memory through `Raw`, so the
+// grep for `unsafe` in smalt returns exactly this file plus the two
+// array-decay helpers it exposes. `unsafe` is per-function in Axle
+// (E0707 — it does not propagate across a call), which is what makes
+// that confinement enforceable rather than aspirational.
+//
+// Win32 structs are read and written here as `base + offset`, never as
+// Axle aggregates: the compiler permutes struct fields to close padding
+// holes and offers no `repr(C)`, so an Axle `struct` cannot describe a
+// `MSG` or a `WNDCLASSEXW`. The offsets live in `layout`.
+
+use std::ffi::libc::mem::{libc_malloc, libc_free, libc_memset, libc_memcpy};
+
+/**
+ * Raw memory. Every method is `static`; the class exists to namespace
+ * them, not to hold state.
+ */
+class Raw {
+    /** The null pointer — the `NULL` of every optional Win32 argument. */
+    static fn nil() : ptr {
+        unsafe {
+            let z : i64 = 0;
+            return z as ptr;
+        }
+    }
+
+    /** True when `p` is null, the failure answer of every Win32 create call. */
+    static fn isNil(p : ptr) : bool {
+        unsafe {
+            return (p as i64) == 0;
+        }
+    }
+
+    /** `p` as a plain integer address, for arithmetic and comparison. */
+    static fn addr(p : ptr) : i64 {
+        unsafe {
+            return p as i64;
+        }
+    }
+
+    /** The integer address `a` viewed as a pointer. */
+    static fn at(a : i64) : ptr {
+        unsafe {
+            return a as ptr;
+        }
+    }
+
+    /** `n` uninitialised bytes from libc, or null. Release with `release`. */
+    static fn take(n : i64) : ptr {
+        return libc_malloc(n);
+    }
+
+    /** Return a block from `take` to libc. */
+    static fn release(p : ptr) : void {
+        libc_free(p);
+    }
+
+    /** Fill `n` bytes at `p` with zero. */
+    static fn clear(p : ptr, n : i64) : void {
+        libc_memset(p, 0, n);
+    }
+
+    /** Copy `n` bytes from `src` to `dst`; the regions must not overlap. */
+    static fn copy(dst : ptr, src : ptr, n : i64) : void {
+        libc_memcpy(dst, src, n);
+    }
+
+    /** The unsigned byte at `base + off`, widened without sign extension. */
+    static fn u8At(base : ptr, off : i64) : i32 {
+        unsafe {
+            let slot : ptr<u8> = ((base as i64) + off) as ptr<u8>;
+            return (*slot) as i32;
+        }
+    }
+
+    /** Store the low byte of `v` at `base + off`. */
+    static fn putU8(base : ptr, off : i64, v : i32) : void {
+        unsafe {
+            let slot : ptr<u8> = ((base as i64) + off) as ptr<u8>;
+            *slot = v as u8;
+        }
+    }
+
+    /**
+     * The unsigned 16-bit word at `base + off`.
+     *
+     * Read through a `ptr<u16>`, so the widening is a zero-extension and
+     * the `WNDCLASSEXW.style` flags and UTF-16 code units that live at
+     * this width arrive unsigned, in one load.
+     */
+    static fn u16At(base : ptr, off : i64) : i32 {
+        unsafe {
+            let slot : ptr<u16> = ((base as i64) + off) as ptr<u16>;
+            return (*slot) as i32;
+        }
+    }
+
+    /** Store the low 16 bits of `v` at `base + off`. */
+    static fn putU16(base : ptr, off : i64, v : i32) : void {
+        unsafe {
+            let slot : ptr<u16> = ((base as i64) + off) as ptr<u16>;
+            *slot = (v & 0xFFFF) as u16;
+        }
+    }
+
+    /** The 32-bit word at `base + off`. */
+    static fn i32At(base : ptr, off : i64) : i32 {
+        unsafe {
+            let slot : ptr<i32> = ((base as i64) + off) as ptr<i32>;
+            return *slot;
+        }
+    }
+
+    /** Store the 32-bit word `v` at `base + off`. */
+    static fn putI32(base : ptr, off : i64, v : i32) : void {
+        unsafe {
+            let slot : ptr<i32> = ((base as i64) + off) as ptr<i32>;
+            *slot = v;
+        }
+    }
+
+    /** The 64-bit word at `base + off` — every Win32 handle and `LPARAM`. */
+    static fn i64At(base : ptr, off : i64) : i64 {
+        unsafe {
+            let slot : ptr<i64> = ((base as i64) + off) as ptr<i64>;
+            return *slot;
+        }
+    }
+
+    /** Store the 64-bit word `v` at `base + off`. */
+    static fn putI64(base : ptr, off : i64, v : i64) : void {
+        unsafe {
+            let slot : ptr<i64> = ((base as i64) + off) as ptr<i64>;
+            *slot = v;
+        }
+    }
+
+    /** The pointer-sized field at `base + off`, as a pointer. */
+    static fn ptrAt(base : ptr, off : i64) : ptr {
+        unsafe {
+            return (Raw::i64At(base, off)) as ptr;
+        }
+    }
+
+    /** Store the pointer `v` in the pointer-sized field at `base + off`. */
+    static fn putPtr(base : ptr, off : i64, v : ptr) : void {
+        unsafe {
+            Raw::putI64(base, off, v as i64);
+        }
+    }
+
+    /**
+     * The backing storage of a pixel buffer, as a pointer GDI can read.
+     * The array outlives the call by construction — every caller holds
+     * it in a live field for the duration of the blit.
+     */
+    static fn pixelsOf(buf : i32[]) : ptr {
+        unsafe {
+            return buf as ptr;
+        }
+    }
+
+    /** The backing storage of a byte buffer, as a pointer. */
+    static fn bytesOf(buf : i8[]) : ptr {
+        unsafe {
+            return buf as ptr;
+        }
+    }
+}

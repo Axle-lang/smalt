@@ -1,0 +1,127 @@
+// win_keymap — PS/2 set-1 hardware scancode to `Scancode`.
+//
+// The mapping is deliberately taken from the hardware code in bits
+// 16..23 of a key message's `lParam`, not from the virtual-key code in
+// `wParam`. The virtual key is what the *layout* produces: on an AZERTY
+// keyboard `VK_A` comes from the key an American keyboard calls Q, so a
+// WASD binding built on virtual keys lands under the player's little
+// finger. The hardware code names the position, which is what SDL's
+// scancodes mean and what a movement binding wants.
+//
+// This is the same table SDL keeps in `src/events/scancodes_windows.h`,
+// restricted to the keys the library models.
+
+use crate::core::keyboard::Scancode;
+
+/** The `lParam` hardware code, and the extended-key prefix, to a scancode. */
+class WinKeymap {
+    /**
+     * Codes prefixed with `E0` in the set-1 stream.
+     *
+     * The prefix is what separates the arrow cluster from the numeric
+     * keypad, and the right-hand modifiers from the left-hand ones —
+     * both share a base code with something else.
+     */
+    static fn extended(scan : i32) : Scancode {
+        return match scan {
+            0x1C => Scancode::KeypadEnter,
+            0x1D => Scancode::RightControl,
+            0x38 => Scancode::RightAlt,
+            0x47 => Scancode::Home,
+            0x48 => Scancode::Up,
+            0x49 => Scancode::PageUp,
+            0x4B => Scancode::Left,
+            0x4D => Scancode::Right,
+            0x4F => Scancode::End,
+            0x50 => Scancode::Down,
+            0x51 => Scancode::PageDown,
+            0x52 => Scancode::Insert,
+            0x53 => Scancode::Delete,
+            _ => Scancode::Unknown,
+        };
+    }
+
+    /** The letter, digit and punctuation block of the set-1 table. */
+    static fn base(scan : i32) : Scancode {
+        return match scan {
+            0x01 => Scancode::Escape,
+            0x02 => Scancode::Num1,
+            0x03 => Scancode::Num2,
+            0x04 => Scancode::Num3,
+            0x05 => Scancode::Num4,
+            0x06 => Scancode::Num5,
+            0x07 => Scancode::Num6,
+            0x08 => Scancode::Num7,
+            0x09 => Scancode::Num8,
+            0x0A => Scancode::Num9,
+            0x0B => Scancode::Num0,
+            0x0C => Scancode::Minus,
+            0x0D => Scancode::Equals,
+            0x0E => Scancode::Backspace,
+            0x0F => Scancode::Tab,
+            0x10 => Scancode::Q,
+            0x11 => Scancode::W,
+            0x12 => Scancode::E,
+            0x13 => Scancode::R,
+            0x14 => Scancode::T,
+            0x15 => Scancode::Y,
+            0x16 => Scancode::U,
+            0x17 => Scancode::I,
+            0x18 => Scancode::O,
+            0x19 => Scancode::P,
+            0x1A => Scancode::LeftBracket,
+            0x1B => Scancode::RightBracket,
+            0x1C => Scancode::Return,
+            0x1D => Scancode::LeftControl,
+            0x1E => Scancode::A,
+            0x1F => Scancode::S,
+            0x20 => Scancode::D,
+            0x21 => Scancode::F,
+            0x22 => Scancode::G,
+            0x23 => Scancode::H,
+            0x24 => Scancode::J,
+            0x25 => Scancode::K,
+            0x26 => Scancode::L,
+            0x27 => Scancode::Semicolon,
+            0x28 => Scancode::Apostrophe,
+            0x29 => Scancode::Grave,
+            0x2A => Scancode::LeftShift,
+            0x2B => Scancode::Backslash,
+            0x2C => Scancode::Z,
+            0x2D => Scancode::X,
+            0x2E => Scancode::C,
+            0x2F => Scancode::V,
+            0x30 => Scancode::B,
+            0x31 => Scancode::N,
+            0x32 => Scancode::M,
+            0x33 => Scancode::Comma,
+            0x34 => Scancode::Period,
+            0x35 => Scancode::Slash,
+            0x36 => Scancode::RightShift,
+            0x38 => Scancode::LeftAlt,
+            0x39 => Scancode::Space,
+            0x3A => Scancode::CapsLock,
+            0x3B => Scancode::F1,
+            0x3C => Scancode::F2,
+            0x3D => Scancode::F3,
+            0x3E => Scancode::F4,
+            0x3F => Scancode::F5,
+            0x40 => Scancode::F6,
+            0x41 => Scancode::F7,
+            0x42 => Scancode::F8,
+            0x43 => Scancode::F9,
+            0x44 => Scancode::F10,
+            0x57 => Scancode::F11,
+            0x58 => Scancode::F12,
+            _ => Scancode::Unknown,
+        };
+    }
+
+    /** The scancode a key message names. */
+    static fn lookup(scan : i32, isExtended : bool) : Scancode {
+        if (isExtended) {
+            return WinKeymap::extended(scan);
+        }
+        return WinKeymap::base(scan);
+    }
+}

@@ -1,0 +1,109 @@
+// color — a colour as the shader sees it, and as the framebuffer stores it.
+//
+// Two representations, deliberately. Lighting works in floating point on
+// an unbounded range, because a Lambert term times a light colour times a
+// texel routinely lands above 1.0 before it is tone-mapped down. The
+// framebuffer stores packed `0x00RRGGBB`, because that is what
+// `StretchDIBits` reads.
+//
+// The packed form leaves the top byte clear, and the framebuffer's
+// element type is `i32` rather than `u32`: `StretchDIBits` ignores the
+// top byte of a `BI_RGB` bitmap, so an alpha channel would be storage
+// nobody reads, and the buffer's element type is what `malloc<T>` and
+// the blit's array decay both key on. `Color::channel` clamps to
+// 0..255, so no channel ever reaches the sign bit.
+
+/** Largest value of one packed channel. */
+const COLOR_CHANNEL_MAX : f64 = 255.0;
+/** Bit position of the red channel in the packed form. */
+const COLOR_RED_SHIFT : i32 = 16;
+/** Bit position of the green channel in the packed form. */
+const COLOR_GREEN_SHIFT : i32 = 8;
+
+/**
+ * A linear colour, one `f64` per channel, nominally 0.0 to 1.0.
+ *
+ * Values outside that range are legal and expected mid-pipeline; they
+ * are clamped once, when the colour is packed.
+ */
+pub struct Color {
+    /** Red, 0.0 to 1.0. */
+    pub r : f64;
+    /** Green, 0.0 to 1.0. */
+    pub g : f64;
+    /** Blue, 0.0 to 1.0. */
+    pub b : f64;
+
+    /** A colour from three channel values. */
+    static fn rgb(r : f64, g : f64, b : f64) : Color {
+        return Color { r: r, g: g, b: b };
+    }
+
+    /** Black. */
+    static fn black() : Color {
+        return Color { r: 0.0, g: 0.0, b: 0.0 };
+    }
+
+    /** White. */
+    static fn white() : Color {
+        return Color { r: 1.0, g: 1.0, b: 1.0 };
+    }
+
+    /** One channel clamped to 0..255. */
+    static fn channel(v : f64) : i32 {
+        if (v <= 0.0) {
+            return 0;
+        }
+        if (v >= 1.0) {
+            return 255;
+        }
+        return (v * COLOR_CHANNEL_MAX).floorToInt() as i32;
+    }
+
+    /** A colour from three 0..255 integers. */
+    static fn bytes(r : i32, g : i32, b : i32) : Color {
+        return Color {
+            r: (r as f64) / COLOR_CHANNEL_MAX,
+            g: (g as f64) / COLOR_CHANNEL_MAX,
+            b: (b as f64) / COLOR_CHANNEL_MAX,
+        };
+    }
+
+    /** Pack three 0..255 integers into the framebuffer's word. */
+    static fn packBytes(r : i32, g : i32, b : i32) : i32 {
+        return ((r & 0xFF) << COLOR_RED_SHIFT) | ((g & 0xFF) << COLOR_GREEN_SHIFT) | (b & 0xFF);
+    }
+
+    /** Unpack a framebuffer word. */
+    static fn unpack(v : i32) : Color {
+        return Color::bytes(
+            (v >>> COLOR_RED_SHIFT) & 0xFF,
+            (v >>> COLOR_GREEN_SHIFT) & 0xFF,
+            v & 0xFF
+        );
+    }
+
+    /** This colour as a framebuffer word, clamped. */
+    fn packed(self) : i32 {
+        return Color::packBytes(
+            Color::channel(self.r),
+            Color::channel(self.g),
+            Color::channel(self.b)
+        );
+    }
+
+    /** This colour scaled by `k` — a light's contribution. */
+    fn scaled(self, k : f64) : Color {
+        return Color { r: self.r * k, g: self.g * k, b: self.b * k };
+    }
+
+    /** This colour added to `o` — accumulating two lights. */
+    fn plus(self, o : Color) : Color {
+        return Color { r: self.r + o.r, g: self.g + o.g, b: self.b + o.b };
+    }
+
+    /** This colour multiplied channel-wise by `o` — a texel times a tint. */
+    fn times(self, o : Color) : Color {
+        return Color { r: self.r * o.r, g: self.g * o.g, b: self.b * o.b };
+    }
+}

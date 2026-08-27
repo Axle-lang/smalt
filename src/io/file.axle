@@ -1,0 +1,49 @@
+// file — reading a whole file into memory.
+//
+// The counterpart of `SDL_LoadFile`. It goes straight to libc rather
+// than through the Axle standard library's `File` / `FileInputStream`,
+// for one reason: those signal failure by throwing, and every caller
+// would then have to carry an `! IOException` contract up to `main` for
+// a condition an asset loader handles locally. A missing texture should
+// leave a visible magenta surface, not unwind the program.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use std::ffi::libc::fs::{fopen, fclose, fread, fseek, ftell};
+
+/** `SEEK_SET` — offsets are from the start of the file. */
+const FILE_SEEK_SET : i32 = 0;
+/** `SEEK_END` — offsets are from the end of the file. */
+const FILE_SEEK_END : i32 = 2;
+/** The mode every asset is opened with: read, binary. */
+const FILE_MODE_READ : string = "rb";
+
+/** Whole-file reads. */
+pub class AssetFile {
+    /**
+     * The contents of `path`.
+     *
+     * Missing, empty and unreadable are one answer — `IOException` — so a
+     * caller that treats them identically writes one `catch`. The caller
+     * owns the blob it receives and closes it.
+     */
+    static fn readAll(path : string) : Blob ! IOException {
+        let stream = fopen(path, FILE_MODE_READ);
+        if (Raw::isNil(stream)) {
+            throw IOException("cannot open ${path}");
+        }
+        fseek(stream, 0, FILE_SEEK_END);
+        let size = ftell(stream);
+        fseek(stream, 0, FILE_SEEK_SET);
+        if (size <= 0) {
+            fclose(stream);
+            throw IOException("${path} is empty or not seekable");
+        }
+        let out = new Blob(size);
+        // A short read leaves the tail zeroed rather than failing: the
+        // decoders above check the sizes they need anyway.
+        fread(out.at(), 1, size, stream);
+        fclose(stream);
+        return out;
+    }
+}

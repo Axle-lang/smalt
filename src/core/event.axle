@@ -1,0 +1,166 @@
+// event — the event type and the queue it waits in.
+//
+// SDL3's `SDL_Event` is a union of thirty-odd structs sharing a fixed
+// prefix. The Axle counterpart of that union is a payload-bearing
+// `enum`, and this file does not use one: the union is **flattened**
+// instead, into one struct with every field plus a `kind` that says
+// which of them are meaningful. That is what a union is anyway, minus
+// the overlap — 64 bytes against 128, and no addressing arithmetic.
+//
+// The flat form is a choice rather than a constraint. A variant payload
+// carries a scalar, a payload-free `enum`, a `string`, an owning object,
+// a `Shared`/`Weak` handle or a dynamic array — `KeyDown(i64, Scancode,
+// bool)` and `Click(i64, MouseButton, i32, i32)` are all admissible — so
+// a reader who prefers `match` over a `kind` field can have it. What it
+// would cost is the producer side in `win_pump`, which builds one event
+// per message from a shared prefix.
+//
+// SDL3's other event decision is kept as-is: window events are distinct
+// top-level kinds (`WindowResized`, not `Window` with a sub-type), which
+// is the simplification SDL3 itself made over SDL2.
+
+use crate::core::keyboard::Scancode;
+use crate::core::mouse::MouseButton;
+
+/** Events the queue can hold; a full queue drops the oldest. */
+const EVENT_QUEUE_SLOTS : i64 = 256;
+
+/** What happened. The `SDL_EventType` counterpart. */
+pub enum EventKind : i32 {
+    /** The queue was empty — never delivered by `next()`. */
+    None = 0,
+    /** The window was closed. */
+    Quit = 1,
+    /** A key went down; `repeat` says whether it is an auto-repeat. */
+    KeyDown = 2,
+    /** A key came up. */
+    KeyUp = 3,
+    /** A character was typed; read `text`, not `scancode`. */
+    TextInput = 4,
+    /** The pointer moved. */
+    MouseMotion = 5,
+    /** A mouse button went down. */
+    MouseButtonDown = 6,
+    /** A mouse button came up. */
+    MouseButtonUp = 7,
+    /** The wheel turned. */
+    MouseWheel = 8,
+    /** The client area changed size; read `width` / `height`. */
+    WindowResized = 9,
+    /** The window took input focus. */
+    WindowFocusGained = 10,
+    /** The window lost input focus. */
+    WindowFocusLost = 11,
+    /** The window was minimised. */
+    WindowMinimised = 12,
+    /** The window came back from being minimised. */
+    WindowRestored = 13,
+}
+
+/**
+ * One event.
+ *
+ * Which fields carry meaning depends on `kind`:
+ *
+ * | kind | fields |
+ * |---|---|
+ * | `KeyDown` / `KeyUp` | `scancode`, `repeat` |
+ * | `TextInput` | `text` (a Unicode codepoint) |
+ * | `MouseMotion` | `x`, `y`, `dx`, `dy` |
+ * | `MouseButtonDown` / `MouseButtonUp` | `button`, `x`, `y` |
+ * | `MouseWheel` | `wheel` |
+ * | `WindowResized` | `width`, `height` |
+ */
+pub struct Event {
+    /** What happened. Every other field is read through this. */
+    pub kind : EventKind;
+    /** Milliseconds since the library was initialised. */
+    pub timestamp : i64;
+    /** The physical key, for `KeyDown` / `KeyUp`. */
+    pub scancode : Scancode = Scancode::Unknown;
+    /** Whether a `KeyDown` is the hardware auto-repeat rather than a fresh press. */
+    pub repeat : bool = false;
+    /** The Unicode codepoint, for `TextInput`. */
+    pub text : i32 = 0;
+    /** The button, for the button kinds. */
+    pub button : MouseButton = MouseButton::Left;
+    /** Pointer x in client pixels, for the mouse kinds. */
+    pub x : i32 = 0;
+    /** Pointer y in client pixels, for the mouse kinds. */
+    pub y : i32 = 0;
+    /** Horizontal motion since the previous event, for `MouseMotion`. */
+    pub dx : i32 = 0;
+    /** Vertical motion since the previous event, for `MouseMotion`. */
+    pub dy : i32 = 0;
+    /** Wheel notches, for `MouseWheel`; positive is away from the user. */
+    pub wheel : i32 = 0;
+    /** New client width, for `WindowResized`. */
+    pub width : i32 = 0;
+    /** New client height, for `WindowResized`. */
+    pub height : i32 = 0;
+
+    /** The empty event — what an exhausted queue answers. */
+    static fn none() : Event {
+        return Event { kind: EventKind::None, timestamp: 0 };
+    }
+}
+
+/**
+ * A bounded ring of pending events — SDL's `SDL_EventQ`, minus the
+ * linked list and the 65535-deep growth.
+ *
+ * When the ring is full the **oldest** event is dropped rather than the
+ * newest. A game that stops polling is already misbehaving; keeping the
+ * most recent input is what lets it recover, and dropping the newest
+ * would strand a key-up and leave a key stuck down forever.
+ */
+pub class EventQueue {
+    items : Event[];
+    head : i32;
+    count : i32;
+
+    /** An empty queue. */
+    constructor() {
+        self.items = malloc<Event>(EVENT_QUEUE_SLOTS);
+        self.head = 0;
+        self.count = 0;
+    }
+
+    /** How many events are waiting. */
+    fn pending(self) : i32 {
+        return self.count;
+    }
+
+    /** Whether `next()` would return a real event. */
+    fn hasNext(self) : bool {
+        return self.count > 0;
+    }
+
+    /** Add `e` to the back, dropping the oldest if the ring is full. */
+    fn push(mut self, e : Event) : void {
+        let slots = EVENT_QUEUE_SLOTS as i32;
+        if (self.count == slots) {
+            self.head = (self.head + 1) % slots;
+            self.count -= 1;
+        }
+        self.items[((self.head + self.count) % slots) as i64] = e;
+        self.count += 1;
+    }
+
+    /** Take the oldest event, or the empty event when there is none. */
+    fn next(mut self) : Event {
+        if (self.count == 0) {
+            return Event::none();
+        }
+        let e = self.items[self.head as i64];
+        self.head = (self.head + 1) % (EVENT_QUEUE_SLOTS as i32);
+        self.count -= 1;
+        return e;
+    }
+
+    /** Drop everything pending. */
+    fn clear(mut self) : void {
+        self.head = 0;
+        self.count = 0;
+    }
+}
