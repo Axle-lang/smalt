@@ -18,7 +18,7 @@ use crate::kernel::{raw, blob, wide};
 
 use crate::sys::{win32_types, win32_layout_check, win32_kernel, win32_user, win32_gdi, win32_mm};
 
-use crate::platform::{sys_clock, sys_app, sys_screen};
+use crate::platform::{sys_clock, sys_app, sys_screen, sys_blit, sys_pump};
 
 use crate::core::{error, init, timer, event, keyboard, mouse, pump};
 

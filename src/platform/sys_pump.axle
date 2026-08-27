@@ -1,0 +1,32 @@
+// sys_pump — the platform seam for the OS message record.
+//
+// THE CONTRACT:
+//
+//   newMessageScratch()  an owned block big enough to hold one OS event
+//                        record, reused for the life of the queue
+//
+// That is the whole seam, deliberately. The *draining* stays under
+// `video/windows/`, where the code that knows what a `WM_KEYDOWN` means
+// already lives; what leaked into `core/` was only the record's SIZE,
+// and a size is the one thing a portable file cannot know.
+//
+// Reused rather than allocated per drain because a drain runs every
+// frame and the record is fixed-size — a fresh block per frame would be
+// a malloc and a free sixty times a second for no gain.
+//
+// Windows: `MSG`, 48 bytes on x64.
+//
+// Linux: `XEvent`, a union whose largest member fixes it at 192 bytes.
+// Reading it needs `XNextEvent` and a `type` switch, which is the port's
+// sibling of `WinPump::drain`, not of this file.
+
+use crate::kernel::blob::Blob;
+use crate::sys::win32_types::MSG;
+
+/** The OS message record's storage. */
+pub class SysPump {
+    /** A block sized for exactly one OS event record. */
+    static fn newMessageScratch() : Blob {
+        return new Blob(sizeof<MSG>());
+    }
+}

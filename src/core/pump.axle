@@ -24,7 +24,7 @@ use crate::core::event::{Event, EventKind, EventQueue};
 use crate::core::keyboard::{KeyboardState, Scancode};
 use crate::core::mouse::{MouseButton, MouseState};
 use crate::kernel::blob::Blob;
-use crate::sys::win32_types::MSG;
+use crate::platform::sys_pump::SysPump;
 use crate::video::window::Window;
 use crate::video::windows::win_pump::WinPump;
 use crate::video::windows::win_relative::WinRelative;
@@ -59,7 +59,7 @@ pub class Events : Closeable {
         self.queue = new EventQueue();
         self.keys = new KeyboardState();
         self.mouse = new MouseState();
-        self.msg = new Blob(sizeof<MSG>());
+        self.msg = SysPump::newMessageScratch();
         self.sentQuit = false;
     }
 
