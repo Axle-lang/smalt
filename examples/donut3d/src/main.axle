@@ -67,9 +67,13 @@ fn run() : i32 ! PlatformError {
         }
 
         if (!win.minimised()) {
-            let px : i32[] = device.pixels();
-            clearFrame(px, zb, w, h);
-            renderTorus(px, zb, w, h, a, b);
+            // The colour buffer stays the device's. Handed straight to a
+            // parameter it is borrowed; bound to a local `i32[]` it would
+            // gain a second owner and be freed at the end of every
+            // iteration, so the next frame would write through a dangling
+            // pointer.
+            clearFrame(device.pixels(), zb, w, h);
+            renderTorus(device.pixels(), zb, w, h, a, b);
             device.endFrame(win);
         }
 
