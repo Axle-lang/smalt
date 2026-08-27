@@ -11,19 +11,18 @@
 // `EnumDisplayDevicesW` / `EnumDisplaySettingsW`, which are callback-free
 // and would fit this design; they are simply not written yet.
 
-use crate::sys::win32_user::GetSystemMetrics;
-use crate::video::windows::win_const::{SM_CXSCREEN, SM_CYSCREEN};
+use crate::platform::sys_screen::SysScreen;
 
 /** The primary display. */
 pub class Display {
     /** Width of the primary display, in pixels. */
     static fn width() : i32 {
-        return GetSystemMetrics(SM_CXSCREEN);
+        return SysScreen::width();
     }
 
     /** Height of the primary display, in pixels. */
     static fn height() : i32 {
-        return GetSystemMetrics(SM_CYSCREEN);
+        return SysScreen::height();
     }
 
     /**

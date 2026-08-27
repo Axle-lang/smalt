@@ -12,9 +12,7 @@
 // initialised one, so nothing downstream tests a half-built subsystem.
 
 use crate::core::error::PlatformError;
-use crate::kernel::raw::Raw;
-use crate::sys::win32_kernel::GetModuleHandleW;
-use crate::sys::win32_mm::{timeBeginPeriod, timeEndPeriod};
+use crate::platform::sys_app::SysApp;
 use crate::video::window::Window;
 use crate::video::windows::win_class::WinClass;
 
@@ -35,14 +33,14 @@ pub class Platform : Closeable {
 
     /** Initialise the video and event subsystems. */
     constructor() ! PlatformError {
-        self.instance = GetModuleHandleW(Raw::nil());
-        if (Raw::isNil(self.instance)) {
+        self.instance = SysApp::instance();
+        if (SysApp::isNil(self.instance)) {
             throw PlatformError("GetModuleHandleW returned no module handle");
         }
         if (!WinClass::register(self.instance)) {
             throw PlatformError("RegisterClassExW failed for the smalt window class");
         }
-        self.timerRaised = timeBeginPeriod(TIMER_PERIOD_MS) == 0;
+        self.timerRaised = SysApp::raiseTimerRes();
     }
 
     /** Open a window with a `w` by `h` client area. */
@@ -59,7 +57,7 @@ pub class Platform : Closeable {
      */
     fn close(self) : void {
         if (self.timerRaised) {
-            timeEndPeriod(TIMER_PERIOD_MS);
+            SysApp::lowerTimerRes();
         }
     }
 }

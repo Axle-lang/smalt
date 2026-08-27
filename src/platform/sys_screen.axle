@@ -1,0 +1,33 @@
+// sys_screen — the platform seam for what the primary display measures.
+//
+// THE CONTRACT:
+//
+//   width()   the primary display's width in pixels
+//   height()  its height
+//
+// Both may report nonsense on a headless or misconfigured session, so
+// every caller clamps rather than trusting the answer — `Display`'s
+// suggestedSize is the one that does it.
+//
+// Windows: `GetSystemMetrics(SM_CXSCREEN / SM_CYSCREEN)`, which reports
+// the primary monitor only. Enumerating the rest needs
+// `EnumDisplayDevicesW`, which is callback-free and would fit here.
+//
+// Linux: `XDisplayWidth` / `XDisplayHeight` on the default screen, with
+// Xinerama or XRandR behind the same two functions for multi-monitor.
+
+use crate::sys::win32_user::GetSystemMetrics;
+use crate::video::windows::win_const::{SM_CXSCREEN, SM_CYSCREEN};
+
+/** What the primary display measures. */
+pub class SysScreen {
+    /** The primary display's width, in pixels. */
+    static fn width() : i32 {
+        return GetSystemMetrics(SM_CXSCREEN);
+    }
+
+    /** The primary display's height, in pixels. */
+    static fn height() : i32 {
+        return GetSystemMetrics(SM_CYSCREEN);
+    }
+}

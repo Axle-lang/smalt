@@ -11,10 +11,7 @@
 // with `timeBeginPeriod`, and `delayUntil` still spins the last stretch
 // because even a 1 ms period overshoots often enough to cost a frame.
 
-use crate::kernel::blob::Blob;
-use crate::sys::win32_kernel::{
-    QueryPerformanceCounter, QueryPerformanceFrequency, Sleep,
-};
+use crate::platform::sys_clock::SysClock;
 
 /** Milliseconds in a second. */
 const CLOCK_MS_PER_SEC : i64 = 1000;
@@ -39,19 +36,12 @@ const CLOCK_SPIN_MARGIN_US : i64 = 1500;
 pub class Clock : Closeable {
     freq : i64;
     origin : i64;
-    scratch : Blob;
+    sys : SysClock;
 
     /** Start the clock. */
     constructor() {
-        // The counter calls write a `LARGE_INTEGER`, of which this code
-        // reads the 64-bit `QuadPart` — so the block is that, measured.
-        self.scratch = new Blob(sizeof<i64>());
-        let hz : i64 = 0;
-        unsafe {
-            let slot : ptr<i64> = self.scratch.at() as ptr<i64>;
-            QueryPerformanceFrequency(slot);
-            hz = *slot;
-        }
+        self.sys = new SysClock();
+        let hz : i64 = self.sys.frequency();
         // Every later conversion divides by this. A zero would trap, so
         // a machine that answers nonsense gets a clock that runs slow
         // rather than a process that dies.
@@ -60,11 +50,7 @@ pub class Clock : Closeable {
         } else {
             self.freq = hz;
         }
-        unsafe {
-            let slot : ptr<i64> = self.scratch.at() as ptr<i64>;
-            QueryPerformanceCounter(slot);
-            self.origin = *slot;
-        }
+        self.origin = self.sys.counter();
     }
 
     /** Ticks of the performance counter per second. */
@@ -74,11 +60,7 @@ pub class Clock : Closeable {
 
     /** The raw performance counter — `SDL_GetPerformanceCounter`. */
     fn counter(mut self) : i64 {
-        unsafe {
-            let slot : ptr<i64> = self.scratch.at() as ptr<i64>;
-            QueryPerformanceCounter(slot);
-            return *slot;
-        }
+        return self.sys.counter();
     }
 
     /** Milliseconds since the clock started — `SDL_GetTicks`. */
@@ -99,7 +81,7 @@ pub class Clock : Closeable {
     /** Hand the rest of `ms` back to the scheduler — `SDL_Delay`. */
     fn delay(self, ms : i32) : void {
         if (ms > 0) {
-            Sleep(ms);
+            self.sys.sleep(ms);
         }
     }
 
@@ -114,15 +96,15 @@ pub class Clock : Closeable {
         let remaining : i64 = deadlineUs - self.micros();
         if (remaining > CLOCK_SPIN_MARGIN_US) {
             let sleepable : i64 = remaining - CLOCK_SPIN_MARGIN_US;
-            Sleep((sleepable / CLOCK_MS_PER_SEC) as i32);
+            self.sys.sleep((sleepable / CLOCK_MS_PER_SEC) as i32);
         }
         while (self.micros() < deadlineUs) {
             // Spin. The margin above keeps this under two milliseconds.
         }
     }
 
-    /** Release the scratch block. */
+    /** Release the platform clock.*/
     fn close(self) : void {
-        self.scratch.close();
+        self.sys.close();
     }
 }

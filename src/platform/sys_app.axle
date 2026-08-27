@@ -1,0 +1,56 @@
+// sys_app — the platform seam for the process's own handle on the OS,
+// and for the scheduler granularity a frame pacer depends on.
+//
+// THE CONTRACT:
+//
+//   instance()          an opaque token the window layer needs to create
+//                       a window; nil means the OS refused
+//   isNil(token)        whether `instance` failed
+//   raiseTimerRes()     ask for the finest sleep granularity available;
+//                       answers whether it was granted, because the
+//                       matching lower() must run only if it was
+//   lowerTimerRes()     undo exactly one granted raise
+//
+// The granularity pair is process-wide state the OS does not reclaim for
+// a program that merely exits, which is why `Platform` is `Closeable` and
+// why the raise reports whether it took.
+//
+// Windows: the module handle from `GetModuleHandleW(NULL)`, and
+// `timeBeginPeriod` / `timeEndPeriod` from `winmm`.
+//
+// Linux: the token becomes the X11 `Display*` from `XOpenDisplay`, and
+// the granularity pair becomes a no-op that reports "not granted" —
+// `nanosleep` already resolves far below a frame.
+
+use crate::kernel::raw::Raw;
+use crate::sys::win32_kernel::GetModuleHandleW;
+use crate::sys::win32_mm::{timeBeginPeriod, timeEndPeriod};
+
+/** The scheduler granularity a frame pacer asks for, in milliseconds. */
+const SYS_TIMER_PERIOD_MS : i32 = 1;
+
+/** The process's handle on the OS. */
+pub class SysApp {
+    /** The token the window layer creates windows from. */
+    static fn instance() : ptr {
+        return GetModuleHandleW(Raw::nil());
+    }
+
+    /** Whether `instance` failed to produce a usable token. */
+    static fn isNil(token : ptr) : bool {
+        return Raw::isNil(token);
+    }
+
+    /**
+     * Ask for the finest sleep granularity. Answers whether it was
+     * granted — only a granted raise may be lowered.
+     */
+    static fn raiseTimerRes() : bool {
+        return timeBeginPeriod(SYS_TIMER_PERIOD_MS) == 0;
+    }
+
+    /** Undo one granted raise. */
+    static fn lowerTimerRes() : void {
+        timeEndPeriod(SYS_TIMER_PERIOD_MS);
+    }
+}
