@@ -24,6 +24,23 @@
 
 ---
 
+![A textured cube on a tiled floor, lit and depth-tested, in a Win32 window at 60 fps](doc/spinning_cube.png)
+
+<div align="center"><em>The 3D pipeline: a textured cube over a perspective-correct tiled floor, Blinn-Phong lit and depth-tested — every triangle rasterised on the CPU, in a window Axle opened itself.</em></div>
+
+<table>
+<tr>
+<td width="33%"><img alt="A shaded, z-buffered torus rendered by hand into the framebuffer" src="doc/donut3d.png"></td>
+<td width="33%"><img alt="A 2D platformer drawing straight into the window framebuffer" src="doc/mario3d.png"></td>
+<td width="33%"><img alt="A drifting colour gradient filling the window" src="doc/hello_window.png"></td>
+</tr>
+<tr>
+<td align="center"><em><code>donut3d</code> — its own renderer</em></td>
+<td align="center"><em><code>mario3d</code> — framebuffer only</em></td>
+<td align="center"><em><code>hello_window</code> — the smallest one</em></td>
+</tr>
+</table>
+
 > **smalt** *(n.)* — a deep blue pigment made by grinding cobalt glass to powder.
 > Glass, ground down until it is something you can paint with. That is the whole library:
 > a window, taken apart into pixels you write yourself.
