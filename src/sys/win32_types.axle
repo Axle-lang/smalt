@@ -161,3 +161,68 @@ pub extern "C" struct BITMAPINFO {
     /** `RGBQUAD bmiColors[1]`. */
     pub bmiColors : RGBQUAD[1];
 }
+
+/**
+ * `typedef struct { WORD wFormatTag; WORD nChannels; DWORD nSamplesPerSec;
+ * DWORD nAvgBytesPerSec; WORD nBlockAlign; WORD wBitsPerSample;
+ * WORD cbSize; } WAVEFORMATEX;`
+ *
+ * Only the field OFFSETS matter to `waveOutOpen`, which is handed a
+ * pointer and no size — so the trailing padding natural alignment adds
+ * after `cbSize` is invisible to the call. `cbSize` is zero for PCM: it
+ * counts the extra bytes a compressed format appends after this record,
+ * and PCM appends none.
+ *
+ * `nAvgBytesPerSec` and `nBlockAlign` are both derivable from the other
+ * three, and the device believes them rather than recomputing — a wrong
+ * one plays at the wrong speed instead of failing, which is why
+ * `SysAudio` computes both rather than writing constants.
+ */
+pub extern "C" struct WAVEFORMATEX {
+    /** `WORD wFormatTag` — `WAVE_FORMAT_PCM` (1) here. */
+    pub wFormatTag : u16;
+    /** `WORD nChannels` — 1 mono, 2 stereo. */
+    pub nChannels : u16;
+    /** `DWORD nSamplesPerSec` — frames per second, not samples. */
+    pub nSamplesPerSec : u32;
+    /** `DWORD nAvgBytesPerSec` — `nSamplesPerSec * nBlockAlign`. */
+    pub nAvgBytesPerSec : u32;
+    /** `WORD nBlockAlign` — bytes for one frame across all channels. */
+    pub nBlockAlign : u16;
+    /** `WORD wBitsPerSample` — 16 here. */
+    pub wBitsPerSample : u16;
+    /** `WORD cbSize` — extra bytes after this record; 0 for PCM. */
+    pub cbSize : u16;
+}
+
+/**
+ * `typedef struct wavehdr_tag { LPSTR lpData; DWORD dwBufferLength;
+ * DWORD dwBytesRecorded; DWORD_PTR dwUser; DWORD dwFlags; DWORD dwLoops;
+ * struct wavehdr_tag *lpNext; DWORD_PTR reserved; } WAVEHDR;`
+ *
+ * `dwFlags` is the whole reason this design needs no callback: the
+ * device sets `WHDR_DONE` on a block it has finished with, and the
+ * caller polls for it. That is what makes a queued-audio path reachable
+ * from a language that cannot hand out a function address.
+ *
+ * `lpNext` and `reserved` belong to the driver. Writing either is how a
+ * queue corrupts itself, so nothing here touches them.
+ */
+pub extern "C" struct WAVEHDR {
+    /** `LPSTR lpData` — the PCM block; must outlive the queueing. */
+    pub lpData : ptr;
+    /** `DWORD dwBufferLength` — bytes of `lpData` to play. */
+    pub dwBufferLength : u32;
+    /** `DWORD dwBytesRecorded` — input only; zero here. */
+    pub dwBytesRecorded : u32;
+    /** `DWORD_PTR dwUser` — the caller's; carries the block's index. */
+    pub dwUser : u64;
+    /** `DWORD dwFlags` — `WHDR_PREPARED`, and `WHDR_DONE` when free. */
+    pub dwFlags : u32;
+    /** `DWORD dwLoops` — loop count; zero plays once. */
+    pub dwLoops : u32;
+    /** `struct wavehdr_tag *lpNext` — the driver's; never written here. */
+    pub lpNext : ptr;
+    /** `DWORD_PTR reserved` — the driver's; never written here. */
+    pub reserved : u64;
+}

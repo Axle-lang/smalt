@@ -1,0 +1,256 @@
+// mixer — many clips into the one block the device is waiting for.
+//
+// A fixed set of voices, summed into the block `SysAudio` hands back.
+// Fixed rather than growable because the count bounds the work per
+// block, and a game that asks for a 33rd simultaneous sound wants the
+// quietest one dropped, not an allocation in the audio path.
+//
+// A voice holds its clip's ADDRESS and frame count, never the `Clip`.
+// The bank owns the clips; a voice that owned one too would free samples
+// still being read, and the crash would land in the device's thread with
+// no stack pointing back here. Holding the address is the same fix the
+// framebuffer path uses.
+//
+// Positional voices attenuate against the listener EVERY block, not once
+// at play time, which is what makes a sound fade while it is still
+// playing as the player walks away. The curve is linear to zero at
+// `range`: inverse-square is what physics does and it is wrong here,
+// because it never reaches zero and a game needs a distance past which a
+// sound is gone.
+
+use crate::kernel::raw::Raw;
+use crate::audio::clip::Clip;
+use crate::platform::sys_audio::{SysAudio, AUDIO_CHANNELS};
+
+/** Simultaneous voices. Beyond this the oldest positional voice loses. */
+const MIX_VOICES : i32 = 32;
+/** Bytes per device sample. */
+const MIX_SAMPLE_BYTES : i64 = 2;
+/** Full-scale sample magnitude, for the clamp. */
+const MIX_CLAMP : i32 = 32767;
+
+/**
+ * One playing sound.
+ *
+ * `base` and `frames` are the clip's, copied in: see the file header for
+ * why a voice must not hold the clip itself.
+ */
+struct Voice {
+    base : i64,
+    frames : i32,
+    cursor : i32,
+    gain : f64,
+    positional : bool,
+    x : f64,
+    y : f64,
+    z : f64,
+    range : f64,
+    active : bool,
+}
+
+/**
+ * The software mixer.
+ *
+ * Owns the device. One per process — two would each open the default
+ * output and fight over it.
+ */
+pub class Mixer : Closeable {
+    audio : SysAudio;
+    voices : Voice[];
+    lx : f64;
+    ly : f64;
+    lz : f64;
+
+    /** Open the device and start with every voice idle. */
+    constructor() {
+        self.audio = new SysAudio();
+        self.voices = malloc<Voice>(MIX_VOICES as i64);
+        self.lx = 0.0;
+        self.ly = 0.0;
+        self.lz = 0.0;
+        let i : i32 = 0;
+        while (i < MIX_VOICES) {
+            self.voices[i] = Voice {
+                base: 0, frames: 0, cursor: 0, gain: 0.0,
+                positional: false, x: 0.0, y: 0.0, z: 0.0, range: 0.0,
+                active: false,
+            };
+            i = i + 1;
+        }
+    }
+
+    /** Whether the device opened. Playing into a closed device is silent. */
+    fn isOpen(self) : bool {
+        return self.audio.isOpen();
+    }
+
+    /**
+     * Where the listener is, for the next block's attenuation.
+     *
+     * Published per frame by the game; read per block by the mix, which
+     * is what lets a sound fade mid-playback.
+     */
+    fn setListener(mut self, x : f64, y : f64, z : f64) : void {
+        self.lx = x;
+        self.ly = y;
+        self.lz = z;
+    }
+
+    /**
+     * A free voice slot, or the one holding the least useful sound.
+     *
+     * Stealing prefers a positional voice because a non-positional one is
+     * the player's own — a footstep or a hurt cry, which is the sound the
+     * player most notices missing.
+     */
+    fn slot(mut self) : i32 {
+        let i : i32 = 0;
+        while (i < MIX_VOICES) {
+            if (!self.voices[i].active) {
+                return i;
+            }
+            i = i + 1;
+        }
+        i = 0;
+        while (i < MIX_VOICES) {
+            if (self.voices[i].positional) {
+                return i;
+            }
+            i = i + 1;
+        }
+        return 0;
+    }
+
+    /** Start `clip` at a fixed gain, heard the same wherever it happens. */
+    fn play(mut self, clip : Clip, gain : f64) : void {
+        if (!clip.loaded()) {
+            return;
+        }
+        let i : i32 = self.slot();
+        self.voices[i] = Voice {
+            base: clip.base(), frames: clip.frameCount(), cursor: 0, gain: gain,
+            positional: false, x: 0.0, y: 0.0, z: 0.0, range: 0.0,
+            active: true,
+        };
+    }
+
+    /** Start `clip` at a world position, fading to nothing at `range`. */
+    fn playAt(mut self, clip : Clip, gain : f64, x : f64, y : f64, z : f64, range : f64) : void {
+        if (!clip.loaded() || range <= 0.0) {
+            return;
+        }
+        let i : i32 = self.slot();
+        self.voices[i] = Voice {
+            base: clip.base(), frames: clip.frameCount(), cursor: 0, gain: gain,
+            positional: true, x: x, y: y, z: z, range: range,
+            active: true,
+        };
+    }
+
+    /** Voice `i`'s gain for this block, listener distance included. */
+    fn voiceGain(self, i : i32) : f64 {
+        let v = self.voices[i];
+        if (!v.positional) {
+            return v.gain;
+        }
+        let dx : f64 = v.x - self.lx;
+        let dy : f64 = v.y - self.ly;
+        let dz : f64 = v.z - self.lz;
+        let d2 : f64 = dx * dx + dy * dy + dz * dz;
+        let r2 : f64 = v.range * v.range;
+        if (d2 >= r2) {
+            return 0.0;
+        }
+        // Linear in distance, not in squared distance, so the fade is
+        // even across the range rather than collapsing near the edge.
+        let d : f64 = d2.sqrt();
+        return v.gain * (1.0 - d / v.range);
+    }
+
+    /**
+     * Fill one device block if the device has one free.
+     *
+     * Answers whether it did, so a caller can tell "nothing to do" from
+     * "device closed" without asking twice. Call it far more often than
+     * the block duration: a block that comes free between two calls is
+     * silence the device has already played.
+     */
+    fn pump(mut self) : bool {
+        let slot : i32 = self.audio.reclaim();
+        if (slot < 0) {
+            return false;
+        }
+        let dst : ptr = Raw::at(self.audio.blockAddress(slot));
+        let frames : i32 = SysAudio::blockFrames();
+
+        // Silence first: a block comes back carrying whatever it played
+        // last, and every voice below ADDS.
+        Raw::clear(dst, (frames as i64) * (AUDIO_CHANNELS as i64) * MIX_SAMPLE_BYTES);
+
+        let v : i32 = 0;
+        while (v < MIX_VOICES) {
+            if (self.voices[v].active) {
+                self.mixVoice(v, dst, frames);
+            }
+            v = v + 1;
+        }
+        self.audio.submit(slot);
+        return true;
+    }
+
+    /** Add voice `v`'s next `frames` frames into `dst`, and retire it if it ends. */
+    fn mixVoice(mut self, v : i32, dst : ptr, frames : i32) : void {
+        let gain : f64 = self.voiceGain(v);
+        let src : i64 = self.voices[v].base;
+        let total : i32 = self.voices[v].frames;
+        let cursor : i32 = self.voices[v].cursor;
+
+        let i : i32 = 0;
+        while (i < frames && cursor < total) {
+            // An out-of-range voice still advances its cursor: it is
+            // playing, the listener simply cannot hear it, and it must
+            // end when the sound ends rather than when they come back.
+            if (gain > 0.0) {
+                let s : i32 = Raw::u16At(Raw::at(src), (cursor as i64) * MIX_SAMPLE_BYTES);
+                if (s >= 32768) {
+                    s = s - 65536;
+                }
+                let add : i32 = ((s as f64) * gain).floorToInt() as i32;
+                let frame : i64 = (i as i64) * (AUDIO_CHANNELS as i64) * MIX_SAMPLE_BYTES;
+                let c : i32 = 0;
+                while (c < AUDIO_CHANNELS) {
+                    let off : i64 = frame + (c as i64) * MIX_SAMPLE_BYTES;
+                    let cur : i32 = Raw::u16At(dst, off);
+                    if (cur >= 32768) {
+                        cur = cur - 65536;
+                    }
+                    let sum : i32 = cur + add;
+                    // Clamp rather than wrap: a wrapped sum is a loud
+                    // click, which is worse than the distortion clamping
+                    // costs when many voices land together.
+                    if (sum > MIX_CLAMP) {
+                        sum = MIX_CLAMP;
+                    }
+                    if (sum < -MIX_CLAMP) {
+                        sum = -MIX_CLAMP;
+                    }
+                    Raw::putU16(dst, off, sum & 65535);
+                    c = c + 1;
+                }
+            }
+            cursor = cursor + 1;
+            i = i + 1;
+        }
+
+        self.voices[v].cursor = cursor;
+        if (cursor >= total) {
+            self.voices[v].active = false;
+        }
+    }
+
+    /** Stop the device. The clips are the bank's to release. */
+    fn close(self) : void {
+        free(self.voices);
+        self.audio.close();
+    }
+}

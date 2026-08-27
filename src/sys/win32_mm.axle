@@ -6,6 +6,13 @@
 // long as it is in effect, and must be matched by `timeEndPeriod(1)` —
 // `Platform` pairs them across its constructor and `close`.
 //
+// The same DLL carries `waveOut*`, the one audio output path on Windows
+// whose whole surface is NAMED EXPORTS. That matters more than it sounds:
+// WASAPI and XAudio2 are COM, reached through a vtable slot obtained at
+// run time, and Axle cannot call an address it did not link. `waveOut`
+// can be opened with `CALLBACK_NULL` and driven by polling each header's
+// done flag, so it needs no callback address either.
+//
 // The block names `winmm`, which is where the link line learns of it.
 
 extern "C" from "winmm" {
@@ -14,4 +21,37 @@ extern "C" from "winmm" {
 
     /** `MMRESULT timeEndPeriod(UINT)` — must mirror every `timeBeginPeriod`. */
     fn timeEndPeriod(ms : i32) : i32;
+
+    /**
+     * `MMRESULT waveOutOpen(LPHWAVEOUT, UINT, LPCWAVEFORMATEX, DWORD_PTR,
+     * DWORD_PTR, DWORD)` — 0 (`MMSYSERR_NOERROR`) on success.
+     *
+     * `callback` and `instance` are zero here, paired with
+     * `CALLBACK_NULL` in `flags`: the device then signals a finished
+     * block only through the header's own flags, which is what lets this
+     * work with no function address to hand out.
+     */
+    fn waveOutOpen(
+        out : ptr,
+        deviceId : u32,
+        format : ptr,
+        callback : i64,
+        instance : i64,
+        flags : u32
+    ) : i32;
+
+    /** `MMRESULT waveOutPrepareHeader(HWAVEOUT, LPWAVEHDR, UINT)` — locks the block's pages. */
+    fn waveOutPrepareHeader(device : ptr, header : ptr, size : u32) : i32;
+
+    /** `MMRESULT waveOutWrite(HWAVEOUT, LPWAVEHDR, UINT)` — queues one prepared block. */
+    fn waveOutWrite(device : ptr, header : ptr, size : u32) : i32;
+
+    /** `MMRESULT waveOutUnprepareHeader(HWAVEOUT, LPWAVEHDR, UINT)` — refuses while the block is queued. */
+    fn waveOutUnprepareHeader(device : ptr, header : ptr, size : u32) : i32;
+
+    /** `MMRESULT waveOutReset(HWAVEOUT)` — marks every queued block done, so teardown can unprepare them. */
+    fn waveOutReset(device : ptr) : i32;
+
+    /** `MMRESULT waveOutClose(HWAVEOUT)` — refuses while any block is still prepared. */
+    fn waveOutClose(device : ptr) : i32;
 }

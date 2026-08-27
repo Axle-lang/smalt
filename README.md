@@ -51,7 +51,7 @@
 |---|---|
 | **Language** | 100% [Axle](https://axle-lang.dev) — no C, no bindings, no vendored library |
 | **Platform** | Windows (Win32: `kernel32`, `user32`, `gdi32`, `winmm`) |
-| **Scope** | What a 3D game needs — roughly SDL3 minus audio and gamepads, plus the maths and the renderer SDL leaves to you |
+| **Scope** | What a 3D game needs — roughly SDL3 minus gamepads, plus the maths and the renderer SDL leaves to you |
 | **Rendering** | Software rasteriser on the CPU — near-plane clipping, back-face culling, depth buffer, perspective-correct interpolation, Blinn-Phong |
 | **Failure** | A subsystem that cannot start raises `PlatformError` **from its constructor** — there is no half-built object to test |
 | **Teardown** | Every handle-holding class is `Closeable`, so dropping one without `close()` is a compile error (**E0511**), not a leak found later |
@@ -160,6 +160,7 @@ A textured cube on a tiled floor, lit and depth-tested, at a locked 60 fps. `WAS
 | `mario3d` | same: a game that already had a renderer and just wanted a framebuffer |
 | `hello_window` | the smallest thing that opens and closes cleanly |
 | `math_check` | asserts the maths — runs headless, no display needed |
+| `audio_check` | asserts the WAV decode and the device's block cycle |
 | `proc_check` | asserts the window procedure — headless, under a second |
 
 A program that already has a renderer should not have to adopt one to get a window. smalt stays a framebuffer underneath, and says so by shipping two programs that use it that way.
@@ -264,7 +265,7 @@ The depth buffer stores **reciprocal** depth and the test is *greater wins*, bec
 
 ## 🚧 Not covered
 
-Audio, gamepads, touch, clipboard, dialogs, IME, threads — and Linux and macOS. Also, deliberately, **any GPU backend**.
+Gamepads, touch, clipboard, dialogs, IME, threads — and Linux and macOS. Also, deliberately, **any GPU backend**.
 
 That last one is a limit of the language rather than a choice. Modern OpenGL, Direct3D 11 and 12, and Vulkan all require calling a function address obtained at run time — `wglGetProcAddress` for GL above 1.1, a COM vtable slot for D3D — and Axle cannot call an address it did not link. **OpenGL 1.1 remains open**: its entry points are real named exports of `opengl32.dll`, so a `GlDevice` could be written against the existing `RenderDevice` trait with the FFI Axle has today.
 

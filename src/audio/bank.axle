@@ -1,0 +1,135 @@
+// bank — the variants of one sound, and the die that picks between them.
+//
+// A footstep is not a sound, it is eight recordings of a sound: playing
+// the same one every step is what makes a game's audio read as cheap.
+// A bank is that group, and `playRand` is the only way anything asks for
+// one — so the variant choice cannot be forgotten at a call site.
+//
+// The caller passes the die roll rather than the bank drawing it. The
+// bank has no business owning a random source, and a game that wants a
+// reproducible run needs every draw to come from the one generator it
+// seeded.
+//
+// A bank owns its clips and is the only thing that does; the mixer holds
+// addresses into them. So a bank must outlive every sound it started —
+// which is the normal shape anyway, since a bank is loaded once at
+// startup and closed at exit.
+//
+// Missing files are skipped in silence: a bank of eight variants where
+// three files exist is a bank of three, and a bank of none is a silent
+// no-op that still answers every call.
+
+use crate::audio::clip::Clip;
+use crate::audio::mixer::Mixer;
+
+/**
+ * The loaded variants of one sound.
+ *
+ * `loaded()` is worth asking before playing only when the caller wants a
+ * FALLBACK — a material with no dig clip borrowing stone's. Playing an
+ * empty bank is already safe.
+ */
+pub class SoundBank : Closeable {
+    clips : Clip[];
+    count : i32;
+    cap : i32;
+
+    /** A bank that can hold `capacity` variants. */
+    constructor(capacity : i32) {
+        let n : i32 = capacity;
+        if (n < 1) {
+            n = 1;
+        }
+        self.cap = n;
+        self.count = 0;
+        self.clips = malloc<Clip>(n as i64);
+    }
+
+    /**
+     * Decode `path` and keep it if it decoded.
+     *
+     * A file that is missing or malformed is skipped, so a caller can
+     * offer `1.wav`..`8.wav` and get however many exist without probing
+     * the filesystem first.
+     */
+    fn add(mut self, path : string) : void {
+        if (self.count >= self.cap) {
+            return;
+        }
+        let c = Clip::load(path);
+        if (!c.loaded()) {
+            c.close();
+            return;
+        }
+        self.clips[self.count] = c;
+        self.count = self.count + 1;
+    }
+
+    /** How many variants decoded. */
+    fn size(self) : i32 {
+        return self.count;
+    }
+
+    /** Whether the bank holds any audio at all. */
+    fn loaded(self) : bool {
+        return self.count > 0;
+    }
+
+    /** The variant `rnd` in [0, 1) selects, or -1 when the bank is empty. */
+    fn pick(self, rnd : f64) : i32 {
+        if (self.count <= 0) {
+            return -1;
+        }
+        let i : i32 = (rnd * (self.count as f64)).floorToInt() as i32;
+        if (i < 0) {
+            i = 0;
+        }
+        if (i >= self.count) {
+            i = self.count - 1;
+        }
+        return i;
+    }
+
+    /** Play one variant at a fixed gain — the listener's own sound. */
+    fn playRand(self, mx : Mixer, rnd : f64, gain : f64) : void {
+        let i : i32 = self.pick(rnd);
+        if (i < 0) {
+            return;
+        }
+        mx.play(self.clips[i], gain);
+    }
+
+    /** Play one variant at a world position, fading to nothing at `range`. */
+    fn playRandPos(
+        self,
+        mx : Mixer,
+        rnd : f64,
+        gain : f64,
+        x : f64,
+        y : f64,
+        z : f64,
+        range : f64
+    ) : void {
+        let i : i32 = self.pick(rnd);
+        if (i < 0) {
+            return;
+        }
+        mx.playAt(self.clips[i], gain, x, y, z, range);
+    }
+
+    /**
+     * Release every clip.
+     *
+     * Nothing may be playing from this bank when it closes: the mixer
+     * holds sample addresses, not clips, so a voice still reading one
+     * would read freed memory. Close banks after the mixer.
+     */
+    fn close(self) : void {
+        let i : i32 = 0;
+        while (i < self.count) {
+            self.clips[i].close();
+            i = i + 1;
+        }
+        free(self.clips);
+    }
+}

@@ -1,0 +1,106 @@
+// audio_check — asserts the audio path rather than playing at a human.
+//
+// A build proves the FFI declarations parse. It does not prove that a WAV
+// decodes to the right length, that the device opened, or that the block
+// cycle turns — and those are the three things that are wrong when a game
+// is silent. So this counts failures, the way `math_check` does.
+//
+// It DOES emit sound, briefly: the only honest way to show the device
+// accepted blocks is to give it some.
+//
+// `tone.wav` is a real game asset (a wood dig), PCM mono 44.1 kHz 16-bit,
+// 7 888 frames. Its rate already matches the device's, so the decoded
+// length must match EXACTLY — a resample that dropped or doubled frames
+// would show up here as an off-by-a-ratio rather than as a sound that is
+// subtly wrong.
+//
+// The pump window is two seconds because the FIRST real write costs a
+// one-off device start-up in the hundreds of milliseconds, and a window
+// that did not absorb it would measure that stall rather than the cycle.
+
+use smalt::{Clip, Mixer, SoundBank, Clock};
+
+/** Frames `tone.wav` holds, and therefore what decoding must produce. */
+const EXPECTED_FRAMES : i32 = 7888;
+/** How long to let the block cycle turn, in milliseconds. */
+const PUMP_MS : i64 = 2000;
+/** Blocks in flight; submitting only this many proves nothing recycled. */
+const BLOCKS_IN_FLIGHT : i32 = 4;
+
+fn main() : i32 {
+    let failures = 0;
+
+    // 1. The clip decodes, and to exactly the length the file holds.
+    let clip = Clip::load("tone.wav");
+    if (!clip.loaded()) {
+        println("FAIL: tone.wav did not decode");
+        failures += 1;
+    } else if (clip.frameCount() != EXPECTED_FRAMES) {
+        println("FAIL: decoded ${clip.frameCount()} frames, expected ${EXPECTED_FRAMES}");
+        failures += 1;
+    }
+
+    // 2. Every failure lands on the same silent value — not a crash, not
+    //    garbage frames. The missing-file case matters most: it is the
+    //    one that unwinds.
+    let bogus = Clip::load("axle.toml");
+    if (bogus.loaded()) {
+        println("FAIL: a non-WAV file decoded to ${bogus.frameCount()} frames");
+        failures += 1;
+    }
+    let missing = Clip::load("no_such_file.wav");
+    if (missing.loaded()) {
+        println("FAIL: a missing file decoded");
+        failures += 1;
+    }
+
+    let mixer = new Mixer();
+    let clock = new Clock();
+
+    if (!mixer.isOpen()) {
+        println("SKIP: no output device here; the block cycle is unchecked");
+        mixer.close();
+    } else {
+        let bank = new SoundBank(1);
+        bank.add("tone.wav");
+        if (bank.size() != 1) {
+            println("FAIL: bank loaded ${bank.size()} clips, expected 1");
+            failures += 1;
+        }
+        bank.playRand(mixer, 0.0, 0.8);
+
+        // Strictly more than the blocks in flight: exactly four would mean
+        // the device took what was free and never gave one back, which is
+        // the shape of a queue that has stalled.
+        let submitted = 0;
+        let deadline = clock.ticks() + PUMP_MS;
+        while (clock.ticks() < deadline) {
+            if (mixer.pump()) {
+                submitted += 1;
+            }
+            clock.delay(1);
+        }
+        if (submitted <= BLOCKS_IN_FLIGHT) {
+            println("FAIL: ${submitted} blocks submitted — nothing was recycled");
+            failures += 1;
+        } else {
+            println("blocks submitted and recycled: ${submitted}");
+        }
+
+        // The mixer holds sample addresses into the bank's clips, so it
+        // stops before the bank frees them.
+        mixer.close();
+        bank.close();
+    }
+
+    clock.close();
+    missing.close();
+    bogus.close();
+    clip.close();
+
+    println("failures: ${failures}");
+    if (failures > 0) {
+        return 1;
+    }
+    return 0;
+}

@@ -13,12 +13,15 @@
 //   video    the window, and the Win32 driver behind it
 //   math     vectors, matrices, quaternions, geometry
 //   render   meshes, textures, the camera, and the software rasteriser
+//   audio    WAV clips, the software mixer, and banks of variants
 
 use crate::kernel::{raw, blob, wide};
 
 use crate::sys::{win32_types, win32_layout_check, win32_kernel, win32_user, win32_gdi, win32_mm};
 
-use crate::platform::{sys_clock, sys_app, sys_screen, sys_blit, sys_pump};
+use crate::platform::{sys_clock, sys_app, sys_screen, sys_blit, sys_pump, sys_audio};
+
+use crate::audio::{clip, mixer, bank};
 
 use crate::core::{error, init, timer, event, keyboard, mouse, pump};
 

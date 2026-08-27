@@ -1,0 +1,221 @@
+// clip — a WAV file decoded into the one shape the mixer can add.
+//
+// Everything is normalised at load: mono, signed 16-bit, at the device's
+// rate. That is deliberate — a mixer that had to ask each source for its
+// channel count and rate would branch per sample, and the conversion is
+// paid once at load instead of sixty times a second forever.
+//
+// Mono rather than stereo because a positional source has no stereo to
+// preserve: its two channels are computed from where it is relative to
+// the listener, so a stereo file's own panning would fight the
+// attenuation. A stereo file is downmixed by averaging.
+//
+// Resampling is nearest-neighbour. For speech or music that would be
+// audible; for the short, noisy, already-lossy clips a game plays it is
+// not, and the alternative costs a filter per sample at load for a
+// difference nobody hears over a footstep.
+//
+// A file that is missing, truncated, not RIFF/WAVE, not PCM, or not
+// 16-bit yields an EMPTY clip rather than an error. A game with one bad
+// sound file should lose that sound, not fail to start — so every
+// failure lands on the same silent no-op and no caller writes a branch.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::io::file::AssetFile;
+use crate::platform::sys_audio::AUDIO_RATE;
+
+/** Offset of the first chunk header — past `RIFF` size `WAVE`. */
+const WAV_FIRST_CHUNK : i64 = 12;
+/** Bytes of a chunk header: four-character id then a `u32` size. */
+const WAV_CHUNK_HEADER : i64 = 8;
+/** The only sample width decoded. */
+const WAV_BITS : i32 = 16;
+/** The only format tag decoded — uncompressed PCM. */
+const WAV_PCM : i32 = 1;
+/** Bytes per decoded sample. */
+const CLIP_SAMPLE_BYTES : i64 = 2;
+
+/**
+ * Four bytes at `off` read as a chunk id, packed little-endian into an
+ * `i32` so a comparison is one integer compare rather than four.
+ */
+fn fourCC(base : ptr, off : i64) : i32 {
+    return Raw::u8At(base, off)
+         | (Raw::u8At(base, off + 1) << 8)
+         | (Raw::u8At(base, off + 2) << 16)
+         | (Raw::u8At(base, off + 3) << 24);
+}
+
+/** `'R','I','F','F'` packed as `fourCC` packs it. */
+fn ccRiff() : i32 {
+    return 82 | (73 << 8) | (70 << 16) | (70 << 24);
+}
+
+/** `'W','A','V','E'`. */
+fn ccWave() : i32 {
+    return 87 | (65 << 8) | (86 << 16) | (69 << 24);
+}
+
+/** `'f','m','t',' '`. */
+fn ccFmt() : i32 {
+    return 102 | (109 << 8) | (116 << 16) | (32 << 24);
+}
+
+/** `'d','a','t','a'`. */
+fn ccData() : i32 {
+    return 100 | (97 << 8) | (116 << 16) | (97 << 24);
+}
+
+/** A `u16` at `off`, sign-extended to the `i32` a sample is mixed as. */
+fn sampleAt(base : ptr, off : i64) : i32 {
+    let v : i32 = Raw::u16At(base, off);
+    if (v >= 32768) {
+        return v - 65536;
+    }
+    return v;
+}
+
+/**
+ * One decoded sound: mono 16-bit frames at the device rate.
+ *
+ * An empty clip — no frames — is the failure value and is legal
+ * everywhere: playing it is a no-op.
+ */
+pub class Clip : Closeable {
+    samples : Blob;
+    frames : i32;
+
+    /** An empty clip. Playing it does nothing. */
+    constructor() {
+        self.samples = new Blob(CLIP_SAMPLE_BYTES);
+        self.frames = 0;
+    }
+
+    /** Frames of mono audio, zero when the clip failed to load. */
+    fn frameCount(self) : i32 {
+        return self.frames;
+    }
+
+    /** Whether the clip carries any audio. */
+    fn loaded(self) : bool {
+        return self.frames > 0;
+    }
+
+    /**
+     * The base address of the mono sample run.
+     *
+     * An ADDRESS, not the block: a voice that held the block would be a
+     * second owner of samples the clip owns, and the buffer would be
+     * freed while the voice was still reading it.
+     */
+    fn base(self) : i64 {
+        return Raw::addr(self.samples.at());
+    }
+
+    /**
+     * Decode `path`. Any failure yields an empty clip.
+     *
+     * The whole file is read first because a WAV's chunks are a walk, not
+     * a fixed layout: the `data` chunk's offset is only known after every
+     * preceding chunk has been stepped over.
+     */
+    static fn load(path : string) : Clip {
+        let out = new Clip();
+        try {
+            let file = AssetFile::readAll(path);
+            // Closed on the ordinary path rather than by `defer`: a
+            // `defer` registered inside this `try` would also arm for the
+            // case where `readAll` threw and `file` was never bound.
+            // `decode` cannot throw, so there is no other way out.
+            out.decode(file);
+            file.close();
+        } catch e : IOException {
+            // A missing sound is silence, not a failure to report.
+        }
+        return out;
+    }
+
+    /** Walk `file`'s chunks and fill this clip, or leave it empty. */
+    fn decode(mut self, file : Blob) : void {
+        let n : i64 = file.bytes();
+        if (n < WAV_FIRST_CHUNK) {
+            return;
+        }
+        let base : ptr = file.at();
+        if (fourCC(base, 0) != ccRiff() || fourCC(base, 8) != ccWave()) {
+            return;
+        }
+
+        let channels : i32 = 0;
+        let rate : i32 = 0;
+        let dataOff : i64 = 0;
+        let dataLen : i64 = 0;
+
+        let at : i64 = WAV_FIRST_CHUNK;
+        while (at + WAV_CHUNK_HEADER <= n) {
+            let id : i32 = fourCC(base, at);
+            let size : i64 = (Raw::i32At(base, at + 4) as i64) & 4294967295;
+            let body : i64 = at + WAV_CHUNK_HEADER;
+            if (body + size > n) {
+                // A chunk that claims more than the file holds: stop
+                // rather than read past the block.
+                size = n - body;
+            }
+            if (id == ccFmt() && size >= 16) {
+                if (Raw::u16At(base, body) != WAV_PCM) {
+                    return;
+                }
+                if (Raw::u16At(base, body + 14) != WAV_BITS) {
+                    return;
+                }
+                channels = Raw::u16At(base, body + 2);
+                rate = Raw::i32At(base, body + 4);
+            } else if (id == ccData()) {
+                dataOff = body;
+                dataLen = size;
+            }
+            // Chunks are word-aligned: an odd size carries a pad byte
+            // that is not counted in the size field.
+            at = body + size + (size & 1);
+        }
+
+        if (channels <= 0 || rate <= 0 || dataLen <= 0) {
+            return;
+        }
+        let srcFrames : i32 = (dataLen / (CLIP_SAMPLE_BYTES * (channels as i64))) as i32;
+        if (srcFrames <= 0) {
+            return;
+        }
+        let outFrames : i32 = (((srcFrames as i64) * (AUDIO_RATE as i64)) / (rate as i64)) as i32;
+        if (outFrames <= 0) {
+            return;
+        }
+
+        // Assigned, not closed-then-assigned: the field's previous block
+        // is the compiler's to drop, and closing it here as well is the
+        // second free.
+        self.samples = new Blob((outFrames as i64) * CLIP_SAMPLE_BYTES);
+        let dst : ptr = self.samples.at();
+        let i : i32 = 0;
+        while (i < outFrames) {
+            let src : i32 = (((i as i64) * (rate as i64)) / (AUDIO_RATE as i64)) as i32;
+            if (src >= srcFrames) {
+                src = srcFrames - 1;
+            }
+            let off : i64 = dataOff + (src as i64) * CLIP_SAMPLE_BYTES * (channels as i64);
+            let v : i32 = sampleAt(base, off);
+            if (channels > 1) {
+                v = (v + sampleAt(base, off + CLIP_SAMPLE_BYTES)) / 2;
+            }
+            Raw::putU16(dst, (i as i64) * CLIP_SAMPLE_BYTES, v & 65535);
+            i = i + 1;
+        }
+        self.frames = outFrames;
+    }
+
+    /** Release the sample run. */
+    fn close(self) : void {
+        self.samples.close();
+    }
+}
