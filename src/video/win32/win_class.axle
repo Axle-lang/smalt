@@ -1,0 +1,73 @@
+// win_class — registering the window class, with a procedure of our own.
+//
+// `RegisterClassExW` will not accept a class without an `lpfnWndProc`,
+// and what that field wants is a *C-callable address*. An Axle function
+// value is the fat `{ code, env }` pair, which is not one — so this file
+// used to register the class with `DefWindowProcW` itself, fetched from
+// `user32.dll` by `GetProcAddress`, and the library read what it could
+// from the message queue instead.
+//
+// A named `fn` now degrades to `extern "C" (…) => R`, one machine word
+// holding its own address, so the class carries
+// `win_proc::windowProc` and the messages Windows *sends* arrive as
+// messages. What that removes is documented in `core::pump`: a frame of
+// polling that reconstructed them by diffing the client rect, the
+// foreground window and the iconic flag against the previous frame.
+//
+// The class name is registered as an atom, so the UTF-16 buffer is the
+// OS's to copy and ours to release as soon as the call returns.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::sys::wide::Wide;
+use crate::sys::win32_types::WNDCLASSEXW;
+use crate::sys::win32_user::{RegisterClassExW, LoadCursorW};
+use crate::video::win_proc::windowProc;
+use crate::video::win_const::{CS_HREDRAW, CS_VREDRAW, CS_OWNDC, IDC_ARROW};
+
+/** The class every smalt window is created from. */
+const WIN_CLASS_NAME : string = "smalt.window";
+
+/** Registration of the one window class the library uses. */
+class WinClass {
+    /** The class name, as `CreateWindowExW` wants it. */
+    static fn name() : Blob {
+        return Wide::from(WIN_CLASS_NAME);
+    }
+
+    /**
+     * Register the class for `instance`. Answers whether a window may
+     * now be created from it.
+     *
+     * Registering twice fails with `ERROR_CLASS_ALREADY_EXISTS`, so the
+     * caller (`Platform`) does it exactly once and keeps the answer.
+     */
+    static fn register(instance : ptr) : bool {
+        // Both blocks must outlive `RegisterClassExW` — `wc` holds the
+        // address of `name` — and both are released once it returns,
+        // whichever way this function leaves.
+        let name = Wide::from(WIN_CLASS_NAME);
+        defer name.close();
+        let block = new Blob(sizeof<WNDCLASSEXW>());
+        defer block.close();
+
+        unsafe {
+            let wc : ptr<WNDCLASSEXW> = block.at() as ptr<WNDCLASSEXW>;
+            // `cbSize` is the size of the very record being filled, so it
+            // is the same expression the allocation used. There is no
+            // longer a number that could disagree with the other.
+            (*wc).cbSize = sizeof<WNDCLASSEXW>() as u32;
+            (*wc).style = (CS_HREDRAW | CS_VREDRAW | CS_OWNDC) as u32;
+            // The named function degrades to its own address here: the
+            // field's type *is* the procedure's signature, so a procedure
+            // that does not match is refused at this line rather than
+            // discovered by the OS calling it wrongly.
+            (*wc).lpfnWndProc = windowProc;
+            (*wc).hInstance = instance;
+            (*wc).hCursor = LoadCursorW(Raw::nil(), Raw::at(IDC_ARROW));
+            (*wc).lpszClassName = name.at();
+
+            return RegisterClassExW(wc) != 0;
+        }
+    }
+}

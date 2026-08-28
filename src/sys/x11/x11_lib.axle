@@ -1,0 +1,266 @@
+// x11_lib — the `libX11` imports.
+//
+// Declarations only. The block names the library, so the link line
+// learns of `-lX11` from the declaration that needs it rather than from
+// a manifest a consumer would have to be told about.
+//
+// Two spellings matter here and are easy to get wrong:
+//
+//   * A `Window`, a `Pixmap`, a `Cursor`, an `Atom` and a `Time` are all
+//     `unsigned long` — 64-bit on every target this backend builds for —
+//     so they cross as `i64`, never as `i32`. Half of one of these is a
+//     resource id the server has never heard of.
+//   * `XDefaultScreen`, `XRootWindow`, `XBlackPixel`, `XDefaultVisual`
+//     and `XDefaultDepth` are macros in `Xlib.h` **and** real exported
+//     functions in the library. The functions are what is imported here;
+//     the macros are what a C program usually gets, which is why their
+//     function forms are easy to believe do not exist.
+//
+// Xlib is not thread-safe unless `XInitThreads` was called first, and
+// this library never calls it: every X call it makes is on the thread
+// that opened the display, because the audio mixer is the only thread
+// smalt starts and it touches no window.
+
+use crate::sys::x11_types::{XImage, XSizeHints};
+
+extern "C" from "X11" {
+    /** `Display *XOpenDisplay(const char *)` — NULL reads `$DISPLAY`. */
+    fn XOpenDisplay(name : ptr) : ptr;
+
+    /** `int XCloseDisplay(Display *)` — releases the connection. */
+    fn XCloseDisplay(display : ptr) : i32;
+
+    /** `int XDefaultScreen(Display *)`. */
+    fn XDefaultScreen(display : ptr) : i32;
+
+    /** `Window XRootWindow(Display *, int screen)`. */
+    fn XRootWindow(display : ptr, screen : i32) : i64;
+
+    /** `int XDisplayWidth(Display *, int screen)` — in pixels. */
+    fn XDisplayWidth(display : ptr, screen : i32) : i32;
+
+    /** `int XDisplayHeight(Display *, int screen)`. */
+    fn XDisplayHeight(display : ptr, screen : i32) : i32;
+
+    /** `int XDefaultDepth(Display *, int screen)` — bits of colour. */
+    fn XDefaultDepth(display : ptr, screen : i32) : i32;
+
+    /** `Visual *XDefaultVisual(Display *, int screen)`. */
+    fn XDefaultVisual(display : ptr, screen : i32) : ptr;
+
+    /** `unsigned long XBlackPixel(Display *, int screen)`. */
+    fn XBlackPixel(display : ptr, screen : i32) : i64;
+
+    /**
+     * `Window XCreateSimpleWindow(Display *, Window parent, int x, int y,
+     *                             unsigned int w, unsigned int h,
+     *                             unsigned int border_width,
+     *                             unsigned long border,
+     *                             unsigned long background)`.
+     *
+     * The simple form inherits the parent's visual and depth, which is
+     * what a framebuffer blitted with `XPutImage` wants: matching the
+     * root's visual is what makes the put a copy rather than a
+     * conversion.
+     */
+    fn XCreateSimpleWindow(
+        display : ptr,
+        parent : i64,
+        x : i32,
+        y : i32,
+        w : i32,
+        h : i32,
+        borderWidth : i32,
+        border : i64,
+        background : i64
+    ) : i64;
+
+    /** `int XDestroyWindow(Display *, Window)`. */
+    fn XDestroyWindow(display : ptr, window : i64) : i32;
+
+    /** `int XStoreName(Display *, Window, const char *)` — the title. */
+    fn XStoreName(display : ptr, window : i64, name : string) : i32;
+
+    /** `int XSelectInput(Display *, Window, long event_mask)`. */
+    fn XSelectInput(display : ptr, window : i64, mask : i64) : i32;
+
+    /** `int XMapRaised(Display *, Window)` — show, and raise. */
+    fn XMapRaised(display : ptr, window : i64) : i32;
+
+    /** `int XUnmapWindow(Display *, Window)` — hide. */
+    fn XUnmapWindow(display : ptr, window : i64) : i32;
+
+    /** `int XFlush(Display *)` — send what is buffered. */
+    fn XFlush(display : ptr) : i32;
+
+    /** `int XSync(Display *, Bool discard)` — send, and wait for the reply. */
+    fn XSync(display : ptr, discard : i32) : i32;
+
+    /** `int XPending(Display *)` — events already readable. */
+    fn XPending(display : ptr) : i32;
+
+    /**
+     * `int XNextEvent(Display *, XEvent *)`.
+     *
+     * **Blocks** when the queue is empty, which is why every call is
+     * guarded by `XPending`: a frame loop that blocked here would stop
+     * rendering until the player moved the mouse.
+     */
+    fn XNextEvent(display : ptr, event : ptr) : i32;
+
+    /** `GC XCreateGC(Display *, Drawable, unsigned long, XGCValues *)`. */
+    fn XCreateGC(display : ptr, drawable : i64, mask : i64, values : ptr) : ptr;
+
+    /** `int XFreeGC(Display *, GC)`. */
+    fn XFreeGC(display : ptr, gc : ptr) : i32;
+
+    /**
+     * `Status XInitImage(XImage *)` — fill in the record's own function
+     * table and derived fields. Non-zero on success.
+     */
+    fn XInitImage(image : ptr<XImage>) : i32;
+
+    /**
+     * `int XPutImage(Display *, Drawable, GC, XImage *, int src_x,
+     *                int src_y, int dest_x, int dest_y,
+     *                unsigned int width, unsigned int height)`.
+     *
+     * Copies `width` by `height` pixels one for one — there is no
+     * scaling in the X protocol, so a caller whose framebuffer differs
+     * from the window resamples first.
+     */
+    fn XPutImage(
+        display : ptr,
+        drawable : i64,
+        gc : ptr,
+        image : ptr<XImage>,
+        srcX : i32,
+        srcY : i32,
+        destX : i32,
+        destY : i32,
+        width : i32,
+        height : i32
+    ) : i32;
+
+    /**
+     * `Status XSendEvent(Display *, Window, Bool propagate,
+     *                    long event_mask, XEvent *)`.
+     *
+     * The X11 analogue of `SendMessageW`, and not its twin: this one
+     * *queues* the event rather than delivering it, so a caller that
+     * needs it to have arrived follows it with `XSync`. It is what lets
+     * the library prove its own event path with nobody at the keyboard.
+     */
+    fn XSendEvent(display : ptr, window : i64, propagate : i32, mask : i64, event : ptr) : i32;
+
+    /** `Atom XInternAtom(Display *, const char *, Bool only_if_exists)`. */
+    fn XInternAtom(display : ptr, name : string, onlyIfExists : i32) : i64;
+
+    /** `Status XSetWMProtocols(Display *, Window, Atom *, int count)`. */
+    fn XSetWMProtocols(display : ptr, window : i64, protocols : ptr<i64>, count : i32) : i32;
+
+    /** `void XSetWMNormalHints(Display *, Window, XSizeHints *)`. */
+    fn XSetWMNormalHints(display : ptr, window : i64, hints : ptr<XSizeHints>) : void;
+
+    /**
+     * `int XChangeProperty(Display *, Window, Atom property, Atom type,
+     *                      int format, int mode, const unsigned char *,
+     *                      int nelements)`.
+     */
+    fn XChangeProperty(
+        display : ptr,
+        window : i64,
+        property : i64,
+        type_ : i64,
+        format : i32,
+        mode : i32,
+        data : ptr,
+        nelements : i32
+    ) : i32;
+
+    /**
+     * `int XWarpPointer(Display *, Window src, Window dest, int src_x,
+     *                   int src_y, unsigned int src_w, unsigned int src_h,
+     *                   int dest_x, int dest_y)`.
+     *
+     * With `src` as `None` the destination coordinates are relative to
+     * `dest`, so a recentre needs no client-to-screen conversion — which
+     * is one thing this platform gives away that Win32 charges for.
+     */
+    fn XWarpPointer(
+        display : ptr,
+        srcWindow : i64,
+        destWindow : i64,
+        srcX : i32,
+        srcY : i32,
+        srcWidth : i32,
+        srcHeight : i32,
+        destX : i32,
+        destY : i32
+    ) : i32;
+
+    /** `int XDefineCursor(Display *, Window, Cursor)`. */
+    fn XDefineCursor(display : ptr, window : i64, cursor : i64) : i32;
+
+    /** `int XUndefineCursor(Display *, Window)` — back to the parent's. */
+    fn XUndefineCursor(display : ptr, window : i64) : i32;
+
+    /**
+     * `Pixmap XCreateBitmapFromData(Display *, Drawable, const char *,
+     *                               unsigned int w, unsigned int h)`.
+     *
+     * A one-bit-deep pixmap. One all-zero pixel of it is the source and
+     * the mask of an invisible cursor, which is how X11 hides a pointer:
+     * there is no "hide" call, only a cursor that draws nothing.
+     */
+    fn XCreateBitmapFromData(
+        display : ptr,
+        drawable : i64,
+        data : ptr,
+        width : i32,
+        height : i32
+    ) : i64;
+
+    /**
+     * `Cursor XCreatePixmapCursor(Display *, Pixmap source, Pixmap mask,
+     *                             XColor *fg, XColor *bg,
+     *                             unsigned int x, unsigned int y)`.
+     */
+    fn XCreatePixmapCursor(
+        display : ptr,
+        source : i64,
+        mask : i64,
+        foreground : ptr,
+        background : ptr,
+        x : i32,
+        y : i32
+    ) : i64;
+
+    /** `int XFreeCursor(Display *, Cursor)`. */
+    fn XFreeCursor(display : ptr, cursor : i64) : i32;
+
+    /** `int XFreePixmap(Display *, Pixmap)`. */
+    fn XFreePixmap(display : ptr, pixmap : i64) : i32;
+
+    /**
+     * `int XLookupString(XKeyEvent *, char *buffer, int bytes,
+     *                    KeySym *, XComposeStatus *)`.
+     *
+     * Returns how many bytes it wrote. This is the layout-dependent
+     * half of the keyboard — the character a key produces — and it is
+     * deliberately kept apart from the scancode path, which names a
+     * position and consults no layout.
+     */
+    fn XLookupString(event : ptr, buffer : ptr, bytes : i32, keysym : ptr<i64>, status : ptr) : i32;
+
+    /**
+     * `Bool XkbSetDetectableAutoRepeat(Display *, Bool detectable,
+     *                                  Bool *supported)`.
+     *
+     * Without it, holding a key produces a `KeyRelease` before every
+     * repeated `KeyPress` — which reads as the player letting go sixty
+     * times a second. With it, a repeat is a `KeyPress` with no release,
+     * and "was it already down" is a question the held state answers.
+     */
+    fn XkbSetDetectableAutoRepeat(display : ptr, detectable : i32, supported : ptr<i32>) : i32;
+}

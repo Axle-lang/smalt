@@ -1,6 +1,6 @@
 // shade — the fragment shader, written as a function instead of a string.
 //
-// An SDL_GPU program would hand precompiled SPIR-V or DXIL to the
+// A hardware backend would hand precompiled SPIR-V or DXIL to the
 // driver here. There is no driver: this runs per fragment, on the CPU,
 // in Axle, which is why it is a small Blinn-Phong and not a material
 // graph.
@@ -29,10 +29,12 @@ const SHADE_MIN_SPECULAR : f64 = 0.0001;
 pub struct Shading {
     /** The surface being drawn. */
     pub material : Material;
+
     /** The one light in the scene. */
-    pub light : DirectionalLight;
+    pub light    : DirectionalLight;
+
     /** Where the camera is, for the specular term. */
-    pub eye : Vec3;
+    pub eye      : Vec3;
 
     /** The shading state for a material, a light and a viewpoint. */
     static fn make(material : Material, light : DirectionalLight, eye : Vec3) : Shading {

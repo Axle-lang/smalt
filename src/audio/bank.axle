@@ -32,7 +32,7 @@ use crate::audio::mixer::Mixer;
 pub class SoundBank : Closeable {
     clips : Clip[];
     count : i32;
-    cap : i32;
+    cap   : i32;
 
     /** A bank that can hold `capacity` variants. */
     constructor(capacity : i32) {

@@ -1,0 +1,221 @@
+// sys_window — the platform seam for a window and its drawing surface.
+//
+// THE CONTRACT, which a port honours and nothing above it may look
+// behind. A `SysWindow` that exists is a window that opened: creation
+// raises `PlatformError` rather than yielding a half-object, so no
+// method below has to test for one.
+//
+//   surface()             the token `SysBlit::present` blits onto
+//   handle()              the window's identity, for the pump and the
+//                         cursor
+//   width() / height()    the client area, as of the last adopted resize
+//   alive()               whether the OS still has this window
+//   show() / hide() / setTitle(t)
+//   takeClose()           the user asked to close, clearing the request
+//   takeResize()          a resize is waiting; adopts it into
+//                         width()/height() and answers whether the size
+//                         actually changed
+//   takeFocusEdge()       focused()    — an edge, then the state
+//   takeMinimiseEdge()    minimised()  — an edge, then the state
+//   selfCheck(w, h)       0 when the platform's event path works, else
+//                         which step of it did not
+//
+// Every `take*` is a latch the reader clears, so a message that arrives
+// twice between two frames is reported once and a frame that runs long
+// loses nothing.
+//
+// Windows: an `HWND`, its `CS_OWNDC` device context, and the block the
+// window procedure writes into — the OS holds that block's *address*,
+// which is why it is a `WinProcBlock` and not a field of this class. The
+// handles are not reclaimed by the synthesised destructor, so this is
+// `Closeable` and the compiler (E0511) refuses a path that drops one
+// without `close()`.
+//
+// Linux: an X11 `Window` id plus the `Display*` and a `GC`; the latches
+// are this class's own, written by `SysDrain` out of `ConfigureNotify` /
+// `FocusIn` / `FocusOut` / `ClientMessage(WM_DELETE_WINDOW)`, since X11
+// has no window procedure to write them from.
+
+use crate::core::error::PlatformError;
+use crate::kernel::raw::Raw;
+use crate::video::win_proc::{selfCheck, WinProcBlock};
+use crate::video::win_window::WinWindow;
+
+/** An on-screen window and its drawing surface, on Win32. */
+pub class SysWindow : Closeable {
+    hwnd : ptr;
+    hdc  : ptr;
+    w    : i32;
+    h    : i32;
+
+    /**
+     * What the window procedure recorded, waiting for the next pump.
+     *
+     * The OS holds this block's *address*, so it is a resource with a
+     * lifetime this class spells rather than a field the compiler is
+     * free to move.
+     */
+    proc : WinProcBlock;
+
+    /**
+     * Create a window with a `w` by `h` **client** area.
+     *
+     * `app` is the token `SysApp::instance` produced. The three booleans
+     * are the seam's window flags, unpacked by `Window` — this layer
+     * takes them apart rather than sharing a flag word, because what
+     * each one costs is platform-specific and a bit pattern would have
+     * to mean the same thing on both.
+     */
+    constructor(
+        app : ptr,
+        title : string,
+        w : i32,
+        h : i32,
+        resizable : bool,
+        borderless : bool,
+        hidden : bool
+    ) ! PlatformError {
+        self.w = w;
+        self.h = h;
+        let style = WinWindow::styleFor(resizable, borderless);
+        self.proc = new WinProcBlock();
+        self.hwnd = WinWindow::create(app, title, w, h, style);
+        if (Raw::isNil(self.hwnd)) {
+            self.proc.close();
+            throw PlatformError("CreateWindowExW refused a ${w}x${h} window");
+        }
+        // From here on the procedure can find this window's block. The
+        // messages that arrived during creation went to `DefWindowProcW`
+        // with nothing to record — which is why the size above is the
+        // requested one rather than a waited-for `WM_SIZE`.
+        WinWindow::attachProcState(self.hwnd, self.proc.at());
+        self.hdc = WinWindow::context(self.hwnd);
+        if (!hidden) {
+            WinWindow::show(self.hwnd);
+        }
+    }
+
+    /** The drawable `SysBlit::present` writes onto — here, an `HDC`. */
+    fn surface(self) : ptr {
+        return self.hdc;
+    }
+
+    /** The window's identity, for the pump and the cursor. */
+    fn handle(self) : ptr {
+        return self.hwnd;
+    }
+
+    /** Client-area width, in pixels. */
+    fn width(self) : i32 {
+        return self.w;
+    }
+
+    /** Client-area height, in pixels. */
+    fn height(self) : i32 {
+        return self.h;
+    }
+
+    /**
+     * Whether the OS still has this window.
+     *
+     * The procedure records `WM_CLOSE` instead of obeying it, so a close
+     * is a *request*: the handle stays valid until `close()`, which is
+     * what lets a game prompt, save, or refuse.
+     */
+    fn alive(self) : bool {
+        return !self.proc.destroyed() && WinWindow::alive(self.hwnd);
+    }
+
+    /** Make a hidden window visible and bring it forward. */
+    fn show(mut self) : void {
+        WinWindow::show(self.hwnd);
+    }
+
+    /** Hide the window without destroying it. */
+    fn hide(mut self) : void {
+        WinWindow::hide(self.hwnd);
+    }
+
+    /** Replace the title bar text. */
+    fn setTitle(mut self, title : string) : void {
+        WinWindow::retitle(self.hwnd, title);
+    }
+
+    /** Whether the user asked to close the window, clearing the request. */
+    fn takeClose(mut self) : bool {
+        return self.proc.takeClose();
+    }
+
+    /**
+     * Adopt a waiting resize, answering whether the client size changed.
+     *
+     * The size comes from the `WM_SIZE` itself rather than from a
+     * `GetClientRect` diff, so a window dragged through twenty
+     * intermediate sizes reports the last one and not a poll's idea of
+     * it. A zero extent is refused: a minimised window reports 0x0, and
+     * adopting that would resize the framebuffer to nothing.
+     */
+    fn takeResize(mut self) : bool {
+        if (!self.proc.takeResize()) {
+            return false;
+        }
+        let nw = self.proc.width();
+        let nh = self.proc.height();
+        if (nw <= 0 || nh <= 0) {
+            return false;
+        }
+        if (nw == self.w && nh == self.h) {
+            return false;
+        }
+        self.w = nw;
+        self.h = nh;
+        return true;
+    }
+
+    /** Whether a focus edge is waiting, clearing it. */
+    fn takeFocusEdge(mut self) : bool {
+        return self.proc.takeFocusEdge();
+    }
+
+    /** Whether the window holds input focus. */
+    fn focused(self) : bool {
+        return self.proc.focused();
+    }
+
+    /** Whether a minimise / restore edge is waiting, clearing it. */
+    fn takeMinimiseEdge(mut self) : bool {
+        return self.proc.takeMinimiseEdge();
+    }
+
+    /** Whether the window is minimised — the frame to skip. */
+    fn minimised(self) : bool {
+        return self.proc.minimised();
+    }
+
+    /**
+     * Run the platform's event path against this window — 0 when every
+     * step worked, otherwise which one did not.
+     *
+     * On Win32 the steps are the four *sent* messages, delivered with
+     * `SendMessageW` so the procedure runs synchronously with nobody at
+     * the keyboard. That is the one part of the library a program cannot
+     * exercise on its own, because those messages arrive from the OS and
+     * not from the frame loop.
+     *
+     * The window is left as it was found — the close is recorded, not
+     * obeyed — but the size *is* adopted, and one resize is left waiting
+     * for the next pump. So this is called before a frame loop and not
+     * during one.
+     */
+    fn selfCheck(mut self, width : i32, height : i32) : i32 {
+        return selfCheck(self.hwnd, self.proc, width, height);
+    }
+
+    /** Destroy the window and release the procedure's block. */
+    fn close(self) : void {
+        if (WinWindow::alive(self.hwnd)) {
+            WinWindow::destroy(self.hwnd);
+        }
+        self.proc.close();
+    }
+}

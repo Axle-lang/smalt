@@ -11,14 +11,14 @@
 //
 // Build & run:  axle run            (nothing to ship — smalt is Win32)
 
-use smalt::{Platform, PlatformError, Window, WindowFlags, Clock, Events, Event, EventKind, Scancode, SoftDevice};
+use smalt::{Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode, SoftDevice, WINDOW_NONE};
 use scene::clearFrame;
 use scene::renderTorus;
 use config::screenW;
 use config::screenH;
 use config::spinX;
 use config::spinZ;
-use config::frameMillis;
+use config::frameRate;
 
 fn main() : i32 {
     try {
@@ -35,7 +35,7 @@ fn run() : i32 ! PlatformError {
 
     let platform = new Platform()?;
     defer platform.close();
-    let win = platform.createWindow("Axle 3D — a torus, by hand", w, h, WindowFlags::none())?;
+    let win = platform.createWindow("Axle 3D — a torus, by hand", w, h, WINDOW_NONE)?;
     defer win.close();
     let device = new SoftDevice(w, h);
     defer device.close();
@@ -52,9 +52,11 @@ fn run() : i32 ! PlatformError {
     let a : f64 = 0.0;
     let b : f64 = 0.0;
     let running : bool = true;
+    let pacer = new FramePacer(frameRate);
 
     while (running && win.isOpen()) {
-        events.pump(win, clock.ticks());
+        pacer.tick(clock);
+        events.pump(win, clock);
         while (events.hasNext()) {
             let e : Event = events.next();
             if (e.kind == EventKind::Quit) {
@@ -79,7 +81,6 @@ fn run() : i32 ! PlatformError {
 
         a = a + spinX;
         b = b + spinZ;
-        clock.delay(frameMillis);
     }
 
     free(zb);

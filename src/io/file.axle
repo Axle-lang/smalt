@@ -1,25 +1,47 @@
 // file — reading a whole file into memory.
 //
-// The counterpart of `SDL_LoadFile`. It goes straight to libc rather
-// than through the Axle standard library's `File` / `FileInputStream`,
-// for one reason: those signal failure by throwing, and every caller
-// would then have to carry an `! IOException` contract up to `main` for
-// a condition an asset loader handles locally. A missing texture should
-// leave a visible magenta surface, not unwind the program.
+// The read goes straight to libc rather than through the standard
+// library's `File` / `FileInputStream`, for one reason: those signal
+// failure by throwing, and every caller would then carry an
+// `! IOException` contract up to `main` for a condition an asset loader
+// handles locally. A missing texture should leave a visible magenta
+// surface, not unwind the program.
+//
+// The *probe* is the opposite. `Path::isFile` asks the runtime's
+// `pathKind` shim, which is one `stat`: no descriptor allocated, no
+// stdio buffer, nothing to close, and it answers "a readable file"
+// rather than "something opened" — a directory opens on some platforms.
+// Opening a file to find out whether it exists is the expensive way to
+// ask a cheap question.
 
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
-use std::ffi::libc::fs::{fopen, fclose, fread, fseek, ftell};
+use std::ffi::libc::fs;
+use std::io::path::Path;
 
 /** `SEEK_SET` — offsets are from the start of the file. */
 const FILE_SEEK_SET : i32 = 0;
+
 /** `SEEK_END` — offsets are from the end of the file. */
 const FILE_SEEK_END : i32 = 2;
+
 /** The mode every asset is opened with: read, binary. */
 const FILE_MODE_READ : string = "rb";
 
 /** Whole-file reads. */
 pub class AssetFile {
+    /**
+     * Whether `path` names a readable file.
+     *
+     * For the one question a loader legitimately asks before it starts:
+     * *where* the assets are — beside the binary, or one directory up.
+     * It is not for guarding a read: `readAll` already reports a missing
+     * file, and testing first is a race and a second syscall.
+     */
+    static fn exists(path : string) : bool {
+        return Path::from(path).isFile();
+    }
+
     /**
      * The contents of `path`.
      *
@@ -27,23 +49,54 @@ pub class AssetFile {
      * caller that treats them identically writes one `catch`. The caller
      * owns the blob it receives and closes it.
      */
+    /**
+     * Read up to `bytes` of `path` into a caller-owned block at `base`,
+     * answering how many bytes arrived.
+     *
+     * The shape an asset loader wants: the caller already knows how
+     * big the thing should be — a
+     * texture atlas is `tile * tile * 4 * tiles` — so it allocates once
+     * and compares the count. Zero means the file could not be opened,
+     * which is the same answer a caller treats an empty read as.
+     */
+    static fn readInto(path : string, base : i64, bytes : i64) : i64 {
+        if (base == 0 || bytes <= 0) {
+            return 0;
+        }
+        let stream = fs::fopen(path, FILE_MODE_READ);
+        if (Raw::isNil(stream)) {
+            return 0;
+        }
+        let got = fs::fread(Raw::at(base), 1, bytes, stream);
+        fs::fclose(stream);
+        return got;
+    }
+
+    /**
+     * The contents of `path` as an owned block.
+     *
+     * The library's own decoders use this. It is not reachable from
+     * another crate — `Blob` is smalt's, not its consumers' — which is
+     * what `readInto` is for: a caller that owns its buffer says how big
+     * it is and gets back how much arrived.
+     */
     static fn readAll(path : string) : Blob ! IOException {
-        let stream = fopen(path, FILE_MODE_READ);
+        let stream = fs::fopen(path, FILE_MODE_READ);
         if (Raw::isNil(stream)) {
             throw IOException("cannot open ${path}");
         }
-        fseek(stream, 0, FILE_SEEK_END);
-        let size = ftell(stream);
-        fseek(stream, 0, FILE_SEEK_SET);
+        fs::fseek(stream, 0, FILE_SEEK_END);
+        let size = fs::ftell(stream);
+        fs::fseek(stream, 0, FILE_SEEK_SET);
         if (size <= 0) {
-            fclose(stream);
+            fs::fclose(stream);
             throw IOException("${path} is empty or not seekable");
         }
         let out = new Blob(size);
         // A short read leaves the tail zeroed rather than failing: the
         // decoders above check the sizes they need anyway.
-        fread(out.at(), 1, size, stream);
-        fclose(stream);
+        fs::fread(out.at(), 1, size, stream);
+        fs::fclose(stream);
         return out;
     }
 }

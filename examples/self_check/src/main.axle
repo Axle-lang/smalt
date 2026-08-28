@@ -1,0 +1,227 @@
+// self_check — the assertions the demos do not make.
+//
+// The screenshot proves the projection, the depth test, the winding and
+// the perspective-correct interpolation: get any of them wrong and the
+// picture is visibly wrong. Nothing on screen exercises quaternions,
+// frustum culling or bounding boxes, and nothing on screen proves that
+// a degenerate input answers safely rather than trapping — Axle's
+// division traps, so `normalized()` on a zero vector and a perspective
+// with a zero field of view are real crash paths, not theoretical ones.
+//
+// Nor does a picture prove the frame pacer: a loop that never sleeps
+// and one that paces exactly both draw the same frame, and a delta that
+// is never clamped only shows itself the one time the machine stalls.
+// So the clock is checked here too, against a wall it cannot fake.
+//
+// Headless, so unlike the graphical examples this one can run
+// unattended. Exit code is the number of failures; zero means green.
+
+use smalt::{Vec3, Mat4, Quat, Aabb, Frustum, Camera, Clock, FramePacer};
+
+/** The rate the pacing assertions run at — 5 ms a frame. */
+const CHECK_RATE : i32 = 200;
+
+/** That rate's period, in microseconds. */
+const CHECK_PERIOD_US : i64 = 5000;
+
+/** Frames the pacing assertions run for. */
+const CHECK_FRAMES : i32 = 10;
+
+/** A stall long enough to be clamped, in milliseconds. */
+const STALL_MS : i32 = 300;
+
+/** The clamp `FramePacer` applies to a stalled frame, in seconds. */
+const MAX_DELTA_S : f64 = 0.25;
+
+fn near(a : f64, b : f64) : bool {
+    return (a - b).abs() < 0.00001;
+}
+
+fn sameVec(a : Vec3, b : Vec3) : bool {
+    return near(a.x, b.x) && near(a.y, b.y) && near(a.z, b.z);
+}
+
+fn main() : i32 {
+    let fails : i32 = 0;
+
+    // A quaternion rotation must agree with the matrix rotation.
+    let axis = Vec3::make(0.3, 1.0, 0.2);
+    let angle : f64 = 0.9;
+    let v = Vec3::make(1.0, 2.0, 3.0);
+    let byQuat = Quat::axisAngle(axis, angle).rotate(v);
+    let byMat = Mat4::rotationAxis(axis, angle).applyPoint(v);
+    if (!sameVec(byQuat, byMat)) {
+        println("FAIL quat vs matrix rotation");
+        fails += 1;
+    }
+
+    // A quaternion's matrix must agree with the quaternion itself.
+    let byQuatMat = Quat::axisAngle(axis, angle).matrix().applyPoint(v);
+    if (!sameVec(byQuat, byQuatMat)) {
+        println("FAIL quat matrix");
+        fails += 1;
+    }
+
+    // Rotating by q then by its inverse is the identity.
+    let q = Quat::euler(0.7, 0.3, 1.1);
+    if (!sameVec(q.inverse().rotate(q.rotate(v)), v)) {
+        println("FAIL quat inverse");
+        fails += 1;
+    }
+
+    // slerp endpoints.
+    let a = Quat::axisAngle(Vec3::unitY(), 0.0);
+    let b = Quat::axisAngle(Vec3::unitY(), 1.2);
+    if (!sameVec(a.slerp(b, 1.0).rotate(v), b.rotate(v))) {
+        println("FAIL slerp at t=1");
+        fails += 1;
+    }
+    if (!sameVec(a.slerp(b, 0.0).rotate(v), a.rotate(v))) {
+        println("FAIL slerp at t=0");
+        fails += 1;
+    }
+
+    // A degenerate axis must not produce NaN.
+    if (!sameVec(Quat::axisAngle(Vec3::zero(), 1.0).rotate(v), v)) {
+        println("FAIL degenerate axis");
+        fails += 1;
+    }
+    if (!sameVec(Vec3::zero().normalized(), Vec3::zero())) {
+        println("FAIL zero normalize");
+        fails += 1;
+    }
+
+    // A frustum must keep what is in front and reject what is behind.
+    let cam = new Camera();
+    cam.moveTo(Vec3::make(0.0, 0.0, 5.0));
+    cam.lookAt(Vec3::zero());
+    cam.setViewport(1024, 640);
+    let f = Frustum::ofMatrix(cam.viewProjection());
+    if (!f.touchesSphere(Vec3::zero(), 0.5)) {
+        println("FAIL frustum rejects a visible sphere");
+        fails += 1;
+    }
+    if (f.touchesSphere(Vec3::make(0.0, 0.0, 60.0), 0.5)) {
+        println("FAIL frustum accepts a sphere behind the camera");
+        fails += 1;
+    }
+    if (f.touchesSphere(Vec3::make(400.0, 0.0, 0.0), 0.5)) {
+        println("FAIL frustum accepts a sphere far to the side");
+        fails += 1;
+    }
+    if (!f.touchesBox(Aabb::around(Vec3::zero(), Vec3::splat(1.0)))) {
+        println("FAIL frustum rejects a visible box");
+        fails += 1;
+    }
+
+    // AABB overlap and containment.
+    let boxA = Aabb::around(Vec3::zero(), Vec3::splat(2.0));
+    let boxB = Aabb::around(Vec3::make(1.5, 0.0, 0.0), Vec3::splat(2.0));
+    let boxC = Aabb::around(Vec3::make(9.0, 0.0, 0.0), Vec3::splat(2.0));
+    if (!boxA.overlaps(boxB)) {
+        println("FAIL aabb overlap");
+        fails += 1;
+    }
+    if (boxA.overlaps(boxC)) {
+        println("FAIL aabb disjoint");
+        fails += 1;
+    }
+    if (!boxA.contains(Vec3::make(0.5, 0.5, 0.5)) || boxA.contains(Vec3::make(0.0, 0.0, 5.0))) {
+        println("FAIL aabb contains");
+        fails += 1;
+    }
+
+    // A degenerate projection must not trap on the divide.
+    let bad = Mat4::perspective(0.0, 0.0, 1.0, 1.0);
+    if (!sameVec(bad.applyPoint(v), v)) {
+        println("FAIL degenerate perspective is not the identity");
+        fails += 1;
+    }
+
+    fails += checkPacer();
+
+    println("failures: ${fails}");
+    return fails;
+}
+
+/**
+ * The frame pacer, against the clock it paces by.
+ *
+ * Everything here is a bound rather than an equality: a sleep returns
+ * late by however much the scheduler feels like, so the assertions are
+ * that the pacer *waited* and that it did not wait absurdly long. The
+ * upper bounds are loose enough for a loaded machine and tight enough
+ * that a pacer which never sleeps fails them.
+ */
+fn checkPacer() : i32 {
+    let fails : i32 = 0;
+    let clock = new Clock();
+    defer clock.close();
+
+    let uncapped = new FramePacer(0);
+    if (uncapped.period() != 0) {
+        println("FAIL a zero rate is not uncapped");
+        fails += 1;
+    }
+
+    let pacer = new FramePacer(CHECK_RATE);
+    if (pacer.period() != CHECK_PERIOD_US) {
+        println("FAIL pacer period is ${pacer.period()}, not ${CHECK_PERIOD_US}");
+        fails += 1;
+    }
+
+    // The first tick has no previous frame to have taken time, so it
+    // reports zero and returns immediately rather than sleeping a period
+    // into a loop that has not drawn anything yet.
+    let before = clock.micros();
+    let first = pacer.tick(clock);
+    let firstCost = clock.micros() - before;
+    if (first != 0.0) {
+        println("FAIL the first tick reported ${first}s elapsed");
+        fails += 1;
+    }
+    if (firstCost > CHECK_PERIOD_US) {
+        println("FAIL the first tick slept ${firstCost}us");
+        fails += 1;
+    }
+
+    // Then it paces. Nine periods are owed for ten ticks, and the last
+    // delta must be about a period rather than about zero.
+    let start = clock.micros();
+    let dt : f64 = 0.0;
+    for (i of 1..CHECK_FRAMES) {
+        dt = pacer.tick(clock);
+    }
+    let span = clock.micros() - start;
+    let owed = CHECK_PERIOD_US * ((CHECK_FRAMES - 1) as i64);
+    if (span < owed) {
+        println("FAIL ${CHECK_FRAMES} paced frames took ${span}us, under the ${owed}us owed");
+        fails += 1;
+    }
+    if (span > owed * 4) {
+        println("FAIL ${CHECK_FRAMES} paced frames took ${span}us, far over the ${owed}us owed");
+        fails += 1;
+    }
+    if (dt <= 0.0 || dt > 0.05) {
+        println("FAIL a paced frame reported ${dt}s");
+        fails += 1;
+    }
+
+    // And a stall is clamped. Uncapped, so the pacer sleeps nothing and
+    // what it measures is the stall itself — which is longer than any
+    // step a simulation may be handed in one go.
+    let stalled = new FramePacer(0);
+    stalled.tick(clock);
+    clock.delay(STALL_MS);
+    let stallDt = stalled.tick(clock);
+    if (stallDt > MAX_DELTA_S) {
+        println("FAIL a ${STALL_MS}ms stall reported ${stallDt}s unclamped");
+        fails += 1;
+    }
+    if (stallDt < MAX_DELTA_S) {
+        println("FAIL a ${STALL_MS}ms stall reported ${stallDt}s, under the clamp");
+        fails += 1;
+    }
+
+    return fails;
+}

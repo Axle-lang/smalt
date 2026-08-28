@@ -1,0 +1,72 @@
+// sys_cursor — the platform seam for pinning and hiding the pointer.
+//
+// THE CONTRACT:
+//
+//   recentre(win, x, y)        put the pointer at the client-area point
+//                              (x, y) of `win`
+//   showCursor(win, visible)   show or hide the pointer over that window
+//
+// Windows: `ClientToScreen` + `SetCursorPos`, and `ShowCursor`'s
+// balanced counter.
+//
+// Both calls take the window, and this platform reads it in only one of
+// them: `ShowCursor` is process-wide on Win32. The parameter is the
+// seam's, not this file's — X11 has no hide call at all, only a cursor
+// *defined on a window*, so a port that was handed no window could not
+// implement the other half.
+//
+// The pointer is *recentred* rather than read from a raw-input device:
+// at the end of every pump it is warped back to the middle of the client
+// area, so the next frame's motion is measured from a position that can
+// never be against a screen edge.
+//
+// The cost of the simpler mechanism is honest to state: motion is
+// quantised to whole pixels and a very fast flick can still clamp for
+// one frame. What it buys is that the whole feature stays inside the
+// polled model — no `WM_INPUT`, no device registration, no buffer to
+// size.
+
+use crate::kernel::blob::Blob;
+use crate::sys::win32_types::POINT;
+use crate::sys::win32_user::{ClientToScreen, SetCursorPos, ShowCursor};
+use crate::video::sys_window::SysWindow;
+
+/** Pointer confinement and visibility. */
+class SysCursor {
+    /**
+     * Move the pointer to the client-area point (`x`, `y`).
+     *
+     * The point is converted through `ClientToScreen` because
+     * `SetCursorPos` speaks screen coordinates — passing client
+     * coordinates puts the pointer in the wrong place on any window that
+     * is not at the origin.
+     */
+    static fn recentre(win : SysWindow, x : i32, y : i32) : void {
+        let block = new Blob(sizeof<POINT>());
+        defer block.close();
+        unsafe {
+            let point : ptr<POINT> = block.at() as ptr<POINT>;
+            (*point).x = x;
+            (*point).y = y;
+            if (ClientToScreen(win.handle(), point) != 0) {
+                SetCursorPos((*point).x, (*point).y);
+            }
+        }
+    }
+
+    /**
+     * Show or hide the pointer.
+     *
+     * `ShowCursor` keeps an internal counter rather than a flag, so the
+     * calls must balance — one hide needs exactly one show. `Events`
+     * guarantees that by ignoring a mode change that is already in
+     * effect. It is process-wide, so `win` is unread here.
+     */
+    static fn showCursor(win : SysWindow, visible : bool) : void {
+        if (visible) {
+            ShowCursor(1);
+        } else {
+            ShowCursor(0);
+        }
+    }
+}

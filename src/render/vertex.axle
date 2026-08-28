@@ -16,10 +16,12 @@ use std::numeric::math;
 pub struct Vertex {
     /** Position, in the mesh's own space. */
     pub position : Vec3;
+
     /** Unit normal, in the mesh's own space. */
-    pub normal : Vec3;
+    pub normal   : Vec3;
+
     /** Texture coordinate; (0,0) is the top-left texel. */
-    pub uv : Vec2;
+    pub uv       : Vec2;
 
     /** A vertex from its three attributes. */
     static fn make(position : Vec3, normal : Vec3, uv : Vec2) : Vertex {
@@ -28,11 +30,7 @@ pub struct Vertex {
 
     /** A vertex with no meaningful attributes — the fill value of a fresh mesh. */
     static fn empty() : Vertex {
-        return Vertex {
-            position: Vec3::zero(),
-            normal: Vec3::unitY(),
-            uv: Vec2::zero(),
-        };
+        return Vertex { position: Vec3::zero(), normal: Vec3::unitY(), uv: Vec2::zero() };
     }
 }
 
@@ -45,15 +43,20 @@ pub struct Vertex {
  */
 pub struct Material {
     /** Base colour, multiplied with the texel when `textured`. */
-    pub albedo : Color;
+    pub albedo       : Color;
+
     /** How much of the albedo survives with no light on it, 0..1. */
-    pub ambient : f64;
+    pub ambient      : f64;
+
     /** Strength of the specular highlight, 0 for a matte surface. */
-    pub specular : f64;
+    pub specular     : f64;
+
     /** Tightness of the highlight; larger is smaller and sharper. */
-    pub shininess : f64;
+    pub shininess    : f64;
+
     /** Whether to sample the bound texture. */
-    pub textured : bool;
+    pub textured     : bool;
+
     /** Whether to discard triangles facing away from the camera. */
     pub cullBackface : bool;
 
@@ -104,8 +107,9 @@ pub struct Material {
 pub struct DirectionalLight {
     /** The direction the light travels; normalised on construction. */
     pub direction : Vec3;
+
     /** The light's colour and intensity. */
-    pub color : Color;
+    pub color     : Color;
 
     /** A light of `color` travelling along `direction`. */
     static fn make(direction : Vec3, color : Color) : DirectionalLight {
@@ -114,9 +118,6 @@ pub struct DirectionalLight {
 
     /** A plain white light from above and slightly to the front-left. */
     static fn noon() : DirectionalLight {
-        return DirectionalLight::make(
-            Vec3::make(-0.4, -1.0, -0.35),
-            Color::rgb(1.0, 0.98, 0.92)
-        );
+        return DirectionalLight::make(Vec3::make(-0.4, -1.0, -0.35), Color::rgb(1.0, 0.98, 0.92));
     }
 }

@@ -1,0 +1,122 @@
+// sys_app — the platform seam for the process's own handle on the OS,
+// and for the scheduler granularity a frame pacer depends on.
+//
+// THE CONTRACT:
+//
+//   instance()          an opaque token the window layer needs to create
+//                       a window; nil means the OS refused
+//   isNil(token)        whether `instance` failed
+//   prepareWindows(t)   whatever must exist once, before any window can
+//                       be created; answers whether it worked
+//   raiseTimerRes()     ask for the finest sleep granularity available;
+//                       answers whether it was granted, because the
+//                       matching lower() must run only if it was
+//   lowerTimerRes()     undo exactly one granted raise
+//   release(token)      hand the token back to the OS
+//   checkRecords()      0 when the OS records this backend addresses
+//                       match the ones the OS reads, otherwise which
+//                       check failed
+//
+// Linux: the token is the X11 `Display *` from `XOpenDisplay(NULL)`,
+// which reads `$DISPLAY`. Unlike a Win32 module handle it is a **socket
+// to another process**, so `release` is a real call and not a courtesy —
+// a library that never closed it would leak a file descriptor and a
+// server-side client record per run.
+//
+// `prepareWindows` has no class to register. What it does instead is ask
+// the server for detectable auto-repeat: without it, holding a key
+// produces a `KeyRelease` before every repeated `KeyPress`, and a game
+// reading key-up as "the player let go" sees them let go sixty times a
+// second. It is a request the server may refuse, and refusing is not
+// fatal — the drain would then report a release the player did not make,
+// which is a wrong reading of a working window rather than no window.
+// So the answer is `true` either way, and only a nil token is a failure.
+//
+// The granularity pair is a no-op that reports "not granted":
+// `nanosleep` already resolves far below a frame, so there is nothing to
+// raise and therefore nothing that must be lowered. Answering `false` is
+// what makes `Platform` skip the matching lower — which is the reason
+// the raise reports at all.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::sys::x11_layout_check::X11Layout;
+use crate::sys::x11_lib::{XCloseDisplay, XkbSetDetectableAutoRepeat, XOpenDisplay};
+use crate::sys::x11_const::X_TRUE;
+
+/** The process's handle on the OS. */
+pub class SysApp {
+    /** The token the window layer creates windows from. */
+    static fn instance() : ptr {
+        return XOpenDisplay(Raw::nil());
+    }
+
+    /** Whether `instance` failed to produce a usable token. */
+    static fn isNil(token : ptr) : bool {
+        return Raw::isNil(token);
+    }
+
+    /**
+     * Put the connection into the state the event drain assumes.
+     *
+     * Answers `true` whenever there is a connection at all: the one
+     * thing asked for here is a preference the server may decline, and a
+     * declined preference degrades the keyboard rather than preventing a
+     * window.
+     */
+    static fn prepareWindows(token : ptr) : bool {
+        if (Raw::isNil(token)) {
+            return false;
+        }
+        // The out-parameter is required by the call and unread by this
+        // library: whether the server supports the mode changes nothing
+        // it could do differently.
+        let supported = new Blob(4);
+        defer supported.close();
+        unsafe {
+            XkbSetDetectableAutoRepeat(token, X_TRUE, supported.at() as ptr<i32>);
+        }
+        return true;
+    }
+
+    /**
+     * Ask for the finest sleep granularity. Answers whether it was
+     * granted — only a granted raise may be lowered.
+     *
+     * Nothing to ask for on this platform, so nothing was granted.
+     */
+    static fn raiseTimerRes() : bool {
+        return false;
+    }
+
+    /**
+     * Undo one granted raise.
+     *
+     * Unreachable while `raiseTimerRes` answers `false`, and present
+     * because the seam has the pair: a caller balancing a raise it was
+     * never granted is a caller with a bug on the other platform.
+     */
+    static fn lowerTimerRes() : void {}
+
+    /**
+     * Whether the X11 records this backend fills are the records the
+     * server reads — 0 when every check passes, otherwise its number.
+     */
+    static fn checkRecords() : i32 {
+        return X11Layout::verify();
+    }
+
+    /**
+     * Close the connection to the X server.
+     *
+     * This one is not a courtesy. The token is a socket and a client
+     * record the server holds; a process that exits without it leaves
+     * the server to reap them, and a library that opened one per run of
+     * a long-lived host would leak both.
+     */
+    static fn release(token : ptr) : void {
+        if (!Raw::isNil(token)) {
+            XCloseDisplay(token);
+        }
+    }
+}

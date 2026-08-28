@@ -18,4 +18,4 @@ const phiStep : f64 = 0.015;  // around the ring
 
 const spinX : f64 = 0.04;
 const spinZ : f64 = 0.02;
-const frameMillis : i32 = 16;
+const frameRate : i32 = 60;

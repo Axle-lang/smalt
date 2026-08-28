@@ -1,0 +1,92 @@
+// dib — the device-independent bitmap records, which are a data format.
+//
+// `BITMAPINFOHEADER` is what a `.bmp` file carries on disk and what
+// `StretchDIBits` is handed in memory. Those are two different consumers
+// of one published layout, so the layout is declared once, here, in the
+// portable half of `sys/` — a second copy under `sys/windows/` would be
+// the same forty bytes described twice, and the copy that drifted would
+// corrupt whichever side stopped agreeing.
+//
+// It sits in `sys/` rather than in `io/` because the blit reads it and
+// `platform/` is below `io/`: a record every layer of the OS boundary
+// speaks belongs at that boundary, not above it.
+//
+// `extern "C" struct` is what makes the declaration load-bearing: the
+// layout is the target's, field order is the source order, and the
+// padding is C's — a `WORD` between two `DWORD`s is what makes this
+// record 40 bytes rather than 44, and that gap is the reason it was once
+// worth a table of hand-written offsets. `sys/windows/win32_layout_check`
+// asserts the numbers that table held against these declarations.
+
+/**
+ * `typedef struct tagBITMAPINFOHEADER { … } BITMAPINFOHEADER;`
+ *
+ * `biSize` must read `sizeof<BITMAPINFOHEADER>()` — the header validates
+ * itself, and getting that number wrong is how a DIB call fails with no
+ * diagnosis. It is now the same expression the allocation uses.
+ */
+pub extern "C" struct BITMAPINFOHEADER {
+    /** `DWORD biSize` — the header's own size. */
+    pub biSize          : u32;
+
+    /** `LONG biWidth`. */
+    pub biWidth         : i32;
+
+    /** `LONG biHeight` — negative for a top-down image. */
+    pub biHeight        : i32;
+
+    /** `WORD biPlanes` — always 1. */
+    pub biPlanes        : u16;
+
+    /** `WORD biBitCount`. */
+    pub biBitCount      : u16;
+
+    /** `DWORD biCompression`. */
+    pub biCompression   : u32;
+
+    /** `DWORD biSizeImage`. */
+    pub biSizeImage     : u32;
+
+    /** `LONG biXPelsPerMeter`. */
+    pub biXPelsPerMeter : i32;
+
+    /** `LONG biYPelsPerMeter`. */
+    pub biYPelsPerMeter : i32;
+
+    /** `DWORD biClrUsed`. */
+    pub biClrUsed       : u32;
+
+    /** `DWORD biClrImportant`. */
+    pub biClrImportant  : u32;
+}
+
+/** `typedef struct tagRGBQUAD { BYTE rgbBlue, rgbGreen, rgbRed, rgbReserved; } RGBQUAD;` */
+pub extern "C" struct RGBQUAD {
+    /** `BYTE rgbBlue`. */
+    pub rgbBlue     : u8;
+
+    /** `BYTE rgbGreen`. */
+    pub rgbGreen    : u8;
+
+    /** `BYTE rgbRed`. */
+    pub rgbRed      : u8;
+
+    /** `BYTE rgbReserved`. */
+    pub rgbReserved : u8;
+}
+
+/**
+ * `typedef struct tagBITMAPINFO { BITMAPINFOHEADER bmiHeader;
+ *                                 RGBQUAD bmiColors[1]; } BITMAPINFO;`
+ *
+ * `StretchDIBits` reads the header alone for a 32-bit `BI_RGB` image, but
+ * the trailing quad is part of the type, so a palette format could be
+ * described without moving the base.
+ */
+pub extern "C" struct BITMAPINFO {
+    /** `BITMAPINFOHEADER bmiHeader`. */
+    pub bmiHeader : BITMAPINFOHEADER;
+
+    /** `RGBQUAD bmiColors[1]`. */
+    pub bmiColors : RGBQUAD[1];
+}

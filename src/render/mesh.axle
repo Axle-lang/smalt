@@ -8,9 +8,9 @@
 // by the synthesised destructor, so unlike the OS handles elsewhere in
 // the library a mesh is not `Closeable` and needs no release.
 //
-// SDL ships no mesh loading — no OBJ, no glTF, nothing. The primitives
-// below are the equivalent of `SDL_LoadBMP` for geometry: enough to see
-// something on screen and to test the pipeline, not an asset system.
+// No OBJ, no glTF, no loader of any kind. The primitives below are for
+// geometry what the BMP decoder is for images: enough to see something
+// on screen and to test the pipeline, not an asset system.
 
 use crate::math::vec::{Vec2, Vec3};
 use crate::render::vertex::Vertex;
@@ -21,10 +21,10 @@ const MESH_TRIANGLE_CORNERS : i32 = 3;
 
 /** Indexed triangle geometry. */
 pub class Mesh {
-    verts : Vertex[];
-    indices : i32[];
+    verts       : Vertex[];
+    indices     : i32[];
     vertexCount : i32;
-    indexCount : i32;
+    indexCount  : i32;
 
     /** Storage for `vertices` corners and `indices` index slots. */
     constructor(vertices : i32, indices : i32) {
@@ -189,10 +189,7 @@ pub class Primitives {
             for (seg of 0..=segs) {
                 let theta = 2.0 * pi * (seg as f64) / (segs as f64);
                 let normal = Vec3::make(sp * theta.cos(), cp, sp * theta.sin());
-                let uv = Vec2::make(
-                    (seg as f64) / (segs as f64),
-                    (row as f64) / (rows as f64)
-                );
+                let uv = Vec2::make((seg as f64) / (segs as f64), (row as f64) / (rows as f64));
                 m.setVertex(row * (segs + 1) + seg, Vertex::make(normal.scaled(r), normal, uv));
             }
         }

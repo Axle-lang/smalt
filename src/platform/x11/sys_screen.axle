@@ -1,0 +1,58 @@
+// sys_screen — the platform seam for what the primary display measures.
+//
+// THE CONTRACT:
+//
+//   width()   the primary display's width in pixels
+//   height()  its height
+//
+// Both may report nonsense on a headless or misconfigured session, so
+// every caller clamps rather than trusting the answer — `Display`'s
+// suggestedSize is the one that does it.
+//
+// Linux: `XDisplayWidth` / `XDisplayHeight` on the default screen. Both
+// need a connection, and the seam's two calls are static and take
+// none — so this file opens one of its own, asks, and closes it. That
+// looks wasteful and is not: the whole reason a game asks is to choose a
+// window size *before* it has initialised anything, which is exactly
+// when there is no connection to borrow. The cost is one round trip, at
+// startup, on a path that runs once.
+//
+// A screen bigger than one monitor is what a X server reports here when
+// the monitors are combined into one screen, which is the common
+// arrangement — a window sized from it would span both. Reading the
+// per-monitor geometry needs Xinerama or XRandR, which are separate
+// libraries and would put an extra `-l` on every consumer's link line
+// for a number `Display::suggestedSize` already clamps. When the answer
+// matters more than the dependency does, both extensions fit behind
+// these same two functions.
+
+use crate::kernel::raw::Raw;
+use crate::sys::x11_lib::{XCloseDisplay, XDefaultScreen, XDisplayHeight, XDisplayWidth, XOpenDisplay};
+
+/** What a display query answers when there is no display to ask. */
+const SCREEN_UNKNOWN : i32 = 0;
+
+/** What the primary display measures. */
+pub class SysScreen {
+    /** The primary display's width, in pixels. */
+    static fn width() : i32 {
+        let display = XOpenDisplay(Raw::nil());
+        if (Raw::isNil(display)) {
+            return SCREEN_UNKNOWN;
+        }
+        let w = XDisplayWidth(display, XDefaultScreen(display));
+        XCloseDisplay(display);
+        return w;
+    }
+
+    /** The primary display's height, in pixels. */
+    static fn height() : i32 {
+        let display = XOpenDisplay(Raw::nil());
+        if (Raw::isNil(display)) {
+            return SCREEN_UNKNOWN;
+        }
+        let h = XDisplayHeight(display, XDefaultScreen(display));
+        XCloseDisplay(display);
+        return h;
+    }
+}

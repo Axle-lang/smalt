@@ -1,0 +1,377 @@
+// sys_window — the platform seam for a window and its drawing surface.
+//
+// THE CONTRACT, which a port honours and nothing above it may look
+// behind. A `SysWindow` that exists is a window that opened: creation
+// raises `PlatformError` rather than yielding a half-object, so no
+// method below has to test for one.
+//
+//   surface()             the token `SysBlit::present` blits onto
+//   handle()              the window's identity, for the pump and the
+//                         cursor
+//   width() / height()    the client area, as of the last adopted resize
+//   alive()               whether the OS still has this window
+//   show() / hide() / setTitle(t)
+//   takeClose()           the user asked to close, clearing the request
+//   takeResize()          a resize is waiting; adopts it into
+//                         width()/height() and answers whether the size
+//                         actually changed
+//   takeFocusEdge()       focused()    — an edge, then the state
+//   takeMinimiseEdge()    minimised()  — an edge, then the state
+//   selfCheck(w, h)       0 when the platform's event path works, else
+//                         which step of it did not
+//
+// Every `take*` is a latch the reader clears, so an event that arrives
+// twice between two frames is reported once and a frame that runs long
+// loses nothing.
+//
+// Linux: a `Window` id, the `Display *` it was created on, and a `GC`.
+// X11 has no window procedure and no sent/posted split — every notice
+// arrives on the same connection as the input — so the latches are this
+// class's own fields, written by [`absorb`] out of the events
+// `SysDrain` hands it. That is the same shape the Win32 backend has,
+// reached the other way round: there, the OS writes the latches through
+// a callback and the drain never sees them.
+//
+// Three window properties are set at creation and never again, because
+// each is a *request* to the window manager rather than a call: the
+// `WM_DELETE_WINDOW` protocol (so a close arrives as a message instead
+// of the connection dying), the size hints for a fixed-size window, and
+// `_MOTIF_WM_HINTS` for a borderless one. A manager is free to ignore
+// any of them, and what the player then gets is a window with a border
+// they can resize — not a failure.
+
+use crate::core::error::PlatformError;
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::platform::x_surface::XSurface;
+use crate::sys::x11_lib::{
+    XChangeProperty, XCreateGC, XCreateSimpleWindow, XDestroyWindow, XBlackPixel,
+    XDefaultScreen, XFlush, XFreeCursor, XFreeGC, XInternAtom, XMapRaised, XNextEvent,
+    XPending, XRootWindow, XSelectInput, XSendEvent, XSetWMNormalHints, XSetWMProtocols,
+    XStoreName, XSync, XUnmapWindow,
+};
+use crate::sys::x11_types::{
+    MotifWmHints, XAnyEvent, XClientMessageEvent, XConfigureEvent, XSizeHints,
+};
+use crate::sys::x11_const::{
+use crate::video::x11::x_window_ops::{pinSize, registerCloseProtocol, removeDecorations, roundTrip};
+    X_CLIENT_MESSAGE, X_CONFIGURE_NOTIFY, X_DESTROY_NOTIFY, X_FALSE, X_FOCUS_IN, X_FOCUS_OUT,
+    X_MAP_NOTIFY, X_MASK_BUTTON_PRESS, X_MASK_BUTTON_RELEASE, X_MASK_EXPOSURE,
+    X_MASK_FOCUS_CHANGE, X_MASK_KEY_PRESS, X_MASK_KEY_RELEASE, X_MASK_POINTER_MOTION,
+    X_MASK_STRUCTURE_NOTIFY, X_MOTIF_HINTS_FORMAT, X_MOTIF_HINT_DECORATIONS,
+    X_EVENT_BYTES, X_MOTIF_HINTS_WORDS, X_NONE, X_PROP_MODE_REPLACE, X_SIZE_HINT_MIN_MAX,
+    X_TRUE, X_UNMAP_NOTIFY,
+};
+
+/** The property that carries a close request. */
+const WM_PROTOCOLS_ATOM : string = "WM_PROTOCOLS";
+/** The one protocol this library takes part in. */
+const WM_DELETE_ATOM : string = "WM_DELETE_WINDOW";
+/** The property a borderless window sets. */
+const MOTIF_HINTS_ATOM : string = "_MOTIF_WM_HINTS";
+/** No decorations at all. */
+const MOTIF_NO_DECORATIONS : i64 = 0;
+/** How many `WM_PROTOCOLS` atoms are registered. */
+const WM_PROTOCOL_COUNT : i32 = 1;
+/** No border on the window itself; the manager draws the frame. */
+const WINDOW_BORDER_WIDTH : i32 = 0;
+
+/** An on-screen window and its drawing surface, on X11. */
+pub class SysWindow : Closeable {
+    display : ptr;
+    window : i64;
+    gc : ptr;
+    /** The `(display, window, gc)` triple the blit reads. */
+    token : Blob;
+    /** The atom a close request carries in `data.l[0]`. */
+    deleteAtom : i64;
+    /**
+     * The cursor that draws nothing, or `None` until one is needed.
+     *
+     * X11 hides a pointer by *defining* a cursor with no pixels, so
+     * "hidden" is a server resource with a lifetime rather than a flag.
+     * `SysCursor` makes it on the first hide and this class releases it,
+     * because it is the window it is defined on that outlives the call.
+     */
+    blank : i64;
+    w : i32;
+    h : i32;
+    closePending : bool;
+    destroyed : bool;
+    sizePending : bool;
+    pendingW : i32;
+    pendingH : i32;
+    focusedNow : bool;
+    focusPending : bool;
+    minimisedNow : bool;
+    minimisePending : bool;
+
+    /**
+     * Create a window with a `w` by `h` **client** area.
+     *
+     * `app` is the token `SysApp::instance` produced — an X11
+     * `Display *`. Unlike Win32 there is no outer-frame adjustment to
+     * make: X11 sizes the window itself and the manager puts its
+     * decoration *around* it, so the requested size is the drawable one
+     * by construction.
+     */
+    constructor(
+        app : ptr,
+        title : string,
+        w : i32,
+        h : i32,
+        resizable : bool,
+        borderless : bool,
+        hidden : bool
+    ) ! PlatformError {
+        self.display = app;
+        self.w = w;
+        self.h = h;
+        self.closePending = false;
+        self.destroyed = false;
+        self.sizePending = false;
+        self.pendingW = w;
+        self.pendingH = h;
+        // Assumed, not observed: a window that has just been mapped
+        // usually has focus, and the first `FocusOut` corrects it. The
+        // Win32 backend makes the same assumption for the same reason —
+        // there is no event that says "you started focused".
+        self.focusedNow = true;
+        self.focusPending = false;
+        self.minimisedNow = false;
+        self.minimisePending = false;
+        self.blank = X_NONE;
+        self.token = new Blob(sizeof<XSurface>());
+
+        let screen = XDefaultScreen(app);
+        let black = XBlackPixel(app, screen);
+        self.window = XCreateSimpleWindow(
+            app,
+            XRootWindow(app, screen),
+            0,
+            0,
+            w,
+            h,
+            WINDOW_BORDER_WIDTH,
+            black,
+            black
+        );
+        if (self.window == 0) {
+            self.token.close();
+            throw PlatformError("XCreateSimpleWindow refused a ${w}x${h} window");
+        }
+
+        XStoreName(app, self.window, title);
+        XSelectInput(
+            app,
+            self.window,
+            X_MASK_KEY_PRESS | X_MASK_KEY_RELEASE | X_MASK_BUTTON_PRESS
+                | X_MASK_BUTTON_RELEASE | X_MASK_POINTER_MOTION | X_MASK_EXPOSURE
+                | X_MASK_STRUCTURE_NOTIFY | X_MASK_FOCUS_CHANGE
+        );
+        self.deleteAtom = registerCloseProtocol(self);
+        if (!resizable) {
+            pinSize(self, w, h);
+        }
+        if (borderless) {
+            removeDecorations(self);
+        }
+
+        self.gc = XCreateGC(app, self.window, 0, Raw::nil());
+        unsafe {
+            let t : ptr<XSurface> = self.token.at() as ptr<XSurface>;
+            (*t).display = app;
+            (*t).window = self.window;
+            (*t).gc = self.gc;
+        }
+
+        if (!hidden) {
+            XMapRaised(app, self.window);
+            XFlush(app);
+        }
+    }
+
+    /** The drawable `SysBlit::present` writes onto. */
+    fn surface(self) : ptr {
+        return self.token.at();
+    }
+
+    /** The window's identity, for the pump and the cursor. */
+    fn handle(self) : ptr {
+        return Raw::at(self.window);
+    }
+
+    /** Client-area width, in pixels. */
+    fn width(self) : i32 {
+        return self.w;
+    }
+
+    /** Client-area height, in pixels. */
+    fn height(self) : i32 {
+        return self.h;
+    }
+
+    /**
+     * Whether the OS still has this window.
+     *
+     * A close is a *request*: `absorb` records the manager's message and
+     * does not obey it, so the window stays valid until `close()` —
+     * which is what lets a game prompt, save, or refuse.
+     */
+    fn alive(self) : bool {
+        return !self.destroyed;
+    }
+
+    /** Make a hidden window visible and bring it forward. */
+    fn show(mut self) : void {
+        XMapRaised(self.display, self.window);
+        XFlush(self.display);
+    }
+
+    /** Hide the window without destroying it. */
+    fn hide(mut self) : void {
+        XUnmapWindow(self.display, self.window);
+        XFlush(self.display);
+    }
+
+    /** Replace the title bar text. */
+    fn setTitle(mut self, title : string) : void {
+        XStoreName(self.display, self.window, title);
+        XFlush(self.display);
+    }
+
+    /** Whether the user asked to close the window, clearing the request. */
+    fn takeClose(mut self) : bool {
+        let pending = self.closePending;
+        self.closePending = false;
+        return pending;
+    }
+
+    /**
+     * Adopt a waiting resize, answering whether the client size changed.
+     *
+     * A zero extent is refused: an unmapped window can report one, and
+     * adopting it would resize the framebuffer to nothing.
+     */
+    fn takeResize(mut self) : bool {
+        if (!self.sizePending) {
+            return false;
+        }
+        self.sizePending = false;
+        if (self.pendingW <= 0 || self.pendingH <= 0) {
+            return false;
+        }
+        if (self.pendingW == self.w && self.pendingH == self.h) {
+            return false;
+        }
+        self.w = self.pendingW;
+        self.h = self.pendingH;
+        return true;
+    }
+
+    /** Whether a focus edge is waiting, clearing it. */
+    fn takeFocusEdge(mut self) : bool {
+        let pending = self.focusPending;
+        self.focusPending = false;
+        return pending;
+    }
+
+    /** Whether the window holds input focus. */
+    fn focused(self) : bool {
+        return self.focusedNow;
+    }
+
+    /** Whether a minimise / restore edge is waiting, clearing it. */
+    fn takeMinimiseEdge(mut self) : bool {
+        let pending = self.minimisePending;
+        self.minimisePending = false;
+        return pending;
+    }
+
+    /** Whether the window is minimised — the frame to skip. */
+    fn minimised(self) : bool {
+        return self.minimisedNow;
+    }
+
+    /**
+     * Run the platform's event path against this window — 0 when every
+     * step worked, otherwise which one did not.
+     *
+     * The X11 steps are the three notices a game reacts to, sent to this
+     * window with `XSendEvent` and then read back off the connection.
+     * `XSendEvent` queues rather than delivers, which is the one way it
+     * is not `SendMessageW`: the `XSync` after it is what makes the
+     * round trip finished by the time the loop below runs, so this is
+     * deterministic and not a race.
+     *
+     * What it proves is the whole chain — that the records this backend
+     * fills are the records the server hands back, that the type at
+     * offset zero routes them, and that `absorb` latches what it read.
+     *
+     * The window is left as it was found: the close is recorded, not
+     * obeyed, and the size *is* adopted, with one resize left waiting
+     * for the next pump. So this is called before a frame loop and not
+     * during one.
+     */
+    fn selfCheck(mut self, width : i32, height : i32) : i32 {
+        let scratch = new Blob(X_EVENT_BYTES);
+        defer scratch.close();
+
+        if (!roundTrip(self, scratch, X_CONFIGURE_NOTIFY, width, height)) {
+            return 1;
+        }
+        if (!self.takeResize()) {
+            return 1;
+        }
+        if (self.w != width || self.h != height) {
+            return 2;
+        }
+
+        if (!roundTrip(self, scratch, X_FOCUS_OUT, 0, 0)) {
+            return 3;
+        }
+        if (!self.takeFocusEdge() || self.focused()) {
+            return 3;
+        }
+        if (!roundTrip(self, scratch, X_FOCUS_IN, 0, 0)) {
+            return 4;
+        }
+        if (!self.takeFocusEdge() || !self.focused()) {
+            return 4;
+        }
+
+        if (!roundTrip(self, scratch, X_CLIENT_MESSAGE, 0, 0)) {
+            return 5;
+        }
+        if (!self.takeClose()) {
+            return 5;
+        }
+        if (!self.alive()) {
+            return 6;
+        }
+
+        // One more resize, left pending, so the caller's next pump has
+        // something to turn into a `WindowResized`. Every check above
+        // reads its latch by clearing it — which is the point of a latch
+        // — and a caller that then found the queue empty would be
+        // watching this function's bookkeeping rather than the event path.
+        roundTrip(self, scratch, X_CONFIGURE_NOTIFY, width, height);
+        self.sizePending = true;
+        return 0;
+    }
+
+    /** Destroy the window and release what it holds. */
+    fn close(self) : void {
+        if (self.blank != X_NONE) {
+            XFreeCursor(self.display, self.blank);
+        }
+        if (!Raw::isNil(self.gc)) {
+            XFreeGC(self.display, self.gc);
+        }
+        if (!self.destroyed) {
+            XDestroyWindow(self.display, self.window);
+            XFlush(self.display);
+        }
+        self.token.close();
+    }
+}

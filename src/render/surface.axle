@@ -1,0 +1,138 @@
+// surface — a framebuffer you fill yourself, and put on a window.
+//
+// The library's other framebuffer, `RenderTarget`, belongs to the 3D
+// pipeline: it carries a depth buffer because `SoftDevice` tests against
+// one. A game with a renderer of its own — a raycaster, a voxel
+// rasteriser, a 2D scene — has its own depth buffer or none, and paying
+// `w * h * 8` bytes for one it never reads is not a small tax at a
+// window's worth of pixels.
+//
+// So this is the other half of what the README promises: *a window,
+// taken apart into pixels you write yourself*. A `Surface` is those
+// pixels, the blit that puts them on a window, and nothing else.
+//
+// # Two ways to reach the pixels, and when to use which
+//
+//   * `pixels()` — the `i32[]`, bounds-checked, `y * width + x`. This is
+//     the one to use.
+//   * `base()` — the same buffer's address, for the inner loop of a
+//     renderer that has already proved its index and does not want the
+//     check. Everything the address is good for is in `Mem`.
+//
+// The second is why `resize` frees by hand: handing the buffer out — as
+// an array or as an address — is what stops the compiler reclaiming it
+// on reassignment, because it can no longer prove nobody else is holding
+// it. `resize` knows what the compiler cannot: a resize is drained from
+// the event queue *before* the frame that blits, so the buffer the last
+// blit read is dead by the time this runs.
+
+use crate::kernel::mem::Mem;
+use crate::render::soft::present::Presenter;
+use crate::video::window::Window;
+
+/** A window-sized block of pixels, and the blit that presents it. */
+pub class Surface : Closeable {
+    colour    : i32[];
+    w         : i32;
+    h         : i32;
+    presenter : Presenter;
+
+    /** A `w` by `h` framebuffer, with its own blit path. */
+    constructor(w : i32, h : i32) {
+        self.w = w;
+        self.h = h;
+        self.colour = malloc<i32>((w as i64) * h);
+        self.presenter = new Presenter();
+    }
+
+    /** Framebuffer width, in pixels. */
+    fn width(self) : i32 {
+        return self.w;
+    }
+
+    /** Framebuffer height, in pixels. */
+    fn height(self) : i32 {
+        return self.h;
+    }
+
+    /** Pixels in the framebuffer. */
+    fn pixelCount(self) : i64 {
+        return (self.w as i64) * self.h;
+    }
+
+    /** The pixels, addressed `y * width + x`. */
+    fn pixels(self) : i32[] {
+        return self.colour;
+    }
+
+    /**
+     * The pixels' address, for a renderer that walks them through `Mem`.
+     *
+     * Valid until the next `resize` or `close`, and no longer — which is
+     * the whole of the contract, and the reason a caller that keeps it
+     * across a resize must take it again afterwards.
+     */
+    fn base(self) : i64 {
+        return Mem::addressOf(self.colour);
+    }
+
+    /**
+     * Reallocate for a `w` by `h` framebuffer.
+     *
+     * A no-op when the size is unchanged, so a resize poll may call it
+     * every frame. A zero or negative size is refused rather than
+     * allocating an empty buffer.
+     *
+     * **Any address taken from `base()` is dead after this returns.**
+     */
+    fn resize(mut self, w : i32, h : i32) : void {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        if (w == self.w && h == self.h) {
+            return;
+        }
+        self.w = w;
+        self.h = h;
+        free(self.colour);
+        self.colour = malloc<i32>((w as i64) * h);
+    }
+
+    /** Fill every pixel with `packed`. */
+    fn clear(mut self, packed : i32) : void {
+        for (i of 0..self.pixelCount()) {
+            self.colour[i] = packed;
+        }
+    }
+
+    /** Write `packed` at (`x`, `y`), or nothing if it is off the frame. */
+    fn plot(mut self, x : i32, y : i32, packed : i32) : void {
+        if (x < 0 || y < 0 || x >= self.w || y >= self.h) {
+            return;
+        }
+        self.colour[(y as i64) * self.w + x] = packed;
+    }
+
+    /**
+     * Put the frame on `win`, scaled to its client area.
+     *
+     * Scaling is what lets a framebuffer keep a fixed height while the
+     * window is any size — and what absorbs the frame between a resize
+     * event and the reallocation that follows it.
+     */
+    fn present(mut self, win : Window) : void {
+        self.presenter.presentPixels(
+            win.surface(),
+            self.colour,
+            self.w,
+            self.h,
+            win.width(),
+            win.height()
+        );
+    }
+
+    /** Release the blit path. The pixels are the destructor's. */
+    fn close(self) : void {
+        self.presenter.close();
+    }
+}

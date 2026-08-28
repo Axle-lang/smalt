@@ -1,0 +1,72 @@
+// blank_cursor — the invisible cursor X11 makes a program build itself.
+//
+// Win32 hides the pointer with `ShowCursor(FALSE)` and needs no cursor
+// object at all; X11 has no such call, so hiding means *setting* a
+// cursor that draws nothing — a one-by-one pixmap of blank bits. That
+// object is X11's alone, which is why it is a port-private function
+// rather than a method on `SysCursor`: a name declared on one port and
+// not another is a call that compiles for one target and fails for the
+// other.
+//
+// The window remembers the cursor once built: `XCreatePixmapCursor` is a
+// round trip, and hiding the pointer happens every time a game toggles
+// mouse look.
+
+use crate::kernel::blob::Blob;
+use crate::sys::x11_const::X_NONE;
+use crate::sys::x11_lib::{XCreateBitmapFromData, XCreatePixmapCursor, XFreePixmap};
+use crate::video::sys_window::SysWindow;
+use crate::video::x11::x_window_ops::{adoptBlankCursor, blankCursor, connection, id};
+
+/** Side of the bitmap the blank cursor is built from. */
+const CURSOR_BITMAP_SIDE : i32 = 1;
+
+/** Bytes that bitmap occupies. */
+const CURSOR_BITMAP_BYTES : i64 = 1;
+
+/** The hotspot, at the bitmap's only pixel. */
+const CURSOR_HOTSPOT : i32 = 0;
+
+/**
+ * The window's invisible cursor, made on first use.
+ *
+ * The pixmap is zeroed by `Blob`'s own construction, and an all-zero
+ * source *and* mask is a cursor with no pixels — which is exactly
+ * "no pointer" and not "a black square".
+ */
+pub fn blankCursor(win : SysWindow) : i64 {
+    let existing = blankCursor(win);
+    if (existing != X_NONE) {
+        return existing;
+    }
+    let bits = new Blob(CURSOR_BITMAP_BYTES);
+    defer bits.close();
+    let colour = new Blob(16);
+    defer colour.close();
+
+    let pixmap = XCreateBitmapFromData(
+        connection(win),
+        id(win),
+        bits.at(),
+        CURSOR_BITMAP_SIDE,
+        CURSOR_BITMAP_SIDE
+    );
+    if (pixmap == X_NONE) {
+        return X_NONE;
+    }
+    let cursor = XCreatePixmapCursor(
+        connection(win),
+        pixmap,
+        pixmap,
+        colour.at(),
+        colour.at(),
+        CURSOR_HOTSPOT,
+        CURSOR_HOTSPOT
+    );
+    // The cursor keeps its own copy of the pixmap's contents, so the
+    // pixmap id is released here and now — keeping it would be a
+    // second resource for the window to remember, for nothing.
+    XFreePixmap(connection(win), pixmap);
+    adoptBlankCursor(win, cursor);
+    return cursor;
+}

@@ -1,7 +1,7 @@
 // device_soft — the software rendering device.
 //
-// The counterpart of an `SDL_GPUDevice`, and the object a game actually
-// talks to. It owns the frame's storage, and it follows SDL_GPU's shape:
+// The object a game actually talks to. It owns the frame's storage, and
+// it follows the shape every graphics API settled on:
 // **bind state, then draw**. The camera and the light are set once a
 // frame; a draw call carries only what varies per object — its mesh, its
 // transform, its texture and its material.
@@ -43,14 +43,14 @@ const DEVICE_TRIANGLE_CORNERS : i32 = 3;
  * ```
  */
 pub class SoftDevice : RenderDevice, Closeable {
-    target : RenderTarget;
+    target    : RenderTarget;
     presenter : Presenter;
-    blank : Texture;
-    viewProj : Mat4;
-    eyeX : f64;
-    eyeY : f64;
-    eyeZ : f64;
-    light : DirectionalLight;
+    blank     : Texture;
+    viewProj  : Mat4;
+    eyeX      : f64;
+    eyeY      : f64;
+    eyeZ      : f64;
+    light     : DirectionalLight;
 
     /** A device drawing at `w` by `h`, with a default light and no camera. */
     constructor(w : i32, h : i32) {
@@ -115,9 +115,21 @@ pub class SoftDevice : RenderDevice, Closeable {
         return self.target.pixels();
     }
 
-    /** Write a packed pixel with no depth test — overlays and diagnostics. */
-    fn plot(mut self, x : i32, y : i32, packed : i32) : void {
-        self.target.plot(x, y, packed);
+    /** Write `c` at (`x`, `y`) with no depth test — overlays and diagnostics. */
+    fn plot(mut self, x : i32, y : i32, c : Color) : void {
+        self.target.plotPacked(x, y, c.packed());
+    }
+
+    /**
+     * Write an already-packed framebuffer word.
+     *
+     * What `plot` is for a colour computed here, this is for one that
+     * arrives packed: a blit out of an image, a value read back from
+     * `pixels()`. Packing a word only to unpack it is the cost this
+     * avoids.
+     */
+    fn plotPacked(mut self, x : i32, y : i32, packed : i32) : void {
+        self.target.plotPacked(x, y, packed);
     }
 
     /**
@@ -134,21 +146,25 @@ pub class SoftDevice : RenderDevice, Closeable {
         let world = model.applyPoint(v.position);
         let normal = model.applyDirection(v.normal);
         return ClipVertex::make(
-            clip.x, clip.y, clip.z, clip.w,
-            world.x, world.y, world.z,
-            normal.x, normal.y, normal.z,
-            v.uv.x, v.uv.y
+            clip.x,
+            clip.y,
+            clip.z,
+            clip.w,
+            world.x,
+            world.y,
+            world.z,
+            normal.x,
+            normal.y,
+            normal.z,
+            v.uv.x,
+            v.uv.y
         );
     }
 
     /** Draw `mesh` positioned by `model`, sampling `tex`. */
     fn drawMesh(mut self, mesh : Mesh, model : Mat4, tex : Texture, material : Material) : void {
         let mvp = self.viewProj.mul(model);
-        let sh = Shading::make(
-            material,
-            self.light,
-            Vec3::make(self.eyeX, self.eyeY, self.eyeZ)
-        );
+        let sh = Shading::make(material, self.light, Vec3::make(self.eyeX, self.eyeY, self.eyeZ));
         let count = mesh.triangles();
         for (t of 0..count) {
             let base : i32 = t * DEVICE_TRIANGLE_CORNERS;
@@ -173,7 +189,7 @@ pub class SoftDevice : RenderDevice, Closeable {
         if (!win.isOpen()) {
             return;
         }
-        self.presenter.present(win.context(), self.target, win.width(), win.height());
+        self.presenter.present(win.surface(), self.target, win.width(), win.height());
     }
 
     /** Release what the device holds. */

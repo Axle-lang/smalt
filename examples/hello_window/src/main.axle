@@ -4,15 +4,16 @@
 // pipeline: initialisation, a window, the polled event path, the clock,
 // and a framebuffer blitted to the screen every frame.
 
-use smalt::{
-    Platform, PlatformError, Window, WindowFlags, Clock, Events, EventKind, Scancode, Color,
-    SoftDevice,
-};
+use smalt::{Platform, PlatformError, Window, Clock, FramePacer, Events, EventKind, Scancode, Color, SoftDevice, WINDOW_RESIZABLE};
 
 /** Client width at startup. */
 const VIEW_W : i32 = 960;
+
 /** Client height at startup. */
 const VIEW_H : i32 = 540;
+
+/** Frames per second the loop is paced to. */
+const FRAME_RATE : i32 = 60;
 
 fn main() : i32 {
     try {
@@ -26,31 +27,38 @@ fn main() : i32 {
 /** The program proper; every startup failure leaves through `!`. */
 fn run() : i32 ! PlatformError {
     let platform = new Platform()?;
-    let win = platform.createWindow("smalt — hello", VIEW_W, VIEW_H, WindowFlags::resizable())?;
+    defer platform.close();
+    let win = platform.createWindow("smalt — hello", VIEW_W, VIEW_H, WINDOW_RESIZABLE)?;
+    defer win.close();
 
     let clock = new Clock();
+    defer clock.close();
     let events = new Events();
+    defer events.close();
     let device = new SoftDevice(VIEW_W, VIEW_H);
+    defer device.close();
+    let pacer = new FramePacer(FRAME_RATE);
     let running = true;
     let frames = 0;
 
     while (running) {
-        events.pump(win, clock.ticks());
+        pacer.tick(clock);
+        events.pump(win, clock);
         while (events.hasNext()) {
             let e = events.next();
             match e.kind {
                 EventKind::Quit => {
                     running = false;
-                }
+                },
                 EventKind::KeyDown => {
                     if (e.scancode == Scancode::Escape) {
                         running = false;
                     }
-                }
+                },
                 EventKind::WindowResized => {
                     device.resize(e.width, e.height);
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
 
@@ -60,16 +68,10 @@ fn run() : i32 ! PlatformError {
             device.endFrame(win);
             frames += 1;
         }
-        clock.delay(8);
     }
 
     println("frames drawn: ${frames}");
 
-    device.close();
-    events.close();
-    clock.close();
-    win.close();
-    platform.close();
     return 0;
 }
 
@@ -80,10 +82,10 @@ fn paint(device : SoftDevice, t : f64) : void {
     let wave = 0.5 + 0.5 * t.sin();
     for (y of 0..h) {
         let v = (y as f64) / (h as f64);
-        let g = Color::channel(v * wave);
+        let g = v * wave;
         for (x of 0..w) {
             let u = (x as f64) / (w as f64);
-            device.plot(x, y, Color::packBytes(Color::channel(u), g, Color::channel(1.0 - u)));
+            device.plot(x, y, Color::rgb(u, g, 1.0 - u));
         }
     }
 }

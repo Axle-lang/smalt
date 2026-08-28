@@ -1,0 +1,63 @@
+// sys_cursor — the platform seam for pinning and hiding the pointer.
+//
+// THE CONTRACT:
+//
+//   recentre(win, x, y)        put the pointer at the client-area point
+//                              (x, y) of `win`
+//   showCursor(win, visible)   show or hide the pointer over that window
+//
+// Linux: `XWarpPointer` with `None` as the source window, which makes
+// the destination coordinates relative to the window — so a recentre
+// needs no client-to-screen conversion, which is the one thing this
+// platform gives away that Win32 charges for.
+//
+// Hiding is where the two differ in kind. Win32 has a `ShowCursor` whose
+// balanced counter the caller must respect; X11 has no hide call at all,
+// only a *cursor*, so a pointer is hidden by defining a cursor that
+// draws nothing. That means state — the invisible cursor is a server
+// resource with a lifetime, where Win32's counter has none.
+//
+// The resource is the window's, not this file's: the seam's calls are
+// static, so there is nowhere here to keep one, and the cursor belongs
+// to a window anyway. It is made on the first hide and released when the
+// window closes, which is why `SysWindow` has an `adoptBlankCursor` and
+// the Win32 one does not.
+
+use crate::sys::x11_lib::{XCreateBitmapFromData, XCreatePixmapCursor, XDefineCursor, XFlush, XFreePixmap, XUndefineCursor, XWarpPointer};
+use crate::sys::x11_const::X_NONE;
+use crate::video::x11::blank_cursor::blankCursor;
+use crate::video::sys_window::SysWindow;
+use crate::video::x11::x_window_ops::{blankCursor, connection, id};
+
+/** Pointer confinement and visibility. */
+class SysCursor {
+    /**
+     * Move the pointer to the client-area point (`x`, `y`) of `win`.
+     *
+     * The source window is `None` and the source rectangle is empty,
+     * which is what makes the destination coordinates relative to `win`
+     * — the form that needs no coordinate conversion.
+     */
+    static fn recentre(win : SysWindow, x : i32, y : i32) : void {
+        XWarpPointer(connection(win), X_NONE, id(win), 0, 0, 0, 0, x, y);
+        XFlush(connection(win));
+    }
+
+    /**
+     * Show or hide the pointer over `win`.
+     *
+     * Hiding installs a cursor made from an all-zero 1×1 bitmap — the
+     * X11 way to have no pointer, since the protocol has no visibility
+     * flag. Showing removes the definition, so the window inherits its
+     * parent's cursor again, which is the arrow the desktop chose.
+     */
+    static fn showCursor(win : SysWindow, visible : bool) : void {
+        if (visible) {
+            XUndefineCursor(connection(win), id(win));
+            XFlush(connection(win));
+            return;
+        }
+        XDefineCursor(connection(win), id(win), blankCursor(win));
+        XFlush(connection(win));
+    }
+}

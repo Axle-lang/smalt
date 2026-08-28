@@ -1,0 +1,109 @@
+// sys_drain — the X11 half of the event pump: events into events.
+//
+// THE SEAM'S CONTRACT, which a port honours and nothing above it may
+// look behind:
+//
+//   newScratch()                       an owned block sized for exactly
+//                                      one OS event record, reused for
+//                                      the life of the queue
+//   drain(scratch, win, stamp, q, k, m)
+//                                      everything the OS has for this
+//                                      window since the last call, as
+//                                      pushes onto `q` and edges on the
+//                                      held-state objects
+//
+// Reused rather than allocated per drain because a drain runs every
+// frame and the record is fixed-size — a fresh block per frame would be
+// a malloc and a free sixty times a second for no gain. An `XEvent` is a
+// union, and its widest member is what makes it 192 bytes; the type at
+// offset zero is what says which member arrived.
+//
+// Linux: `XPending` then `XNextEvent`. **The guard is not an
+// optimisation** — `XNextEvent` blocks when the queue is empty, so a
+// frame loop that called it unguarded would stop rendering until the
+// player moved the mouse.
+//
+// Unlike Win32 there is no sent/posted split: the window notices and the
+// input arrive on the same connection, in order. So the window's half of
+// each event is offered to `SysWindow::absorb` first, and what it does
+// not claim is input this file decodes. That is the same division the
+// Win32 backend has — there the OS writes the window latches through a
+// procedure and this loop never sees them.
+//
+// The auto-repeat story is the other difference worth stating.
+// `SysApp::prepareWindows` asks the server for *detectable* auto-repeat;
+// without it a held key produces a `KeyRelease` before every repeated
+// `KeyPress`, and a game reading key-up as "the player let go" sees them
+// let go sixty times a second. With it, a repeat is a press with no
+// release, and "was this a repeat" is answered by the held state — which
+// is where the Win32 backend reads it from too, just out of a bit the OS
+// packs into `lParam`.
+
+use crate::core::event::{Event, EventKind, EventQueue};
+use crate::core::keyboard::{KeyboardState, Scancode};
+use crate::core::mouse::{MouseButton, MouseState};
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::sys::x11_lib::{XNextEvent, XPending};
+use crate::sys::x11_types::{XAnyEvent, XButtonEvent, XKeyEvent, XMotionEvent};
+use crate::sys::x11_const::{X_BUTTON_MIDDLE, X_BUTTON_PRESS, X_BUTTON_RELEASE, X_BUTTON_RIGHT, X_BUTTON_WHEEL_DOWN, X_BUTTON_WHEEL_UP, X_EVENT_BYTES, X_KEY_PRESS, X_KEY_RELEASE, X_MOTION_NOTIFY};
+use crate::video::sys_window::SysWindow;
+use crate::video::x11::x_decode::{handleButton, handleKey, handleMotion};
+use crate::video::x11::x_window_ops::{absorb, connection};
+
+/** Decoding of the `XEvent` members, and the drain loop over the queue. */
+class SysDrain {
+    /** A block sized for exactly one `XEvent`. */
+    static fn newScratch() : Blob {
+        return new Blob(X_EVENT_BYTES);
+    }
+
+    /**
+     * Drain the connection's event queue into `queue`.
+     *
+     * `scratch` is the caller's reusable `XEvent` block. `win` is what
+     * the window notices latch onto: X11 delivers them down the same
+     * connection as the input, so they are taken out of this loop rather
+     * than written by a callback the way Win32 writes them.
+     */
+    static fn drain(
+        scratch : Blob,
+        win : SysWindow,
+        stamp : i64,
+        queue : EventQueue,
+        keys : KeyboardState,
+        mouse : MouseState
+    ) : void {
+        let text = new Blob(X_TEXT_BYTES);
+        defer text.close();
+        let keysym = new Blob(8);
+        defer keysym.close();
+
+        unsafe {
+            while (XPending(connection(win)) > 0) {
+                XNextEvent(connection(win), scratch.at());
+                let any : ptr<XAnyEvent> = scratch.at() as ptr<XAnyEvent>;
+                let kind : i32 = (*any).type_;
+
+                // The window's half first: a resize, a focus edge, a
+                // close request or a destroy is latched on it and is not
+                // input.
+                if (absorb(win, scratch.at())) {
+                    continue;
+                }
+
+                if (kind == X_KEY_PRESS) {
+                    handleKey(scratch.at(), true, stamp, queue, keys, text, keysym);
+                } else if (kind == X_KEY_RELEASE) {
+                    handleKey(scratch.at(), false, stamp, queue, keys, text, keysym);
+                } else if (kind == X_BUTTON_PRESS) {
+                    handleButton(scratch.at(), true, stamp, queue, mouse);
+                } else if (kind == X_BUTTON_RELEASE) {
+                    handleButton(scratch.at(), false, stamp, queue, mouse);
+                } else if (kind == X_MOTION_NOTIFY) {
+                    handleMotion(scratch.at(), stamp, queue, mouse);
+                }
+            }
+        }
+    }
+}

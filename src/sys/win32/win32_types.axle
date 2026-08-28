@@ -1,0 +1,202 @@
+// win32_types — the Win32 records, declared rather than measured.
+//
+// This file replaces a table of hand-written byte offsets. The table was
+// correct, and its own header said what was wrong with it: *"a wrong number
+// is a silent memory corruption rather than a compile error"*. Every entry
+// was a promise the author made to themselves, checked by nothing, and
+// re-checked by hand at every field added.
+//
+// `extern "C" struct` moves the promise to the compiler. The layout is the
+// target's, field order is the source order, and the padding is C's — so a
+// field is written where the OS reads it because both sides computed the
+// same address from the same declaration, not because two humans agreed on
+// a number. `sizeof<T>()` is what an allocation takes, so a field added here
+// cannot leave the block behind it.
+//
+// The declarations are transcribed from the Windows SDK headers, and the C
+// spelling of each field is written beside it. The **widths** are what
+// matters: `LONG` is 32-bit on Windows however wide the pointer is, `WPARAM`
+// and `LPARAM` are pointer-sized, and a `WORD` between two `DWORD`s is what
+// makes a `WAVEHDR` the size the driver reads it at.
+//
+// `sys/win32_layout_check` holds the numbers the old table held, and asserts
+// them against these declarations — so the migration is checked against what
+// it replaced instead of trusted.
+
+/** `typedef struct tagPOINT { LONG x; LONG y; } POINT;` */
+pub extern "C" struct POINT {
+    /** `LONG x`. */
+    pub x : i32;
+
+    /** `LONG y`. */
+    pub y : i32;
+}
+
+/** `typedef struct tagRECT { LONG left, top, right, bottom; } RECT;` */
+pub extern "C" struct RECT {
+    /** `LONG left`. */
+    pub left   : i32;
+
+    /** `LONG top`. */
+    pub top    : i32;
+
+    /** `LONG right`. */
+    pub right  : i32;
+
+    /** `LONG bottom`. */
+    pub bottom : i32;
+}
+
+/**
+ * `typedef struct tagMSG { HWND hwnd; UINT message; WPARAM wParam;
+ *                          LPARAM lParam; DWORD time; POINT pt; } MSG;`
+ *
+ * The four bytes of padding after `message` are C's, not something written
+ * here: `wParam` is pointer-aligned and `message` is a `UINT`. That gap is
+ * the reason the offsets were worth a table, and the reason they no longer
+ * need one.
+ */
+pub extern "C" struct MSG {
+    /** `HWND hwnd` — the window the message is for. */
+    pub hwnd    : ptr;
+
+    /** `UINT message` — the `WM_*` code. */
+    pub message : u32;
+
+    /** `WPARAM wParam` — for a key, the virtual-key code. */
+    pub wParam  : u64;
+
+    /** `LPARAM lParam` — for a key, the repeat / scancode / flags word. */
+    pub lParam  : i64;
+
+    /** `DWORD time` — the message's post time, in ticks. */
+    pub time    : u32;
+
+    /** `POINT pt` — cursor position when the message was posted. */
+    pub pt      : POINT;
+}
+
+/**
+ * `typedef struct tagWNDCLASSEXW { … } WNDCLASSEXW;`
+ *
+ * `lpfnWndProc` is the point of the whole file. It was a `ptr` written into
+ * a byte offset, which is to say a number the compiler had no opinion about;
+ * it is now the procedure's real type, so a procedure with the wrong
+ * signature is a diagnostic at the assignment rather than a stack the OS
+ * unwinds the wrong way.
+ */
+pub extern "C" struct WNDCLASSEXW {
+    /** `UINT cbSize` — must carry `sizeof<WNDCLASSEXW>()`. */
+    pub cbSize        : u32;
+
+    /** `UINT style` — the `CS_*` class flags. */
+    pub style         : u32;
+
+    /** `WNDPROC lpfnWndProc` — see `video/windows/win_proc`. */
+    pub lpfnWndProc   : extern "C" (ptr, u32, u64, i64) => i64;
+
+    /** `int cbClsExtra`. */
+    pub cbClsExtra    : i32;
+
+    /** `int cbWndExtra`. */
+    pub cbWndExtra    : i32;
+
+    /** `HINSTANCE hInstance`. */
+    pub hInstance     : ptr;
+
+    /** `HICON hIcon`. */
+    pub hIcon         : ptr;
+
+    /** `HCURSOR hCursor`. */
+    pub hCursor       : ptr;
+
+    /** `HBRUSH hbrBackground`. */
+    pub hbrBackground : ptr;
+
+    /** `LPCWSTR lpszMenuName`. */
+    pub lpszMenuName  : ptr;
+
+    /** `LPCWSTR lpszClassName`. */
+    pub lpszClassName : ptr;
+
+    /** `HICON hIconSm`. */
+    pub hIconSm       : ptr;
+}
+
+/**
+ * `typedef struct { WORD wFormatTag; WORD nChannels; DWORD nSamplesPerSec;
+ * DWORD nAvgBytesPerSec; WORD nBlockAlign; WORD wBitsPerSample;
+ * WORD cbSize; } WAVEFORMATEX;`
+ *
+ * Only the field OFFSETS matter to `waveOutOpen`, which is handed a
+ * pointer and no size — so the trailing padding natural alignment adds
+ * after `cbSize` is invisible to the call. `cbSize` is zero for PCM: it
+ * counts the extra bytes a compressed format appends after this record,
+ * and PCM appends none.
+ *
+ * `nAvgBytesPerSec` and `nBlockAlign` are both derivable from the other
+ * three, and the device believes them rather than recomputing — a wrong
+ * one plays at the wrong speed instead of failing, which is why
+ * `SysAudio` computes both rather than writing constants.
+ */
+pub extern "C" struct WAVEFORMATEX {
+    /** `WORD wFormatTag` — `WAVE_FORMAT_PCM` (1) here. */
+    pub wFormatTag      : u16;
+
+    /** `WORD nChannels` — 1 mono, 2 stereo. */
+    pub nChannels       : u16;
+
+    /** `DWORD nSamplesPerSec` — frames per second, not samples. */
+    pub nSamplesPerSec  : u32;
+
+    /** `DWORD nAvgBytesPerSec` — `nSamplesPerSec * nBlockAlign`. */
+    pub nAvgBytesPerSec : u32;
+
+    /** `WORD nBlockAlign` — bytes for one frame across all channels. */
+    pub nBlockAlign     : u16;
+
+    /** `WORD wBitsPerSample` — 16 here. */
+    pub wBitsPerSample  : u16;
+
+    /** `WORD cbSize` — extra bytes after this record; 0 for PCM. */
+    pub cbSize          : u16;
+}
+
+/**
+ * `typedef struct wavehdr_tag { LPSTR lpData; DWORD dwBufferLength;
+ * DWORD dwBytesRecorded; DWORD_PTR dwUser; DWORD dwFlags; DWORD dwLoops;
+ * struct wavehdr_tag *lpNext; DWORD_PTR reserved; } WAVEHDR;`
+ *
+ * `dwFlags` is the whole reason this design needs no callback: the
+ * device sets `WHDR_DONE` on a block it has finished with, and the
+ * caller polls for it. That is what makes a queued-audio path reachable
+ * from a language that cannot hand out a function address.
+ *
+ * `lpNext` and `reserved` belong to the driver. Writing either is how a
+ * queue corrupts itself, so nothing here touches them.
+ */
+pub extern "C" struct WAVEHDR {
+    /** `LPSTR lpData` — the PCM block; must outlive the queueing. */
+    pub lpData          : ptr;
+
+    /** `DWORD dwBufferLength` — bytes of `lpData` to play. */
+    pub dwBufferLength  : u32;
+
+    /** `DWORD dwBytesRecorded` — input only; zero here. */
+    pub dwBytesRecorded : u32;
+
+    /** `DWORD_PTR dwUser` — the caller's; carries the block's index. */
+    pub dwUser          : u64;
+
+    /** `DWORD dwFlags` — `WHDR_PREPARED`, and `WHDR_DONE` when free. */
+    pub dwFlags         : u32;
+
+    /** `DWORD dwLoops` — loop count; zero plays once. */
+    pub dwLoops         : u32;
+
+    /** `struct wavehdr_tag *lpNext` — the driver's; never written here. */
+    pub lpNext          : ptr;
+
+    /** `DWORD_PTR reserved` — the driver's; never written here. */
+    pub reserved        : u64;
+}

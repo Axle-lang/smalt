@@ -1,23 +1,30 @@
-// init — the library's entry object, the counterpart of `SDL_Init`.
+// init — the library's entry object: the subsystem, as a value.
 //
-// SDL keeps its video device in a file-static `_this` and reads it from
-// every public function. Axle has no mutable global state, so what SDL
-// hides in a global is an explicit object here: `Platform` owns the module
-// handle, the registered window class and the raised timer resolution,
-// and windows are created *from* it. That is a better contract anyway —
-// the lifetime of the subsystem is visible in the source.
+// The state a platform layer needs — the process's token on the OS,
+// whatever had to be registered before a window can exist, the scheduler
+// granularity a frame pacer asked for — is state with a *lifetime*. Put
+// it in a global and that lifetime becomes invisible: nothing in the
+// source says when it began, nothing says when it ends, and every
+// function that reads it is one more place that assumes it began.
 //
-// What SDL reports through a return code and `SDL_GetError`, the
-// constructor reports by raising `PlatformError`: a `Platform` that exists is an
-// initialised one, so nothing downstream tests a half-built subsystem.
+// So it is an object. `Platform` owns those three things and windows are
+// created *from* it, which makes the subsystem's lifetime the object's
+// lifetime and puts it in the reader's line of sight.
+//
+// Failure is in the constructor: it raises `PlatformError` rather than
+// returning a code, so a `Platform` that exists is an initialised one
+// and nothing downstream tests a half-built subsystem.
+//
+// Nothing here names an operating system. The three steps — take the
+// process's token, prepare whatever must exist before a window can, and
+// ask for the scheduler granularity a frame pacer needs — are
+// `platform::sys_app`'s, and what each costs differs per target: on
+// Win32 the middle step registers a window class, on X11 there is
+// nothing to prepare and the token itself is the connection to release.
 
 use crate::core::error::PlatformError;
 use crate::platform::sys_app::SysApp;
 use crate::video::window::Window;
-use crate::video::windows::win_class::WinClass;
-
-/** The scheduler granularity the frame pacer asks for, in milliseconds. */
-const TIMER_PERIOD_MS : i32 = 1;
 
 /**
  * The initialised library.
@@ -28,8 +35,23 @@ const TIMER_PERIOD_MS : i32 = 1;
  * exits, so `Closeable` is what makes the compiler insist on it.
  */
 pub class Platform : Closeable {
-    instance : ptr;
+    instance    : ptr;
     timerRaised : bool;
+
+    /**
+     * Whether the OS records this build's platform backend fills are the
+     * ones the OS reads — 0 when they agree, otherwise which check
+     * failed.
+     *
+     * Static, and callable before initialisation: what it answers is a
+     * property of the compiled backend, not of a running subsystem, and
+     * a program that is going to check it should check it before it
+     * opens anything. A platform whose backend fills no OS record
+     * answers 0.
+     */
+    static fn checkRecords() : i32 {
+        return SysApp::checkRecords();
+    }
 
     /** Initialise the video and event subsystems. */
     constructor() ! PlatformError {
@@ -37,8 +59,8 @@ pub class Platform : Closeable {
         if (SysApp::isNil(self.instance)) {
             throw PlatformError("GetModuleHandleW returned no module handle");
         }
-        if (!WinClass::register(self.instance)) {
-            throw PlatformError("RegisterClassExW failed for the smalt window class");
+        if (!SysApp::prepareWindows(self.instance)) {
+            throw PlatformError("the platform refused to prepare the window subsystem");
         }
         self.timerRaised = SysApp::raiseTimerRes();
     }
@@ -51,13 +73,15 @@ pub class Platform : Closeable {
     /**
      * Release what initialisation acquired.
      *
-     * The window class is deliberately left registered: it is owned by
-     * the module for the process's lifetime, and unregistering it while
-     * a window still exists fails anyway.
+     * The order is the reverse of the constructor's, and the raise is
+     * undone only if it was granted — the granularity is process-wide
+     * state the OS does not reclaim for a program that merely exits,
+     * which is the whole reason this class is `Closeable`.
      */
     fn close(self) : void {
         if (self.timerRaised) {
             SysApp::lowerTimerRes();
         }
+        SysApp::release(self.instance);
     }
 }

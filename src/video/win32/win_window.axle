@@ -1,0 +1,137 @@
+// win_window — HWND lifecycle: the Win32 half of `video::window`.
+//
+// `Window` above this file knows a size, a title and a flag word;
+// everything below — styles, the outer-rect adjustment, the handle
+// dance — lives here. Porting smalt to another platform means
+// writing a sibling of this file, not touching `Window`.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::sys::wide::Wide;
+use crate::sys::win32_types::RECT;
+use crate::sys::win32_user::{CreateWindowExW, DestroyWindow, AdjustWindowRectEx, ShowWindow, UpdateWindow, SetWindowTextW, SetForegroundWindow, IsWindow, GetDC, SetWindowLongPtrW};
+use crate::video::win_const::GWLP_USERDATA;
+use crate::video::win_class::WinClass;
+use crate::video::win_const::{WS_OVERLAPPEDWINDOW, WS_CAPTION, WS_SYSMENU, WS_MINIMIZEBOX, WS_POPUP, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, CW_USEDEFAULT, SW_SHOW, SW_HIDE};
+
+/** HWND creation, teardown, and the state polled in place of sent messages. */
+class WinWindow {
+    /**
+     * Hang the window procedure's state block off `hwnd`.
+     *
+     * A window procedure captures nothing — it is handed a handle and
+     * three integers — so this slot is the only way it can reach what
+     * belongs to *this* window. Called immediately after creation; the
+     * messages sent during `CreateWindowExW` arrive before it and are
+     * handled by `DefWindowProcW`, which is why the first client size is
+     * read from the OS rather than waited for.
+     */
+    static fn attachProcState(hwnd : ptr, state : ptr) : void {
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, state);
+    }
+
+    /**
+     * Create a window whose *client* area is `w` by `h`.
+     *
+     * The requested size is the drawable area — Win32 sizes
+     * the outer frame instead, so the rect is grown by
+     * `AdjustWindowRectEx` before creation. Skipping that step is the
+     * classic bug where a 1280×720 request yields a 1264×681 framebuffer.
+     */
+    static fn create(instance : ptr, title : string, w : i32, h : i32, style : i32) : ptr {
+        let outerW : i32 = 0;
+        let outerH : i32 = 0;
+        let block = new Blob(sizeof<RECT>());
+        unsafe {
+            let rect : ptr<RECT> = block.at() as ptr<RECT>;
+            (*rect).left = 0;
+            (*rect).top = 0;
+            (*rect).right = w;
+            (*rect).bottom = h;
+            AdjustWindowRectEx(rect, style, 0, 0);
+            outerW = (*rect).right - (*rect).left;
+            outerH = (*rect).bottom - (*rect).top;
+        }
+        block.close();
+
+        let className = WinClass::name();
+        defer className.close();
+        let windowName = Wide::from(title);
+        defer windowName.close();
+
+        return CreateWindowExW(
+            0,
+            className.at(),
+            windowName.at(),
+            style,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            outerW,
+            outerH,
+            Raw::nil(),
+            Raw::nil(),
+            instance,
+            Raw::nil()
+        );
+    }
+
+    /**
+     * The Win32 style word for a flag set.
+     *
+     * `WS_THICKFRAME` / `WS_MAXIMIZEBOX` are what make a window
+     * resizable, so they are added only when asked — a fixed-size window
+     * that still shows a drag border misleads the player.
+     */
+    static fn styleFor(resizable : bool, borderless : bool) : i32 {
+        let base : i32 = WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
+        if (borderless) {
+            return base | WS_POPUP;
+        }
+        if (resizable) {
+            return base | WS_OVERLAPPEDWINDOW;
+        }
+        return base | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+    }
+
+    /** Make the window visible and give it the foreground. */
+    static fn show(hwnd : ptr) : void {
+        ShowWindow(hwnd, SW_SHOW);
+        UpdateWindow(hwnd);
+        SetForegroundWindow(hwnd);
+    }
+
+    /** Hide the window without destroying it. */
+    static fn hide(hwnd : ptr) : void {
+        ShowWindow(hwnd, SW_HIDE);
+    }
+
+    /** Retitle the window. */
+    static fn retitle(hwnd : ptr, title : string) : void {
+        let text = Wide::from(title);
+        SetWindowTextW(hwnd, text.at());
+        text.close();
+    }
+
+    /**
+     * Whether the handle still names a window.
+     *
+     * The procedure records `WM_CLOSE` rather than obeying it, so a
+     * window stays alive until the game destroys it — this is the
+     * backstop for the paths that destroy one anyway (a parent going
+     * away, `DestroyWindow` from elsewhere), not the close notification
+     * it used to be.
+     */
+    static fn alive(hwnd : ptr) : bool {
+        return IsWindow(hwnd) != 0;
+    }
+
+    /** The window's device context; `CS_OWNDC` makes this cheap to repeat. */
+    static fn context(hwnd : ptr) : ptr {
+        return GetDC(hwnd);
+    }
+
+    /** Destroy the window. */
+    static fn destroy(hwnd : ptr) : void {
+        DestroyWindow(hwnd);
+    }
+}

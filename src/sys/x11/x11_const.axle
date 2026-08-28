@@ -1,0 +1,147 @@
+// x11_const — the X11 protocol numbers this backend names.
+//
+// Transcribed from `X11/X.h` and `X11/Xutil.h`. They are protocol
+// constants, not a build's: an event type is what travels on the wire,
+// so these numbers are the same on every X server that has ever existed
+// and will not change.
+//
+// Only what the backend uses is here. A wall of unused constants is a
+// wall a reader has to scan past to find the one that is load-bearing.
+
+/**
+ * Bytes an `XEvent` union occupies.
+ *
+ * The union's widest member fixes it, so this is a size the protocol
+ * publishes rather than one a caller may choose: a block smaller than
+ * this handed to `XNextEvent` is a buffer the server writes past.
+ */
+pub const X_EVENT_BYTES : i64 = 192;
+
+/** `KeyPress` event type. */
+pub const X_KEY_PRESS : i32 = 2;
+
+/** `KeyRelease`. */
+pub const X_KEY_RELEASE : i32 = 3;
+
+/** `ButtonPress`. */
+pub const X_BUTTON_PRESS : i32 = 4;
+
+/** `ButtonRelease`. */
+pub const X_BUTTON_RELEASE : i32 = 5;
+
+/** `MotionNotify`. */
+pub const X_MOTION_NOTIFY : i32 = 6;
+
+/** `FocusIn`. */
+pub const X_FOCUS_IN : i32 = 9;
+
+/** `FocusOut`. */
+pub const X_FOCUS_OUT : i32 = 10;
+
+/** `Expose`. */
+pub const X_EXPOSE : i32 = 12;
+
+/** `DestroyNotify`. */
+pub const X_DESTROY_NOTIFY : i32 = 17;
+
+/** `UnmapNotify` — the window was iconified or withdrawn. */
+pub const X_UNMAP_NOTIFY : i32 = 18;
+
+/** `MapNotify` — and back again. */
+pub const X_MAP_NOTIFY : i32 = 19;
+
+/** `ConfigureNotify` — the resize. */
+pub const X_CONFIGURE_NOTIFY : i32 = 22;
+
+/** `ClientMessage` — how the window manager asks for a close. */
+pub const X_CLIENT_MESSAGE : i32 = 33;
+
+/** `KeyPressMask`. */
+pub const X_MASK_KEY_PRESS : i64 = 1;
+
+/** `KeyReleaseMask`. */
+pub const X_MASK_KEY_RELEASE : i64 = 2;
+
+/** `ButtonPressMask`. */
+pub const X_MASK_BUTTON_PRESS : i64 = 4;
+
+/** `ButtonReleaseMask`. */
+pub const X_MASK_BUTTON_RELEASE : i64 = 8;
+
+/** `PointerMotionMask`. */
+pub const X_MASK_POINTER_MOTION : i64 = 64;
+
+/** `ExposureMask`. */
+pub const X_MASK_EXPOSURE : i64 = 32768;
+
+/** `StructureNotifyMask` — resize, map, unmap, destroy. */
+pub const X_MASK_STRUCTURE_NOTIFY : i64 = 131072;
+
+/** `FocusChangeMask`. */
+pub const X_MASK_FOCUS_CHANGE : i64 = 2097152;
+
+/** `Button4` — a wheel notch away from the user. */
+pub const X_BUTTON_WHEEL_UP : i32 = 4;
+
+/** `Button5` — a notch towards the user. */
+pub const X_BUTTON_WHEEL_DOWN : i32 = 5;
+
+/** `Button1`. */
+pub const X_BUTTON_LEFT : i32 = 1;
+
+/** `Button2`. */
+pub const X_BUTTON_MIDDLE : i32 = 2;
+
+/** `Button3`. */
+pub const X_BUTTON_RIGHT : i32 = 3;
+
+/** `ZPixmap` — the image format a framebuffer is. */
+pub const X_Z_PIXMAP : i32 = 2;
+
+/** `LSBFirst` — the byte order of every target this backend builds for. */
+pub const X_LSB_FIRST : i32 = 0;
+
+/** Bits in the unit `bitmap_unit` / `bitmap_pad` are counted in. */
+pub const X_BITMAP_UNIT : i32 = 32;
+
+/** Colour bits in a 32-bit pixel — the top byte is unused. */
+pub const X_TRUE_COLOR_DEPTH : i32 = 24;
+
+/** Bits a pixel occupies. */
+pub const X_BITS_PER_PIXEL : i32 = 32;
+
+/** Red in an `XRGB8888` pixel. */
+pub const X_RED_MASK : i64 = 16711680;
+
+/** Green. */
+pub const X_GREEN_MASK : i64 = 65280;
+
+/** Blue. */
+pub const X_BLUE_MASK : i64 = 255;
+
+/** `PMinSize | PMaxSize` — the size hints a fixed window sets. */
+pub const X_SIZE_HINT_MIN_MAX : i64 = 48;
+
+/** `PropModeReplace`. */
+pub const X_PROP_MODE_REPLACE : i32 = 0;
+
+/** The `_MOTIF_WM_HINTS` property's own type and format. */
+pub const X_MOTIF_HINTS_FORMAT : i32 = 32;
+
+/** Words in a `_MOTIF_WM_HINTS` property. */
+pub const X_MOTIF_HINTS_WORDS : i32 = 5;
+
+/** `MWM_HINTS_DECORATIONS`. */
+pub const X_MOTIF_HINT_DECORATIONS : i64 = 2;
+
+/** `False`, as Xlib spells a boolean argument. */
+pub const X_FALSE : i32 = 0;
+
+/** `True`. */
+pub const X_TRUE : i32 = 1;
+
+/** `None` — the null resource id. */
+pub const X_NONE : i64 = 0;
+
+/** `CopyFromParent`, where a visual or depth is inherited. */
+pub const X_COPY_FROM_PARENT : i64 = 0;

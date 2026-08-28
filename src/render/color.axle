@@ -15,8 +15,10 @@
 
 /** Largest value of one packed channel. */
 const COLOR_CHANNEL_MAX : f64 = 255.0;
+
 /** Bit position of the red channel in the packed form. */
 const COLOR_RED_SHIFT : i32 = 16;
+
 /** Bit position of the green channel in the packed form. */
 const COLOR_GREEN_SHIFT : i32 = 8;
 
@@ -29,8 +31,10 @@ const COLOR_GREEN_SHIFT : i32 = 8;
 pub struct Color {
     /** Red, 0.0 to 1.0. */
     pub r : f64;
+
     /** Green, 0.0 to 1.0. */
     pub g : f64;
+
     /** Blue, 0.0 to 1.0. */
     pub b : f64;
 

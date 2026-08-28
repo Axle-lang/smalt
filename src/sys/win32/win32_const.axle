@@ -1,0 +1,34 @@
+// win32_const — the Win32 manifest constants the platform seam needs.
+//
+// These sit in `sys/` rather than beside the window code because
+// `platform/` reads them, and `platform/` is BELOW `video/`. A low layer
+// importing from a high one is the coupling a port inherits for nothing:
+// `sys_blit` and `sys_screen` would have dragged `video/windows/` in with
+// them, and the Linux sibling would have had to keep that shape.
+//
+// The split is by who reads a constant, not by which header declares it.
+// A `WS_*` or `WM_*` is read only by the window code and stays there; a
+// raster op and a screen metric are read by the seam, so they are here.
+//
+// Decimal rather than hex where the hex form would not fit `i32`'s
+// positive range, matching `win_const`: the values travel through the
+// `sys/` declarations as `i32`, the width the Win32 prototypes take.
+
+// ─── GDI ─────────────────────────────────────────────────────
+
+/** `DIB_RGB_COLORS` (0) — the bitmap carries literal colours, no palette. */
+const DIB_RGB_COLORS : i32 = 0;
+
+/** `BI_RGB` (0) — uncompressed. */
+const BI_RGB : i32 = 0;
+
+/** `SRCCOPY` (0x00CC0020) — the raster op that just copies. */
+const SRCCOPY : i32 = 13369376;
+
+// ─── System metrics (`SM_*`) ─────────────────────────────────
+
+/** `SM_CXSCREEN` (0) — primary display width. */
+const SM_CXSCREEN : i32 = 0;
+
+/** `SM_CYSCREEN` (1) — primary display height. */
+const SM_CYSCREEN : i32 = 1;

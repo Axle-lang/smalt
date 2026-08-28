@@ -1,22 +1,25 @@
 // timer — monotonic time and frame pacing.
 //
-// The counterpart of `SDL_timer.h`: `ticks()` for `SDL_GetTicks`,
-// `counter()` / `frequency()` for the performance counter pair, `delay`
-// for `SDL_Delay`, and `delayUntil` for SDL3's `SDL_DelayPrecise`.
+// Milliseconds and seconds since the clock started, the raw counter
+// underneath them, and the two ways to wait: hand a duration back to the
+// scheduler, or hold until a deadline.
 //
 // Two hazards shape this file. Integer division **traps** in Axle rather
 // than yielding infinity, so the frequency is clamped away from zero at
 // construction and never re-checked. And `Sleep(1)` is not one
 // millisecond unless the scheduler period was lowered — `Platform` does that
-// with `timeBeginPeriod`, and `delayUntil` still spins the last stretch
-// because even a 1 ms period overshoots often enough to cost a frame.
+// where a platform has one to lower, and `delayUntil` still spins the
+// last stretch because even a 1 ms granularity overshoots often enough
+// to cost a frame.
 
 use crate::platform::sys_clock::SysClock;
 
 /** Milliseconds in a second. */
 const CLOCK_MS_PER_SEC : i64 = 1000;
+
 /** Microseconds in a second. */
 const CLOCK_US_PER_SEC : i64 = 1000000;
+
 /**
  * How much of a wait is handed to the scheduler rather than spun.
  *
@@ -34,9 +37,9 @@ const CLOCK_SPIN_MARGIN_US : i64 = 1500;
  * separated their construction.
  */
 pub class Clock : Closeable {
-    freq : i64;
+    freq   : i64;
     origin : i64;
-    sys : SysClock;
+    sys    : SysClock;
 
     /** Start the clock. */
     constructor() {
@@ -58,12 +61,12 @@ pub class Clock : Closeable {
         return self.freq;
     }
 
-    /** The raw performance counter — `SDL_GetPerformanceCounter`. */
+    /** The raw monotonic counter, in `frequency()` ticks. */
     fn counter(mut self) : i64 {
         return self.sys.counter();
     }
 
-    /** Milliseconds since the clock started — `SDL_GetTicks`. */
+    /** Milliseconds since the clock started. */
     fn ticks(mut self) : i64 {
         return ((self.counter() - self.origin) * CLOCK_MS_PER_SEC) / self.freq;
     }
@@ -78,7 +81,7 @@ pub class Clock : Closeable {
         return (self.micros() as f64) / (CLOCK_US_PER_SEC as f64);
     }
 
-    /** Hand the rest of `ms` back to the scheduler — `SDL_Delay`. */
+    /** Hand `ms` milliseconds back to the scheduler. */
     fn delay(self, ms : i32) : void {
         if (ms > 0) {
             self.sys.sleep(ms);
@@ -106,5 +109,134 @@ pub class Clock : Closeable {
     /** Release the platform clock.*/
     fn close(self) : void {
         self.sys.close();
+    }
+}
+
+/**
+ * How much of a frame's delta is reported, however long the frame took.
+ *
+ * A stalled frame — a dragged window, a breakpoint, a paging storm —
+ * would otherwise hand the simulation one enormous step, and a step that
+ * large moves a body through a wall instead of into it. Reporting less
+ * time than passed makes the world run slow for one frame, which is the
+ * failure a player forgives.
+ */
+const PACER_MAX_DELTA_US : i64 = 250000;
+
+/** The span a frame rate is averaged over before it is republished — one second. */
+const PACER_RATE_WINDOW_US : i64 = 1000000;
+
+/**
+ * The frame loop's metronome: it sleeps to the frame boundary, and
+ * answers how long the previous frame took.
+ *
+ * SDL has no equivalent — a game writes the deadline arithmetic itself,
+ * and gets it subtly wrong: sleeping a fixed period lets error
+ * accumulate, and measuring the delta after the sleep folds the sleep's
+ * own overshoot into the simulation. This does both from one call at the
+ * top of the loop:
+ *
+ * ```
+ * let pacer = new FramePacer(60);
+ * while (running) {
+ *     let dt = pacer.tick(clock);
+ *     world.update(dt);
+ *     device.endFrame(win);
+ * }
+ * ```
+ *
+ * `dt` is in seconds, so it multiplies straight into a velocity. The
+ * first tick returns zero — there is no previous frame to have taken
+ * time — and never sleeps.
+ */
+pub class FramePacer {
+    periodUs     : i64;
+    deadlineUs   : i64;
+    lastUs       : i64;
+    started      : bool;
+    windowUs     : i64;
+    windowFrames : i64;
+    rate         : f64;
+
+    /** A pacer targeting `fps` frames per second; `0` leaves it uncapped. */
+    constructor(fps : i32) {
+        self.periodUs = 0;
+        if (fps > 0) {
+            self.periodUs = CLOCK_US_PER_SEC / (fps as i64);
+        }
+        self.deadlineUs = 0;
+        self.lastUs = 0;
+        self.started = false;
+        self.windowUs = 0;
+        self.windowFrames = 0;
+        self.rate = 0.0;
+    }
+
+    /** Retarget the loop; `0` uncaps it. Takes effect on the next tick. */
+    fn setRate(mut self, fps : i32) : void {
+        self.periodUs = 0;
+        if (fps > 0) {
+            self.periodUs = CLOCK_US_PER_SEC / (fps as i64);
+        }
+    }
+
+    /** The frame period being targeted, in microseconds; `0` when uncapped. */
+    fn period(self) : i64 {
+        return self.periodUs;
+    }
+
+    /**
+     * The rate actually achieved, averaged over the last window.
+     *
+     * Zero until a full window has elapsed, so a title bar shows nothing
+     * rather than a wild number extrapolated from three frames.
+     */
+    fn fps(self) : f64 {
+        return self.rate;
+    }
+
+    /**
+     * Sleep to the frame boundary, then answer the seconds the previous
+     * frame took.
+     *
+     * The deadline advances by whole periods, so a frame that finished
+     * early does not shorten the next one. A frame that overran by more
+     * than a period leaves a backlog that no run of short frames can
+     * clear, so the deadline is re-seeded from now rather than chased.
+     */
+    fn tick(mut self, clock : Clock) : f64 {
+        if (!self.started) {
+            self.started = true;
+            self.lastUs = clock.micros();
+            self.deadlineUs = self.lastUs + self.periodUs;
+            self.windowUs = self.lastUs;
+            return 0.0;
+        }
+
+        if (self.periodUs > 0) {
+            clock.delayUntil(self.deadlineUs);
+        }
+
+        let now = clock.micros();
+        let elapsed = now - self.lastUs;
+        self.lastUs = now;
+
+        self.deadlineUs = self.deadlineUs + self.periodUs;
+        if (self.deadlineUs < now) {
+            self.deadlineUs = now + self.periodUs;
+        }
+
+        self.windowFrames += 1;
+        let span = now - self.windowUs;
+        if (span >= PACER_RATE_WINDOW_US) {
+            self.rate = ((self.windowFrames * CLOCK_US_PER_SEC) as f64) / (span as f64);
+            self.windowFrames = 0;
+            self.windowUs = now;
+        }
+
+        if (elapsed > PACER_MAX_DELTA_US) {
+            elapsed = PACER_MAX_DELTA_US;
+        }
+        return (elapsed as f64) / (CLOCK_US_PER_SEC as f64);
     }
 }

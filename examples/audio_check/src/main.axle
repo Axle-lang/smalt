@@ -22,8 +22,10 @@ use smalt::{Clip, Mixer, SoundBank, Clock};
 
 /** Frames `tone.wav` holds, and therefore what decoding must produce. */
 const EXPECTED_FRAMES : i32 = 7888;
+
 /** How long to let the block cycle turn, in milliseconds. */
 const PUMP_MS : i64 = 2000;
+
 /** Blocks in flight; submitting only this many proves nothing recycled. */
 const BLOCKS_IN_FLIGHT : i32 = 4;
 

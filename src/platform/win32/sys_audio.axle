@@ -1,0 +1,237 @@
+// sys_audio — the platform seam for getting PCM out of the process.
+//
+// THE CONTRACT, a three-call cycle the mixer drives and nothing above
+// this file may look behind:
+//
+//   reclaim()            the index of a block the device has finished
+//                        with and the caller may overwrite, or -1 when
+//                        every block is still in flight
+//   blockAddress(i)      where to write block i's frames
+//   blockFrames()        how many frames fit in a block
+//   submit(i)            hand block i to the device
+//
+// Interleaved signed 16-bit frames, `CHANNELS` per frame, at `RATE`.
+//
+// WHY A CYCLE AND NOT A CALLBACK. Every low-latency audio API wants to
+// call *you* on its own thread. Axle cannot hand out a function address,
+// so the whole design turns on finding a path where the device reports a
+// finished block as *state the caller polls* rather than as a call. On
+// Windows that is `waveOut` opened with `CALLBACK_NULL`, where the
+// device sets `WHDR_DONE` in each header; WASAPI and XAudio2 are COM,
+// reached through a vtable slot obtained at run time, and are therefore
+// unreachable from here at all.
+//
+// Latency is `BLOCKS * BLOCK_FRAMES / RATE`, and the floor is set by how
+// often the caller pumps: a block that comes free between two pumps is
+// silence the device already played. The mixer runs `pump` on its own
+// thread for exactly that reason.
+//
+// Linux: `snd_pcm_open` in `SND_PCM_ACCESS_RW_INTERLEAVED`, which is
+// also a push API and needs no callback. `reclaim` becomes
+// `snd_pcm_avail_update() >= BLOCK_FRAMES` against a staging buffer the
+// port owns, `submit` becomes `snd_pcm_writei`. The one thing the port
+// must add is `snd_pcm_recover` on `-EPIPE`: ALSA reports an underrun as
+// an error the caller is expected to clear, where waveOut simply plays
+// the next block.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::platform::audio_format::{AudioFormat, AUDIO_BLOCK_FRAMES, AUDIO_CHANNELS, AUDIO_RATE, AUDIO_SAMPLE_BYTES};
+use crate::platform::win32::wave_block::{deviceHandle, headerAt};
+use crate::sys::win32_types::{WAVEFORMATEX, WAVEHDR};
+use crate::sys::win32_mm::{waveOutOpen, waveOutPrepareHeader, waveOutWrite, waveOutUnprepareHeader, waveOutReset, waveOutClose};
+
+/** Blocks in flight. Four gives about 93 ms of slack against a long frame. */
+const AUDIO_BLOCKS : i32 = 4;
+
+/** `WAVE_FORMAT_PCM`. */
+const WAVE_FORMAT_PCM : i32 = 1;
+
+/** `WAVE_MAPPER` — `(UINT)-1`, let Windows pick the default output device. */
+const WAVE_MAPPER : i32 = -1;
+
+/** `CALLBACK_NULL` — report completion through the header, not a call. */
+const CALLBACK_NULL : i32 = 0;
+
+/** `WHDR_DONE` — the device has finished with this block. */
+const WHDR_DONE : i32 = 1;
+
+/** `MMSYSERR_NOERROR`. */
+const MMSYSERR_NOERROR : i32 = 0;
+
+/**
+ * The output device and its blocks.
+ *
+ * A failed open is not an error anyone should have to handle: a machine
+ * with no sound card should still run the game. `isOpen` reports it and
+ * every other call becomes a no-op, so a caller never branches.
+ */
+pub class SysAudio : Closeable {
+    device  : Blob; // the HWAVEOUT slot the open call writes through
+    format  : Blob; // WAVEFORMATEX, read once by the open call
+    headers : Blob; // AUDIO_BLOCKS * WAVEHDR, contiguous
+    samples : Blob; // AUDIO_BLOCKS * block bytes, contiguous
+    opened  : bool;
+
+    /** Open the default output device. */
+    constructor() {
+        self.device = new Blob(8);
+        self.format = new Blob(sizeof<WAVEFORMATEX>());
+        self.headers = new Blob((AUDIO_BLOCKS as i64) * (sizeof<WAVEHDR>() as i64));
+        self.samples = new Blob((AUDIO_BLOCKS as i64) * AudioFormat::blockBytes());
+        self.opened = false;
+
+        let align : i32 = AUDIO_CHANNELS * AUDIO_SAMPLE_BYTES;
+        unsafe {
+            let f = self.format.at() as ptr<WAVEFORMATEX>;
+            (*f).wFormatTag = WAVE_FORMAT_PCM as u16;
+            (*f).nChannels = AUDIO_CHANNELS as u16;
+            (*f).nSamplesPerSec = AUDIO_RATE as u32;
+            // Both derived, never written as constants: the device
+            // believes them rather than recomputing, so a wrong one
+            // plays at the wrong speed instead of failing.
+            (*f).nAvgBytesPerSec = (AUDIO_RATE * align) as u32;
+            (*f).nBlockAlign = align as u16;
+            (*f).wBitsPerSample = (AUDIO_SAMPLE_BYTES * 8) as u16;
+            (*f).cbSize = 0;
+        }
+
+        let rc : i32 = 0;
+        unsafe {
+            rc = waveOutOpen(
+                self.device.at(),
+                WAVE_MAPPER as u32,
+                self.format.at(),
+                0,
+                0,
+                CALLBACK_NULL as u32
+            );
+        }
+        if (rc != MMSYSERR_NOERROR) {
+            return;
+        }
+        self.opened = true;
+
+        // Every header points at its block once and for good. The device
+        // never moves them, so this is the only place the two are tied.
+        let i : i32 = 0;
+        while (i < AUDIO_BLOCKS) {
+            unsafe {
+                let h = headerAt(self.headers, i);
+                (*h).lpData = Raw::at(self.blockAddress(i));
+                (*h).dwBufferLength = AudioFormat::blockBytes() as u32;
+                (*h).dwBytesRecorded = 0;
+                (*h).dwUser = i as u64;
+                // WHDR_DONE from the start: a block nobody has queued is
+                // exactly as free as one the device has finished with, so
+                // `reclaim` needs no separate "never queued" state.
+                (*h).dwFlags = WHDR_DONE as u32;
+                (*h).dwLoops = 0;
+            }
+            i = i + 1;
+        }
+    }
+
+    /** Frames the caller may write into one block. */
+    static fn blockFrames() : i32 {
+        return AUDIO_BLOCK_FRAMES;
+    }
+
+    /** Whether the device opened. Everything else is a no-op if not. */
+    fn isOpen(self) : bool {
+        return self.opened;
+    }
+
+    /** The address of block `i`'s first frame. */
+    fn blockAddress(self, i : i32) : i64 {
+        unsafe {
+            return Raw::addr(self.samples.at()) + (i as i64) * AudioFormat::blockBytes();
+        }
+    }
+
+    /**
+     * A block the caller may overwrite, or -1 while every block is in
+     * flight.
+     *
+     * Answering -1 is the normal case, not a failure: it means the
+     * device still has enough queued and the mixer has nothing to do.
+     */
+    fn reclaim(mut self) : i32 {
+        if (!self.opened) {
+            return -1;
+        }
+        let i : i32 = 0;
+        while (i < AUDIO_BLOCKS) {
+            let done : bool = false;
+            unsafe {
+                let h = headerAt(self.headers, i);
+                done = ((*h).dwFlags & (WHDR_DONE as u32)) != 0;
+            }
+            if (done) {
+                return i;
+            }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    /**
+     * Hand block `i` to the device.
+     *
+     * The header is unprepared first when it carries a previous play:
+     * preparing an already-prepared header leaks the lock on its pages,
+     * and the device refuses to close while any header is still
+     * prepared — so a missing unprepare shows up as a process that will
+     * not exit cleanly rather than as audible trouble.
+     */
+    fn submit(mut self, i : i32) : void {
+        if (!self.opened || i < 0 || i >= AUDIO_BLOCKS) {
+            return;
+        }
+        let size : u32 = sizeof<WAVEHDR>() as u32;
+        unsafe {
+            let h = headerAt(self.headers, i);
+            waveOutUnprepareHeader(deviceHandle(self.device), h as ptr, size);
+            (*h).dwFlags = 0;
+            (*h).dwBufferLength = AudioFormat::blockBytes() as u32;
+            if (waveOutPrepareHeader(
+                deviceHandle(self.device),
+                h as ptr,
+                size
+            ) != MMSYSERR_NOERROR) {
+                return;
+            }
+            waveOutWrite(deviceHandle(self.device), h as ptr, size);
+        }
+    }
+
+    /**
+     * Stop the device and release everything.
+     *
+     * `waveOutReset` first, because it is what marks the queued blocks
+     * done: unpreparing a block the device still holds is refused, and
+     * closing with a prepared block outstanding is refused too.
+     */
+    fn close(self) : void {
+        if (self.opened) {
+            let size : u32 = sizeof<WAVEHDR>() as u32;
+            unsafe {
+                waveOutReset(deviceHandle(self.device));
+                let i : i32 = 0;
+                while (i < AUDIO_BLOCKS) {
+                    waveOutUnprepareHeader(
+                        deviceHandle(self.device),
+                        headerAt(self.headers, i) as ptr,
+                        size
+                    );
+                    i = i + 1;
+                }
+                waveOutClose(deviceHandle(self.device));
+            }
+        }
+        self.samples.close();
+        self.headers.close();
+        self.format.close();
+        self.device.close();
+    }
+}

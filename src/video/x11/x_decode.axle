@@ -1,0 +1,198 @@
+// x_decode — the `XEvent` unions, unpacked, and the per-kind handlers.
+//
+// `SysDrain` presents the two calls a portable file makes — `newScratch`
+// and `drain` — plus `buttonOf`, which both ports answer. Everything
+// else here reads an X11 record or asks the server to translate a
+// keysym, so it is port-private: a name declared on one port and not
+// another is a call that compiles for one target and fails for the
+// other.
+
+use crate::core::event::{Event, EventKind, EventQueue};
+use crate::core::keyboard::{KeyboardState, Scancode};
+use crate::core::mouse::{MouseButton, MouseState};
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::sys::x11_lib::XLookupString;
+use crate::sys::x11_types::{XButtonEvent, XKeyEvent, XMotionEvent};
+use crate::video::sys_window::SysWindow;
+use crate::video::x_keymap::XKeymap;
+
+/** Bytes of the scratch `XLookupString` writes a translation into. */
+const X_TEXT_BYTES : i64 = 8;
+
+/** The largest byte a Latin-1 translation may carry. */
+const X_TEXT_MAX : i32 = 255;
+
+/** The first printable byte; anything below is a control code. */
+const X_TEXT_MIN : i32 = 32;
+
+/** `DEL`, printable by position and not by meaning. */
+const X_TEXT_DEL : i32 = 127;
+
+/** One notch of the wheel, which X11 reports as a button press. */
+const X_WHEEL_NOTCH : i32 = 1;
+
+/** Whether a button number is a wheel notch rather than a button. */
+pub fn isWheel(button : i32) : bool {
+    return button == X_BUTTON_WHEEL_UP || button == X_BUTTON_WHEEL_DOWN;
+}
+
+/**
+ * The character a key event produces, or -1 when it produces none.
+ *
+ * This is the one place in the backend that consults the keyboard
+ * *layout*, which is what text input means. `XLookupString` answers
+ * in Latin-1, so what reaches the queue is a codepoint under 256 —
+ * the same practical range `WM_CHAR` covers once its surrogate
+ * halves are dropped.
+ *
+ * `text` is the caller's scratch: this runs per key press, and a
+ * malloc per keystroke to hold one byte is a cost with no purpose.
+ */
+pub fn textOf(event : ptr, text : Blob, keysym : Blob) : i32 {
+    unsafe {
+        let written = XLookupString(
+            event,
+            text.at(),
+            (X_TEXT_BYTES - 1) as i32,
+            keysym.at() as ptr<i64>,
+            Raw::nil()
+        );
+        if (written <= 0) {
+            return -1;
+        }
+        let cp = Raw::u8At(text.at(), 0);
+        // Backspace, Return and the rest arrive here as control
+        // codes. They are keys, and the game already had them as key
+        // events; passing them again as *text* is how a text field
+        // ends up with a literal carriage return in it.
+        if (cp < X_TEXT_MIN || cp == X_TEXT_DEL || cp > X_TEXT_MAX) {
+            return -1;
+        }
+        return cp;
+    }
+}
+
+/**
+ * Turn one key event into state changes and queued events.
+ *
+ * Split out of the drain loop so the loop stays a loop.
+ */
+pub fn handleKey(
+    event : ptr,
+    press : bool,
+    stamp : i64,
+    queue : EventQueue,
+    keys : KeyboardState,
+    text : Blob,
+    keysym : Blob
+) : void {
+    unsafe {
+        let key : ptr<XKeyEvent> = event as ptr<XKeyEvent>;
+        let sc = XKeymap::lookup((*key).keycode as i32);
+        if (!press) {
+            keys.release(sc);
+            queue.push(Event { kind: EventKind::KeyUp, timestamp: stamp, scancode: sc });
+            return;
+        }
+        // Detectable auto-repeat turns a held key into presses with
+        // no release between them, so "already down" is exactly what
+        // a repeat is — the same fact Win32 packs into `lParam` bit
+        // 30, read off the state this library keeps instead.
+        let repeat = keys.isDown(sc);
+        keys.press(sc);
+        queue.push(
+            Event { kind: EventKind::KeyDown, timestamp: stamp, scancode: sc, repeat: repeat }
+        );
+        let cp = textOf(event, text, keysym);
+        if (cp >= 0) {
+            queue.push(Event { kind: EventKind::TextInput, timestamp: stamp, text: cp });
+        }
+    }
+}
+
+/** Turn one button event into state changes and queued events. */
+pub fn handleButton(
+    event : ptr,
+    press : bool,
+    stamp : i64,
+    queue : EventQueue,
+    mouse : MouseState
+) : void {
+    unsafe {
+        let btn : ptr<XButtonEvent> = event as ptr<XButtonEvent>;
+        let number : i32 = (*btn).button as i32;
+
+        if (isWheel(number)) {
+            // A wheel is a *press* of button 4 or 5 in the X
+            // protocol, and the matching release carries no
+            // information — counting both would double every notch.
+            if (!press) {
+                return;
+            }
+            let notches = X_WHEEL_NOTCH;
+            if (number == X_BUTTON_WHEEL_DOWN) {
+                notches = 0 - X_WHEEL_NOTCH;
+            }
+            mouse.scroll(notches);
+            queue.push(Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: notches });
+            return;
+        }
+
+        let b = buttonOf(number);
+        if (press) {
+            mouse.press(b);
+            queue.push(
+                Event {
+                    kind: EventKind::MouseButtonDown,
+                    timestamp: stamp,
+                    button: b,
+                    x: (*btn).x,
+                    y: (*btn).y,
+                }
+            );
+            return;
+        }
+        mouse.release(b);
+        queue.push(
+            Event {
+                kind: EventKind::MouseButtonUp,
+                timestamp: stamp,
+                button: b,
+                x: (*btn).x,
+                y: (*btn).y,
+            }
+        );
+    }
+}
+
+/** Turn one motion event into a position and a delta. */
+pub fn handleMotion(event : ptr, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
+    unsafe {
+        let motion : ptr<XMotionEvent> = event as ptr<XMotionEvent>;
+        let nx = (*motion).x;
+        let ny = (*motion).y;
+        let known = mouse.isPrimed();
+        let px = mouse.posX();
+        let py = mouse.posY();
+        mouse.moveTo(nx, ny);
+        // The very first motion has no previous position to subtract,
+        // so the delta stays at the field's own default rather than
+        // being a jump from wherever the pointer happened to enter.
+        let e = Event { kind: EventKind::MouseMotion, timestamp: stamp, x: nx, y: ny };
+        if (known) {
+            e.dx = nx - px;
+            e.dy = ny - py;
+        }
+        queue.push(e);
+    }
+}
+
+/** The mouse button an X button number names. */
+pub fn buttonOf(button : i32) : MouseButton {
+    return match button {
+        X_BUTTON_RIGHT => MouseButton::Right,
+        X_BUTTON_MIDDLE => MouseButton::Middle,
+        _ => MouseButton::Left,
+    };
+}

@@ -1,0 +1,251 @@
+// x_window_ops — what the X11 port does to its own window record.
+//
+// `SysWindow` presents the shape a portable file uses — size, title,
+// show/hide, and the four edge latches it reads. These are the X11 half:
+// the display connection and window id, the blank cursor's lifetime, the
+// protocol registration and size hints a window manager needs, and the
+// latch *writers*, which on Windows are the window procedure's job and
+// here are the drain loop's. None of them exists on the other port, and
+// a name declared on one port and not another is a call that compiles
+// for one target and fails for the other.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::sys::x11_lib::{XChangeProperty, XDeleteProperty, XFlush, XFree, XGetWindowProperty, XInternAtom, XSetWMProtocols, XSetWMNormalHints, XAllocSizeHints, XResizeWindow, XSync};
+use crate::sys::x11_const::X_NONE;
+use crate::video::sys_window::SysWindow;
+
+/**
+ * Ask the window manager to send a close *message* rather than
+ * closing the window, and answer the atom that message carries.
+ *
+ * Without this the manager destroys the window and the client finds
+ * out when its connection breaks — which is a close the game cannot
+ * prompt on, save on, or refuse.
+ */
+pub fn registerCloseProtocol(win : SysWindow) : i64 {
+    let atom = XInternAtom(win.display, WM_DELETE_ATOM, X_FALSE);
+    let slot = new Blob(8);
+    defer slot.close();
+    unsafe {
+        let list : ptr<i64> = slot.at() as ptr<i64>;
+        *list = atom;
+        XSetWMProtocols(win.display, win.window, list, WM_PROTOCOL_COUNT);
+    }
+    return atom;
+}
+
+/** Tell the manager this window's size is not negotiable. */
+pub fn pinSize(win : SysWindow, w : i32, h : i32) : void {
+    let block = new Blob(sizeof<XSizeHints>());
+    defer block.close();
+    unsafe {
+        let hints : ptr<XSizeHints> = block.at() as ptr<XSizeHints>;
+        (*hints).flags = X_SIZE_HINT_MIN_MAX;
+        (*hints).min_width = w;
+        (*hints).min_height = h;
+        (*hints).max_width = w;
+        (*hints).max_height = h;
+        XSetWMNormalHints(win.display, win.window, hints);
+    }
+}
+
+/**
+ * Ask the manager for no title bar and no frame.
+ *
+ * `_MOTIF_WM_HINTS` is a convention that outlived Motif and is the
+ * only thing every manager in use understands here — the X protocol
+ * itself has no borderless window.
+ */
+pub fn removeDecorations(win : SysWindow) : void {
+    let atom = XInternAtom(win.display, MOTIF_HINTS_ATOM, X_FALSE);
+    if (atom == 0) {
+        return;
+    }
+    let block = new Blob(sizeof<MotifWmHints>());
+    defer block.close();
+    unsafe {
+        let hints : ptr<MotifWmHints> = block.at() as ptr<MotifWmHints>;
+        (*hints).flags = X_MOTIF_HINT_DECORATIONS;
+        (*hints).decorations = MOTIF_NO_DECORATIONS;
+        // The property is its own type, which is what the convention
+        // says and is easy to misread as a copy-paste slip.
+        XChangeProperty(
+            win.display,
+            win.window,
+            atom,
+            atom,
+            X_MOTIF_HINTS_FORMAT,
+            X_PROP_MODE_REPLACE,
+            block.at(),
+            X_MOTIF_HINTS_WORDS
+        );
+    }
+}
+
+/** The window id, for the X calls that take one. */
+pub fn id(win : SysWindow) : i64 {
+    return win.window;
+}
+
+/** The connection this window lives on. */
+pub fn connection(win : SysWindow) : ptr {
+    return win.display;
+}
+
+/** The cursor that draws nothing, or `None` if none was ever made. */
+pub fn blankCursor(win : SysWindow) : i64 {
+    return win.blank;
+}
+
+/**
+ * Take ownership of the cursor that draws nothing.
+ *
+ * `SysCursor` makes it, because that is the file that knows how; the
+ * window keeps it, because that is what it is defined on and what
+ * outlives the call that made it.
+ */
+pub fn adoptBlankCursor(win : SysWindow, cursor : i64) : void {
+    win.blank = cursor;
+}
+
+/**
+ * Take one event and latch what it says about the window, answering
+ * whether it was this file's to handle.
+ *
+ * This is the half of the drain that belongs to the window rather
+ * than to the input state, and it is a method here so that the
+ * self-check below can run it without a queue, a keyboard and a
+ * mouse to hand.
+ */
+pub fn absorb(win : SysWindow, event : ptr) : bool {
+    unsafe {
+        let any : ptr<XAnyEvent> = event as ptr<XAnyEvent>;
+        let kind : i32 = (*any).type_;
+
+        if (kind == X_CLIENT_MESSAGE) {
+            let msg : ptr<XClientMessageEvent> = event as ptr<XClientMessageEvent>;
+            // Any other client message is somebody else's protocol.
+            if ((*msg).data[0] == win.deleteAtom) {
+                win.closePending = true;
+            }
+            return true;
+        }
+        if (kind == X_CONFIGURE_NOTIFY) {
+            let cfg : ptr<XConfigureEvent> = event as ptr<XConfigureEvent>;
+            win.noteResize((*cfg).width, (*cfg).height);
+            return true;
+        }
+        if (kind == X_DESTROY_NOTIFY) {
+            win.destroyed = true;
+            return true;
+        }
+        if (kind == X_FOCUS_IN) {
+            win.noteFocus(true);
+            return true;
+        }
+        if (kind == X_FOCUS_OUT) {
+            win.noteFocus(false);
+            return true;
+        }
+        if (kind == X_UNMAP_NOTIFY) {
+            win.noteMinimised(true);
+            return true;
+        }
+        if (kind == X_MAP_NOTIFY) {
+            win.noteMinimised(false);
+            return true;
+        }
+        return false;
+    }
+}
+
+/**
+ * Record a new client size.
+ *
+ * X11 sends a `ConfigureNotify` for a move as well as a resize, so
+ * the size is compared here rather than latched blindly — otherwise
+ * dragging a window across the desktop would reallocate the
+ * framebuffer once per motion event.
+ */
+pub fn noteResize(win : SysWindow, w : i32, h : i32) : void {
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    if (w == win.pendingW && h == win.pendingH) {
+        return;
+    }
+    win.pendingW = w;
+    win.pendingH = h;
+    win.sizePending = true;
+}
+
+/** Record a focus edge, if it is one. */
+pub fn noteFocus(win : SysWindow, focused : bool) : void {
+    if (focused == win.focusedNow) {
+        return;
+    }
+    win.focusedNow = focused;
+    win.focusPending = true;
+}
+
+/** Record a minimise / restore edge, if it is one. */
+pub fn noteMinimised(win : SysWindow, minimised : bool) : void {
+    if (minimised == win.minimisedNow) {
+        return;
+    }
+    win.minimisedNow = minimised;
+    win.minimisePending = true;
+}
+
+/**
+ * Send one synthetic event to this window and absorb what comes
+ * back, answering whether the event made the round trip.
+ *
+ * `propagate` is false and the mask is 0, which is what delivers the
+ * event to this window and to nothing else — a propagated synthetic
+ * event would climb to the root and be somebody else's problem.
+ */
+pub fn roundTrip(win : SysWindow, scratch : Blob, kind : i32, w : i32, h : i32) : bool {
+    unsafe {
+        Raw::clear(scratch.at(), X_EVENT_BYTES);
+        let any : ptr<XAnyEvent> = scratch.at() as ptr<XAnyEvent>;
+        (*any).type_ = kind;
+        (*any).send_event = X_TRUE;
+        (*any).display = win.display;
+        (*any).window = win.window;
+
+        if (kind == X_CONFIGURE_NOTIFY) {
+            let cfg : ptr<XConfigureEvent> = scratch.at() as ptr<XConfigureEvent>;
+            (*cfg).event = win.window;
+            (*cfg).window = win.window;
+            (*cfg).width = w;
+            (*cfg).height = h;
+        }
+        if (kind == X_CLIENT_MESSAGE) {
+            let msg : ptr<XClientMessageEvent> = scratch.at() as ptr<XClientMessageEvent>;
+            (*msg).message_type = XInternAtom(win.display, WM_PROTOCOLS_ATOM, X_FALSE);
+            (*msg).format = X_MOTIF_HINTS_FORMAT;
+            (*msg).data[0] = win.deleteAtom;
+        }
+
+        if (XSendEvent(win.display, win.window, X_FALSE, 0, scratch.at()) == 0) {
+            return false;
+        }
+        XSync(win.display, X_FALSE);
+
+        // The queue may hold notices the server sent on its own —
+        // an `Expose` from the map, say — so this drains until the
+        // one that was sent comes back rather than reading once.
+        while (XPending(win.display) > 0) {
+            XNextEvent(win.display, scratch.at());
+            let back : ptr<XAnyEvent> = scratch.at() as ptr<XAnyEvent>;
+            let seen : i32 = (*back).type_;
+            win.absorb(scratch.at());
+            if (seen == kind) {
+                return true;
+            }
+        }
+        return false;
+    }
+}

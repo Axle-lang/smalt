@@ -1,0 +1,88 @@
+// blit_scale — the scratch a scaled frame is resampled into.
+//
+// X11 has no scaling blit: `XPutImage` copies pixel for pixel, so a
+// window that does not match its framebuffer is resampled here first.
+// GDI's `StretchDIBits` scales in the driver, so the Windows port owns
+// nothing like this — which is why the scratch is a port-private class
+// rather than two more methods on `SysBlit`. A name declared on one port
+// and not another is a call that compiles for one target and fails for
+// the other.
+
+use crate::kernel::blob::Blob;
+
+/** Bytes per pixel in the framebuffer's format. */
+const SCALE_PIXEL_BYTES : i32 = 4;
+
+/** Fractional bits of the source walk's fixed-point accumulator. */
+const SCALE_FRACTION_BITS : i32 = 16;
+
+/** The scratch, grown on demand and never shrunk. */
+pub class ScaleScratch : Closeable {
+    pixels   : Blob;
+    capacity : i64;
+
+    /**
+     * A scratch holding nothing.
+     *
+     * One byte rather than none: a `Blob` is at least a byte, and a
+     * scratch nobody has needed yet is simpler to model as an empty one
+     * than as an absent one every path would have to test for. A game
+     * whose window matches its framebuffer never grows it.
+     */
+    constructor() {
+        self.pixels = new Blob(1);
+        self.capacity = 0;
+    }
+
+    /** Where the resampled frame starts. */
+    fn at(self) : ptr {
+        return self.pixels.at();
+    }
+
+    /** Make sure the scratch holds at least `count` pixels. */
+    fn reserve(mut self, count : i64) : void {
+        if (count <= self.capacity) {
+            return;
+        }
+        self.pixels.close();
+        self.pixels = new Blob(count * (SCALE_PIXEL_BYTES as i64));
+        self.capacity = count;
+    }
+
+    /**
+     * Resample `source` into the scratch at `dstW` by `dstH`, nearest
+     * neighbour.
+     *
+     * The source is walked with a fixed-point accumulator, so the inner
+     * loop is an add and a shift — a division per pixel is what a naive
+     * `sx = dx * srcW / dstW` costs, and at a window's worth of pixels
+     * sixty times a second that is the whole budget.
+     */
+    fn resample(mut self, source : i32[], srcW : i32, srcH : i32, dstW : i32, dstH : i32) : void {
+        let xStep : i64 = ((srcW as i64) << SCALE_FRACTION_BITS) / (dstW as i64);
+        let yStep : i64 = ((srcH as i64) << SCALE_FRACTION_BITS) / (dstH as i64);
+        unsafe {
+            let dst : ptr<i32> = self.pixels.at() as ptr<i32>;
+            let sy : i64 = 0;
+            let dy : i32 = 0;
+            while (dy < dstH) {
+                let srcRow : i64 = (sy >> SCALE_FRACTION_BITS) * (srcW as i64);
+                let dstRow : i64 = (dy as i64) * (dstW as i64);
+                let sx : i64 = 0;
+                let dx : i32 = 0;
+                while (dx < dstW) {
+                    dst[dstRow + (dx as i64)] = source[srcRow + (sx >> SCALE_FRACTION_BITS)];
+                    sx = sx + xStep;
+                    dx = dx + 1;
+                }
+                sy = sy + yStep;
+                dy = dy + 1;
+            }
+        }
+    }
+
+    /** Release the scratch. */
+    fn close(self) : void {
+        self.pixels.close();
+    }
+}

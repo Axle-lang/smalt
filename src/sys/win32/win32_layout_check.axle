@@ -1,0 +1,122 @@
+// win32_layout_check — the numbers, asserted against the declarations.
+//
+// `sys/win32_types` replaced a hand-written table of byte offsets with
+// `extern "C" struct` declarations. Those two things are only interchangeable
+// if they agree, and "the compiler computes it, so it must be right" is the
+// belief the table also held about its author.
+//
+// So the table's numbers live on here, once, as the thing the declarations
+// are checked against. They are transcribed from the Windows SDK, and a
+// failure means the declaration drifted from the record the OS reads — a
+// field added in the wrong place, a `LONG` written as `i64`, a `WORD` widened
+// to `u32`. Every one of those is a silent memory corruption at the FFI
+// boundary, and the point of this file is that it is a returned error code
+// instead.
+//
+// It is called by `examples/proc_check`, the library's headless self-test, so
+// the assertion runs rather than merely existing.
+
+use crate::sys::dib::{BITMAPINFO, BITMAPINFOHEADER};
+use crate::sys::win32_types::{MSG, POINT, RECT, WNDCLASSEXW};
+
+/** Sizes and offsets of the Win32 records, checked against the SDK. */
+pub class Win32Layout {
+    /**
+     * 0 when every record matches the SDK, otherwise the number of the
+     * first check that failed.
+     *
+     * A number rather than a boolean: a caller that prints "layout wrong"
+     * has to bisect this file by hand, and the record that moved is the
+     * only thing worth knowing.
+     */
+    static fn verify() : i32 {
+        if (sizeof<POINT>() != 8) { return 1; }
+        if (offsetof(POINT, y) != 4) { return 2; }
+
+        if (sizeof<RECT>() != 16) { return 3; }
+        if (offsetof(RECT, top) != 4 || offsetof(RECT, right) != 8 || offsetof(RECT, bottom) != 12) {
+            return 4;
+        }
+
+        // The four bytes of padding after `message` are why this record was
+        // worth a table: `wParam` is pointer-aligned and `message` is a
+        // 32-bit `UINT`, so the gap is C's and not anything written down.
+        if (sizeof<MSG>() != 48) { return 5; }
+        if (offsetof(MSG, message) != 8) { return 6; }
+        if (offsetof(MSG, wParam) != 16) { return 7; }
+        if (offsetof(MSG, lParam) != 24) { return 8; }
+        if (offsetof(MSG, time) != 32) { return 9; }
+        if (offsetof(MSG, pt) != 36) { return 10; }
+
+        if (sizeof<WNDCLASSEXW>() != 80) { return 11; }
+        if (offsetof(WNDCLASSEXW, style) != 4) {
+            return 12;
+        }
+        // The procedure slot: pointer-aligned, so `style` is followed by no
+        // gap and `lpfnWndProc` by four bytes of one.
+        if (offsetof(WNDCLASSEXW, lpfnWndProc) != 8) {
+            return 13;
+        }
+        if (offsetof(WNDCLASSEXW, cbClsExtra) != 16) {
+            return 14;
+        }
+        if (offsetof(WNDCLASSEXW, cbWndExtra) != 20) {
+            return 15;
+        }
+        if (offsetof(WNDCLASSEXW, hInstance) != 24) {
+            return 16;
+        }
+        if (offsetof(WNDCLASSEXW, hIcon) != 32) {
+            return 17;
+        }
+        if (offsetof(WNDCLASSEXW, hCursor) != 40) {
+            return 18;
+        }
+        if (offsetof(WNDCLASSEXW, hbrBackground) != 48) {
+            return 19;
+        }
+        if (offsetof(WNDCLASSEXW, lpszMenuName) != 56) {
+            return 20;
+        }
+        if (offsetof(WNDCLASSEXW, lpszClassName) != 64) {
+            return 21;
+        }
+        if (offsetof(WNDCLASSEXW, hIconSm) != 72) {
+            return 22;
+        }
+
+        // 40, not 44: `biPlanes` and `biBitCount` are `WORD`s and share one
+        // four-byte slot. Widening either is the classic way to make every
+        // DIB call fail with no diagnosis, because `biSize` then disagrees
+        // with what the OS expects the header to be.
+        if (sizeof<BITMAPINFOHEADER>() != 40) {
+            return 23;
+        }
+        if (offsetof(BITMAPINFOHEADER, biWidth) != 4) {
+            return 24;
+        }
+        if (offsetof(BITMAPINFOHEADER, biHeight) != 8) {
+            return 25;
+        }
+        if (offsetof(BITMAPINFOHEADER, biPlanes) != 12) {
+            return 26;
+        }
+        if (offsetof(BITMAPINFOHEADER, biBitCount) != 14) {
+            return 27;
+        }
+        if (offsetof(BITMAPINFOHEADER, biCompression) != 16) {
+            return 28;
+        }
+        if (offsetof(BITMAPINFOHEADER, biSizeImage) != 20) {
+            return 29;
+        }
+
+        // The header plus one `RGBQUAD`, with nothing between them.
+        if (sizeof<BITMAPINFO>() != 44) { return 30; }
+        if (offsetof(BITMAPINFO, bmiColors) != 40) {
+            return 31;
+        }
+
+        return 0;
+    }
+}

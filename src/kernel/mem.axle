@@ -1,0 +1,204 @@
+// mem — owned raw memory, for a game that writes its own pixels.
+//
+// smalt hands a game a framebuffer and gets out of the way;
+// a renderer that fills one has its own buffers to own — a depth buffer,
+// a light map, a mesh's attribute arrays — and Axle's `T[]` is not
+// always what it wants for them: an array carries a length and a bounds
+// check per access, which is right for the library's own surfaces and
+// wrong for the inner loop of a rasteriser that already proved the index.
+//
+// So this is the escape hatch, and it is deliberately one file. It is
+// the only *public* part of the library that hands out an address, every
+// method is `static`, and the whole of it is `unsafe` on the inside and
+// plain on the outside — which is what confines the grep for `unsafe` in
+// a program built on smalt to the places its own author wrote one.
+//
+// # What the shape means
+//
+// A block is an `i64` address rather than a `ptr`, because the calling
+// code does arithmetic on it: an SoA renderer computes `base + row *
+// stride` a hundred times a frame, and a pointer type that had to be
+// cast at each of those sites would make the code *less* readable and no
+// safer. The two flavours of accessor say which:
+//
+//   * `…At(base, off)` — `off` is a **byte** offset, for reading a
+//     record or a packed field.
+//   * `…Of(base, index)` — `index` is an **element** index, scaled by
+//     the width, for walking an array of one type. This is the one the
+//     inner loops want, and it is what keeps `* 8` and `* 4` out of them.
+//
+// Nothing here is bounds-checked, and nothing here can be: the block's
+// length is the caller's knowledge. That is the trade, stated once —
+// `Blob` is the checked-lifetime version for the library's own OS
+// records, and `T[]` is the checked-bounds version for everything that
+// can afford one.
+
+use crate::kernel::raw::Raw;
+
+/** Bytes in an `i32` / a pixel. */
+const MEM_WORD_BYTES : i64 = 4;
+
+/** Bytes in an `i64` / an `f64`. */
+const MEM_WIDE_BYTES : i64 = 8;
+
+/** Owned raw memory, addressed as an integer. */
+pub class Mem {
+    /**
+     * `bytes` uninitialised bytes, or 0 when the allocation failed.
+     *
+     * Uninitialised, not zeroed: a renderer's buffers are overwritten
+     * every frame before they are read, and clearing them at
+     * construction is a memset per allocation nobody asked for. Use
+     * `takeZeroed` where the first read comes before the first write.
+     */
+    static fn take(bytes : i64) : i64 {
+        if (bytes <= 0) {
+            return 0;
+        }
+        return Raw::addr(Raw::take(bytes));
+    }
+
+    /** `bytes` bytes, zeroed, or 0 when the allocation failed. */
+    static fn takeZeroed(bytes : i64) : i64 {
+        let base = Mem::take(bytes);
+        if (base != 0) {
+            Mem::clear(base, bytes);
+        }
+        return base;
+    }
+
+    /** Return a block from `take` to the allocator. */
+    static fn release(base : i64) : void {
+        if (base != 0) {
+            Raw::release(Raw::at(base));
+        }
+    }
+
+    /** Whether an address is the null one — a refused allocation. */
+    static fn isNil(base : i64) : bool {
+        return base == 0;
+    }
+
+    /** Fill `bytes` bytes at `base` with zero. */
+    static fn clear(base : i64, bytes : i64) : void {
+        Raw::clear(Raw::at(base), bytes);
+    }
+
+    /** Copy `bytes` bytes; the regions must not overlap. */
+    static fn copy(dst : i64, src : i64, bytes : i64) : void {
+        Raw::copy(Raw::at(dst), Raw::at(src), bytes);
+    }
+
+    /** The unsigned byte at `base + off`, widened without sign extension. */
+    static fn byteAt(base : i64, off : i64) : i32 {
+        return Raw::u8At(Raw::at(base), off);
+    }
+
+    /** Store the low byte of `v` at `base + off`. */
+    static fn putByte(base : i64, off : i64, v : i32) : void {
+        Raw::putU8(Raw::at(base), off, v);
+    }
+
+    /** The unsigned 16-bit word at `base + off`. */
+    static fn wordAt(base : i64, off : i64) : i32 {
+        return Raw::u16At(Raw::at(base), off);
+    }
+
+    /** The SIGNED 16-bit half-word at `base + off` — a PCM sample. */
+    static fn signedWordAt(base : i64, off : i64) : i32 {
+        return Raw::i16At(Raw::at(base), off);
+    }
+
+    /** Store the low 16 bits of `v` at `base + off`. */
+    static fn putWord(base : i64, off : i64, v : i32) : void {
+        Raw::putU16(Raw::at(base), off, v);
+    }
+
+    /** The 32-bit word at `base + off`. */
+    static fn dwordAt(base : i64, off : i64) : i32 {
+        return Raw::i32At(Raw::at(base), off);
+    }
+
+    /** Store the 32-bit word `v` at `base + off`. */
+    static fn putDword(base : i64, off : i64, v : i32) : void {
+        Raw::putI32(Raw::at(base), off, v);
+    }
+
+    /** The 64-bit word at `base + off`. */
+    static fn qwordAt(base : i64, off : i64) : i64 {
+        return Raw::i64At(Raw::at(base), off);
+    }
+
+    /** Store the 64-bit word `v` at `base + off`. */
+    static fn putQword(base : i64, off : i64, v : i64) : void {
+        Raw::putI64(Raw::at(base), off, v);
+    }
+
+    /**
+     * The 32-bit element at `index` — a pixel, in a framebuffer.
+     *
+     * Scaled by the width, so a caller walking a row writes `index + 1`
+     * rather than `off + 4`. That is not sugar: an off-by-four in a
+     * byte offset reads a pixel that is *almost* right, which is the
+     * hardest kind of wrong to see.
+     */
+    static fn wordOf(base : i64, index : i64) : i32 {
+        unsafe {
+            let slot : ptr<i32> = (base + index * MEM_WORD_BYTES) as ptr<i32>;
+            return *slot;
+        }
+    }
+
+    /** Store the 32-bit element `v` at `index`. */
+    static fn putWordOf(base : i64, index : i64, v : i32) : void {
+        unsafe {
+            let slot : ptr<i32> = (base + index * MEM_WORD_BYTES) as ptr<i32>;
+            *slot = v;
+        }
+    }
+
+    /** The `f64` element at `index` — a depth, in a z-buffer. */
+    static fn realOf(base : i64, index : i64) : f64 {
+        unsafe {
+            let slot : ptr<f64> = (base + index * MEM_WIDE_BYTES) as ptr<f64>;
+            return *slot;
+        }
+    }
+
+    /** Store the `f64` element `v` at `index`. */
+    static fn putRealOf(base : i64, index : i64, v : f64) : void {
+        unsafe {
+            let slot : ptr<f64> = (base + index * MEM_WIDE_BYTES) as ptr<f64>;
+            *slot = v;
+        }
+    }
+
+    /** The `i64` element at `index`. */
+    static fn qwordOf(base : i64, index : i64) : i64 {
+        unsafe {
+            let slot : ptr<i64> = (base + index * MEM_WIDE_BYTES) as ptr<i64>;
+            return *slot;
+        }
+    }
+
+    /** Store the `i64` element `v` at `index`. */
+    static fn putQwordOf(base : i64, index : i64, v : i64) : void {
+        unsafe {
+            let slot : ptr<i64> = (base + index * MEM_WIDE_BYTES) as ptr<i64>;
+            *slot = v;
+        }
+    }
+
+    /**
+     * The block a bounds-checked pixel buffer is backed by.
+     *
+     * The bridge between the two halves of the library: a `RenderTarget`
+     * hands out its `i32[]`, and a renderer that would rather walk it
+     * without a bounds check per pixel gets its address here. The array
+     * must outlive every use of the address, which is the caller's to
+     * know — the compiler stops tracking it at this line.
+     */
+    static fn addressOf(pixels : i32[]) : i64 {
+        return Raw::addr(Raw::pixelsOf(pixels));
+    }
+}

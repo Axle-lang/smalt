@@ -1,0 +1,55 @@
+// win_keymap — PS/2 set-1 hardware scancode to `Scancode`.
+//
+// The mapping is deliberately taken from the hardware code in bits
+// 16..23 of a key message's `lParam`, not from the virtual-key code in
+// `wParam`. The virtual key is what the *layout* produces: on an AZERTY
+// keyboard `VK_A` comes from the key an American keyboard calls Q, so a
+// WASD binding built on virtual keys lands under the player's little
+// finger. The hardware code names the position, which is what a
+// `Scancode` means and what a movement binding wants.
+//
+// The main block of the keyboard is numbered the same way on both
+// platforms, so it lives in `video::scancode_set1`. What is here is the
+// half that is genuinely Win32's: the `E0` prefix, which distinguishes
+// the arrow cluster from the numeric keypad and the right-hand modifiers
+// from the left-hand ones — both share a base code with something else.
+
+use crate::core::keyboard::Scancode;
+use crate::video::scancode_set1::ScancodeSet1;
+
+/** The `lParam` hardware code, and the extended-key prefix, to a scancode. */
+class WinKeymap {
+    /**
+     * Codes prefixed with `E0` in the set-1 stream.
+     *
+     * The prefix is what separates the arrow cluster from the numeric
+     * keypad, and the right-hand modifiers from the left-hand ones —
+     * both share a base code with something else.
+     */
+    static fn extended(scan : i32) : Scancode {
+        return match scan {
+            0x1C => Scancode::KeypadEnter,
+            0x1D => Scancode::RightControl,
+            0x38 => Scancode::RightAlt,
+            0x47 => Scancode::Home,
+            0x48 => Scancode::Up,
+            0x49 => Scancode::PageUp,
+            0x4B => Scancode::Left,
+            0x4D => Scancode::Right,
+            0x4F => Scancode::End,
+            0x50 => Scancode::Down,
+            0x51 => Scancode::PageDown,
+            0x52 => Scancode::Insert,
+            0x53 => Scancode::Delete,
+            _ => Scancode::Unknown,
+        };
+    }
+
+    /** The scancode a key message names. */
+    static fn lookup(scan : i32, isExtended : bool) : Scancode {
+        if (isExtended) {
+            return WinKeymap::extended(scan);
+        }
+        return ScancodeSet1::base(scan);
+    }
+}

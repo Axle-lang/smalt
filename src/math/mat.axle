@@ -12,7 +12,7 @@
 //     `v' = M * v`, so composing reads right-to-left —
 //     `projection.mul(view).mul(model)`.
 //   * **Right-handed space**, the camera looking down **-Z**, +Y up.
-//     That is OpenGL's convention and SDL's GPU convention.
+//     That is OpenGL's convention.
 //
 // Every constructor that divides guards its divisor first: division
 // traps in Axle, so a zero aspect ratio or a zero-depth frustum would
@@ -28,79 +28,154 @@ const MAT_EPSILON : f64 = 0.000000001;
 pub struct Mat4 {
     /** Row 0, column 0. */
     pub m00 : f64;
+
     /** Row 0, column 1. */
     pub m01 : f64;
+
     /** Row 0, column 2. */
     pub m02 : f64;
+
     /** Row 0, column 3. */
     pub m03 : f64;
+
     /** Row 1, column 0. */
     pub m10 : f64;
+
     /** Row 1, column 1. */
     pub m11 : f64;
+
     /** Row 1, column 2. */
     pub m12 : f64;
+
     /** Row 1, column 3. */
     pub m13 : f64;
+
     /** Row 2, column 0. */
     pub m20 : f64;
+
     /** Row 2, column 1. */
     pub m21 : f64;
+
     /** Row 2, column 2. */
     pub m22 : f64;
+
     /** Row 2, column 3. */
     pub m23 : f64;
+
     /** Row 3, column 0. */
     pub m30 : f64;
+
     /** Row 3, column 1. */
     pub m31 : f64;
+
     /** Row 3, column 2. */
     pub m32 : f64;
+
     /** Row 3, column 3. */
     pub m33 : f64;
 
     /** A matrix from sixteen values, in row-major order. */
     static fn rows(
-        m00 : f64, m01 : f64, m02 : f64, m03 : f64,
-        m10 : f64, m11 : f64, m12 : f64, m13 : f64,
-        m20 : f64, m21 : f64, m22 : f64, m23 : f64,
-        m30 : f64, m31 : f64, m32 : f64, m33 : f64
+        m00 : f64,
+        m01 : f64,
+        m02 : f64,
+        m03 : f64,
+        m10 : f64,
+        m11 : f64,
+        m12 : f64,
+        m13 : f64,
+        m20 : f64,
+        m21 : f64,
+        m22 : f64,
+        m23 : f64,
+        m30 : f64,
+        m31 : f64,
+        m32 : f64,
+        m33 : f64
     ) : Mat4 {
         return Mat4 {
-            m00: m00, m01: m01, m02: m02, m03: m03,
-            m10: m10, m11: m11, m12: m12, m13: m13,
-            m20: m20, m21: m21, m22: m22, m23: m23,
-            m30: m30, m31: m31, m32: m32, m33: m33,
+            m00: m00,
+            m01: m01,
+            m02: m02,
+            m03: m03,
+            m10: m10,
+            m11: m11,
+            m12: m12,
+            m13: m13,
+            m20: m20,
+            m21: m21,
+            m22: m22,
+            m23: m23,
+            m30: m30,
+            m31: m31,
+            m32: m32,
+            m33: m33,
         };
     }
 
     /** The identity. */
     static fn identity() : Mat4 {
         return Mat4::rows(
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
         );
     }
 
     /** A translation by `v`. */
     static fn translation(v : Vec3) : Mat4 {
         return Mat4::rows(
-            1.0, 0.0, 0.0, v.x,
-            0.0, 1.0, 0.0, v.y,
-            0.0, 0.0, 1.0, v.z,
-            0.0, 0.0, 0.0, 1.0
+            1.0,
+            0.0,
+            0.0,
+            v.x,
+            0.0,
+            1.0,
+            0.0,
+            v.y,
+            0.0,
+            0.0,
+            1.0,
+            v.z,
+            0.0,
+            0.0,
+            0.0,
+            1.0
         );
     }
 
     /** A non-uniform scale by `v`. */
     static fn scaling(v : Vec3) : Mat4 {
         return Mat4::rows(
-            v.x, 0.0, 0.0, 0.0,
-            0.0, v.y, 0.0, 0.0,
-            0.0, 0.0, v.z, 0.0,
-            0.0, 0.0, 0.0, 1.0
+            v.x,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            v.y,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            v.z,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
         );
     }
 
@@ -108,35 +183,21 @@ pub struct Mat4 {
     static fn rotationX(radians : f64) : Mat4 {
         let c = radians.cos();
         let s = radians.sin();
-        return Mat4::rows(
-            1.0, 0.0, 0.0, 0.0,
-            0.0, c, -s, 0.0,
-            0.0, s, c, 0.0,
-            0.0, 0.0, 0.0, 1.0
-        );
+        return Mat4::rows(1.0, 0.0, 0.0, 0.0, 0.0, c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0);
     }
 
     /** A rotation of `radians` about +Y. */
     static fn rotationY(radians : f64) : Mat4 {
         let c = radians.cos();
         let s = radians.sin();
-        return Mat4::rows(
-            c, 0.0, s, 0.0,
-            0.0, 1.0, 0.0, 0.0, -s, 0.0, c, 0.0,
-            0.0, 0.0, 0.0, 1.0
-        );
+        return Mat4::rows(c, 0.0, s, 0.0, 0.0, 1.0, 0.0, 0.0, -s, 0.0, c, 0.0, 0.0, 0.0, 0.0, 1.0);
     }
 
     /** A rotation of `radians` about +Z. */
     static fn rotationZ(radians : f64) : Mat4 {
         let c = radians.cos();
         let s = radians.sin();
-        return Mat4::rows(
-            c, -s, 0.0, 0.0,
-            s, c, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0
-        );
+        return Mat4::rows(c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
     }
 
     /**
@@ -154,10 +215,22 @@ pub struct Mat4 {
         let s = radians.sin();
         let t : f64 = 1.0 - c;
         return Mat4::rows(
-            t * a.x * a.x + c, t * a.x * a.y - s * a.z, t * a.x * a.z + s * a.y, 0.0,
-            t * a.x * a.y + s * a.z, t * a.y * a.y + c, t * a.y * a.z - s * a.x, 0.0,
-            t * a.x * a.z - s * a.y, t * a.y * a.z + s * a.x, t * a.z * a.z + c, 0.0,
-            0.0, 0.0, 0.0, 1.0
+            t * a.x * a.x + c,
+            t * a.x * a.y - s * a.z,
+            t * a.x * a.z + s * a.y,
+            0.0,
+            t * a.x * a.y + s * a.z,
+            t * a.y * a.y + c,
+            t * a.y * a.z - s * a.x,
+            0.0,
+            t * a.x * a.z - s * a.y,
+            t * a.y * a.z + s * a.x,
+            t * a.z * a.z + c,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
         );
     }
 
@@ -180,10 +253,22 @@ pub struct Mat4 {
         }
         let f : f64 = 1.0 / half;
         return Mat4::rows(
-            f / aspect, 0.0, 0.0, 0.0,
-            0.0, f, 0.0, 0.0,
-            0.0, 0.0, (far + near) / depth, (2.0 * far * near) / depth,
-            0.0, 0.0, -1.0, 0.0
+            f / aspect,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            f,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            (far + near) / depth,
+            (2.0 * far * near) / depth,
+            0.0,
+            0.0,
+            -1.0,
+            0.0
         );
     }
 
@@ -211,10 +296,22 @@ pub struct Mat4 {
             return Mat4::identity();
         }
         return Mat4::rows(
-            2.0 / rl, 0.0, 0.0, -(right + left) / rl,
-            0.0, 2.0 / tb, 0.0, -(top + bottom) / tb,
-            0.0, 0.0, -2.0 / zRange, -(far + near) / zRange,
-            0.0, 0.0, 0.0, 1.0
+            2.0 / rl,
+            0.0,
+            0.0,
+            -(right + left) / rl,
+            0.0,
+            2.0 / tb,
+            0.0,
+            -(top + bottom) / tb,
+            0.0,
+            0.0,
+            -2.0 / zRange,
+            -(far + near) / zRange,
+            0.0,
+            0.0,
+            0.0,
+            1.0
         );
     }
 
@@ -237,9 +334,22 @@ pub struct Mat4 {
         }
         let trueUp = right.cross(forward);
         return Mat4::rows(
-            right.x, right.y, right.z, -right.dot(eye),
-            trueUp.x, trueUp.y, trueUp.z, -trueUp.dot(eye), -forward.x, -forward.y, -forward.z, forward.dot(eye),
-            0.0, 0.0, 0.0, 1.0
+            right.x,
+            right.y,
+            right.z,
+            -right.dot(eye),
+            trueUp.x,
+            trueUp.y,
+            trueUp.z,
+            -trueUp.dot(eye),
+            -forward.x,
+            -forward.y,
+            -forward.z,
+            forward.dot(eye),
+            0.0,
+            0.0,
+            0.0,
+            1.0
         );
     }
 
@@ -250,17 +360,14 @@ pub struct Mat4 {
             self.m00 * o.m01 + self.m01 * o.m11 + self.m02 * o.m21 + self.m03 * o.m31,
             self.m00 * o.m02 + self.m01 * o.m12 + self.m02 * o.m22 + self.m03 * o.m32,
             self.m00 * o.m03 + self.m01 * o.m13 + self.m02 * o.m23 + self.m03 * o.m33,
-
             self.m10 * o.m00 + self.m11 * o.m10 + self.m12 * o.m20 + self.m13 * o.m30,
             self.m10 * o.m01 + self.m11 * o.m11 + self.m12 * o.m21 + self.m13 * o.m31,
             self.m10 * o.m02 + self.m11 * o.m12 + self.m12 * o.m22 + self.m13 * o.m32,
             self.m10 * o.m03 + self.m11 * o.m13 + self.m12 * o.m23 + self.m13 * o.m33,
-
             self.m20 * o.m00 + self.m21 * o.m10 + self.m22 * o.m20 + self.m23 * o.m30,
             self.m20 * o.m01 + self.m21 * o.m11 + self.m22 * o.m21 + self.m23 * o.m31,
             self.m20 * o.m02 + self.m21 * o.m12 + self.m22 * o.m22 + self.m23 * o.m32,
             self.m20 * o.m03 + self.m21 * o.m13 + self.m22 * o.m23 + self.m23 * o.m33,
-
             self.m30 * o.m00 + self.m31 * o.m10 + self.m32 * o.m20 + self.m33 * o.m30,
             self.m30 * o.m01 + self.m31 * o.m11 + self.m32 * o.m21 + self.m33 * o.m31,
             self.m30 * o.m02 + self.m31 * o.m12 + self.m32 * o.m22 + self.m33 * o.m32,
@@ -291,10 +398,22 @@ pub struct Mat4 {
     /** The transpose — the inverse of a rotation, and the normal matrix's half. */
     fn transposed(self) : Mat4 {
         return Mat4::rows(
-            self.m00, self.m10, self.m20, self.m30,
-            self.m01, self.m11, self.m21, self.m31,
-            self.m02, self.m12, self.m22, self.m32,
-            self.m03, self.m13, self.m23, self.m33
+            self.m00,
+            self.m10,
+            self.m20,
+            self.m30,
+            self.m01,
+            self.m11,
+            self.m21,
+            self.m31,
+            self.m02,
+            self.m12,
+            self.m22,
+            self.m32,
+            self.m03,
+            self.m13,
+            self.m23,
+            self.m33
         );
     }
 }

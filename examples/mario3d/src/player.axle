@@ -39,6 +39,7 @@ class Player {
         self.bonkCol = -1;
         self.bonkRow = -1;
     }
+
     /** Teleport to `(x, y)` and reset velocity (used on respawn). */
     fn placeAt(mut self, x : f64, y : f64) : void {
         self.x = x;
@@ -66,6 +67,7 @@ class Player {
             self.vx = 0.0;
         }
     }
+
     /** Launch upward off the ground at the fixed jump velocity. */
     fn jump(mut self) : void {
         self.vy = -jumpVel;

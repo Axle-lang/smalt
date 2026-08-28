@@ -1,15 +1,14 @@
 // display — what the screen is, before a window exists.
 //
-// SDL enumerates displays and their modes through `SDL_GetDisplays` and
-// `SDL_GetFullscreenDisplayModes`. Both walk a list built by the video
-// driver, and on Windows SDL fills that list from `EnumDisplayMonitors`
-// — which takes a callback, and so is out of reach here.
+// The primary display only, which answers the question a game actually
+// asks at startup: how big a window may I open.
 //
-// What is in reach is the primary display, through `GetSystemMetrics`,
-// and that answers the question a game actually asks at startup: how big
-// a window may I open. Multi-monitor enumeration would need
-// `EnumDisplayDevicesW` / `EnumDisplaySettingsW`, which are callback-free
-// and would fit this design; they are simply not written yet.
+// Enumerating the rest is a platform question with two different
+// answers. On Windows it is `EnumDisplayMonitors`, which takes a
+// callback and is therefore out of reach — `EnumDisplayDevicesW` /
+// `EnumDisplaySettingsW` are the callback-free pair that would fit. On
+// X11 it is Xinerama or XRandR, each a separate library on the link
+// line. Both fit behind `SysScreen`'s two functions; neither is written.
 
 use crate::platform::sys_screen::SysScreen;
 

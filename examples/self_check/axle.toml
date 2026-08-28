@@ -1,0 +1,6 @@
+[package]
+name = "self_check"
+version = "0.1.0"
+
+[dependencies]
+smalt = { path = "../.." }

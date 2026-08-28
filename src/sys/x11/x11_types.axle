@@ -1,0 +1,480 @@
+// x11_types — the Xlib records, declared rather than measured.
+//
+// Xlib's `XEvent` is a union: every event begins with the same header —
+// a type, a serial, a send_event flag, the display and the window — and
+// each member extends it with its own tail. There is no union in Axle,
+// and there does not need to be one: the drain reads the type out of the
+// first four bytes and then addresses the block as the record that type
+// names. Each of those records is declared here.
+//
+// `extern "C" struct` is what makes that safe. The layout is the
+// target's, field order is the source order, and the padding is C's — so
+// a field is read where the X server wrote it because both sides
+// computed the same address from the same declaration. The alternative
+// is a table of hand-written offsets, and the offsets in an `XEvent` are
+// exactly where that goes wrong: `int type` is followed by four bytes of
+// padding before an `unsigned long serial`, and every later field of
+// every member inherits that gap.
+//
+// The widths are the LP64 ones this backend builds for: `Window`,
+// `Atom`, `Time` and `unsigned long` are 64-bit, `int` and `Bool` are
+// 32-bit. `sys/linux/x11_layout_check` asserts the sizes and the offsets
+// the X11 headers publish, so a drifted declaration is a returned number
+// rather than a silent misread of somebody else's memory.
+
+/**
+ * The header every `XEvent` member begins with.
+ *
+ * Read first, for the `type` that says which record the rest is.
+ */
+pub extern "C" struct XAnyEvent {
+    /** `int type`. */
+    pub type_      : i32;
+
+    /** `unsigned long serial`. */
+    pub serial     : i64;
+
+    /** `Bool send_event`. */
+    pub send_event : i32;
+
+    /** `Display *display`. */
+    pub display    : ptr;
+
+    /** `Window window`. */
+    pub window     : i64;
+}
+
+/**
+ * `XKeyEvent` — `KeyPress` and `KeyRelease`.
+ *
+ * `keycode` is the X server's, which is the evdev code plus 8 on Linux;
+ * `video::x_keymap` is what turns it into a position on the keyboard.
+ */
+pub extern "C" struct XKeyEvent {
+    /** `int type`. */
+    pub type_       : i32;
+
+    /** `unsigned long serial`. */
+    pub serial      : i64;
+
+    /** `Bool send_event`. */
+    pub send_event  : i32;
+
+    /** `Display *display`. */
+    pub display     : ptr;
+
+    /** `Window window`. */
+    pub window      : i64;
+
+    /** `Window root`. */
+    pub root        : i64;
+
+    /** `Window subwindow`. */
+    pub subwindow   : i64;
+
+    /** `Time time`. */
+    pub time        : i64;
+
+    /** `int x` — pointer x, in the window. */
+    pub x           : i32;
+
+    /** `int y`. */
+    pub y           : i32;
+
+    /** `int x_root`. */
+    pub x_root      : i32;
+
+    /** `int y_root`. */
+    pub y_root      : i32;
+
+    /** `unsigned int state` — the modifier and button mask. */
+    pub state       : u32;
+
+    /** `unsigned int keycode`. */
+    pub keycode     : u32;
+
+    /** `Bool same_screen`. */
+    pub same_screen : i32;
+}
+
+/**
+ * `XButtonEvent` — `ButtonPress` and `ButtonRelease`.
+ *
+ * The same layout as `XKeyEvent` with `button` where `keycode` sits.
+ * Declared separately anyway: a wheel notch arrives as a press of button
+ * 4 or 5, and reading that out of a field named `keycode` is how a
+ * reader stops believing the record.
+ */
+pub extern "C" struct XButtonEvent {
+    /** `int type`. */
+    pub type_       : i32;
+
+    /** `unsigned long serial`. */
+    pub serial      : i64;
+
+    /** `Bool send_event`. */
+    pub send_event  : i32;
+
+    /** `Display *display`. */
+    pub display     : ptr;
+
+    /** `Window window`. */
+    pub window      : i64;
+
+    /** `Window root`. */
+    pub root        : i64;
+
+    /** `Window subwindow`. */
+    pub subwindow   : i64;
+
+    /** `Time time`. */
+    pub time        : i64;
+
+    /** `int x`. */
+    pub x           : i32;
+
+    /** `int y`. */
+    pub y           : i32;
+
+    /** `int x_root`. */
+    pub x_root      : i32;
+
+    /** `int y_root`. */
+    pub y_root      : i32;
+
+    /** `unsigned int state`. */
+    pub state       : u32;
+
+    /** `unsigned int button` — 1 left, 2 middle, 3 right, 4/5 wheel. */
+    pub button      : u32;
+
+    /** `Bool same_screen`. */
+    pub same_screen : i32;
+}
+
+/** `XMotionEvent` — `MotionNotify`. */
+pub extern "C" struct XMotionEvent {
+    /** `int type`. */
+    pub type_       : i32;
+
+    /** `unsigned long serial`. */
+    pub serial      : i64;
+
+    /** `Bool send_event`. */
+    pub send_event  : i32;
+
+    /** `Display *display`. */
+    pub display     : ptr;
+
+    /** `Window window`. */
+    pub window      : i64;
+
+    /** `Window root`. */
+    pub root        : i64;
+
+    /** `Window subwindow`. */
+    pub subwindow   : i64;
+
+    /** `Time time`. */
+    pub time        : i64;
+
+    /** `int x`. */
+    pub x           : i32;
+
+    /** `int y`. */
+    pub y           : i32;
+
+    /** `int x_root`. */
+    pub x_root      : i32;
+
+    /** `int y_root`. */
+    pub y_root      : i32;
+
+    /** `unsigned int state`. */
+    pub state       : u32;
+
+    /** `char is_hint` — always 0 under `PointerMotionMask`. */
+    pub is_hint     : u8;
+
+    /** `Bool same_screen`. */
+    pub same_screen : i32;
+}
+
+/**
+ * `XConfigureEvent` — `ConfigureNotify`, the resize.
+ *
+ * Note the two window fields: `event` is the window the notification was
+ * selected on and `window` is the one that changed. They are the same
+ * here, because the library selects on the window it created.
+ */
+pub extern "C" struct XConfigureEvent {
+    /** `int type`. */
+    pub type_             : i32;
+
+    /** `unsigned long serial`. */
+    pub serial            : i64;
+
+    /** `Bool send_event`. */
+    pub send_event        : i32;
+
+    /** `Display *display`. */
+    pub display           : ptr;
+
+    /** `Window event` — the window the event was selected on. */
+    pub event             : i64;
+
+    /** `Window window` — the window that was reconfigured. */
+    pub window            : i64;
+
+    /** `int x`. */
+    pub x                 : i32;
+
+    /** `int y`. */
+    pub y                 : i32;
+
+    /** `int width` — the new client width. */
+    pub width             : i32;
+
+    /** `int height`. */
+    pub height            : i32;
+
+    /** `int border_width`. */
+    pub border_width      : i32;
+
+    /** `Window above`. */
+    pub above             : i64;
+
+    /** `Bool override_redirect`. */
+    pub override_redirect : i32;
+}
+
+/** `XFocusChangeEvent` — `FocusIn` and `FocusOut`. */
+pub extern "C" struct XFocusChangeEvent {
+    /** `int type`. */
+    pub type_      : i32;
+
+    /** `unsigned long serial`. */
+    pub serial     : i64;
+
+    /** `Bool send_event`. */
+    pub send_event : i32;
+
+    /** `Display *display`. */
+    pub display    : ptr;
+
+    /** `Window window`. */
+    pub window     : i64;
+
+    /** `int mode` — `NotifyNormal`, `NotifyGrab`, `NotifyUngrab`. */
+    pub mode       : i32;
+
+    /** `int detail`. */
+    pub detail     : i32;
+}
+
+/**
+ * `XClientMessageEvent` — how a window manager says "please close".
+ *
+ * The `data` union is declared as its widest member, `long l[5]`. Only
+ * `l[0]` is read, and only to compare it against the `WM_DELETE_WINDOW`
+ * atom: a close is a *request* here exactly as `WM_CLOSE` is on Win32,
+ * recorded rather than obeyed.
+ */
+pub extern "C" struct XClientMessageEvent {
+    /** `int type`. */
+    pub type_        : i32;
+
+    /** `unsigned long serial`. */
+    pub serial       : i64;
+
+    /** `Bool send_event`. */
+    pub send_event   : i32;
+
+    /** `Display *display`. */
+    pub display      : ptr;
+
+    /** `Window window`. */
+    pub window       : i64;
+
+    /** `Atom message_type`. */
+    pub message_type : i64;
+
+    /** `int format` — 8, 16 or 32; the protocol messages use 32. */
+    pub format       : i32;
+
+    /** `union { … long l[5]; } data`, as its widest member. */
+    pub data         : i64[5];
+}
+
+/**
+ * `XImage` — the description `XPutImage` reads a client-side buffer
+ * through.
+ *
+ * The record is the caller's, filled here and completed by `XInitImage`,
+ * which installs the six function pointers in `f`. That is deliberately
+ * not `XCreateImage`: the image Xlib allocates has to be released by
+ * `XDestroyImage`, which is a *macro* dispatching through `f.destroy_image`
+ * — an indirect call through a struct field, which is exactly what the
+ * FFI here cannot make. Owning the record removes the question: there is
+ * nothing to destroy, and `data` points at a buffer this library already
+ * owns.
+ *
+ * The six `f` members are declared as bare pointers because nothing here
+ * calls them; they exist so the record is the size Xlib reads it at.
+ */
+pub extern "C" struct XImage {
+    /** `int width`. */
+    pub width            : i32;
+
+    /** `int height`. */
+    pub height           : i32;
+
+    /** `int xoffset` — 0; the buffer's first pixel is the image's. */
+    pub xoffset          : i32;
+
+    /** `int format` — `ZPixmap`. */
+    pub format           : i32;
+
+    /** `char *data` — the pixels, owned by the caller. */
+    pub data             : ptr;
+
+    /** `int byte_order` — `LSBFirst`. */
+    pub byte_order       : i32;
+
+    /** `int bitmap_unit`. */
+    pub bitmap_unit      : i32;
+
+    /** `int bitmap_bit_order`. */
+    pub bitmap_bit_order : i32;
+
+    /** `int bitmap_pad`. */
+    pub bitmap_pad       : i32;
+
+    /** `int depth` — 24 colour bits in a 32-bit pixel. */
+    pub depth            : i32;
+
+    /** `int bytes_per_line` — the row stride, in bytes. */
+    pub bytes_per_line   : i32;
+
+    /** `int bits_per_pixel` — 32. */
+    pub bits_per_pixel   : i32;
+
+    /** `unsigned long red_mask`. */
+    pub red_mask         : i64;
+
+    /** `unsigned long green_mask`. */
+    pub green_mask       : i64;
+
+    /** `unsigned long blue_mask`. */
+    pub blue_mask        : i64;
+
+    /** `XPointer obdata`. */
+    pub obdata           : ptr;
+
+    /** `f.create_image`. */
+    pub f_create_image   : ptr;
+
+    /** `f.destroy_image`. */
+    pub f_destroy_image  : ptr;
+
+    /** `f.get_pixel`. */
+    pub f_get_pixel      : ptr;
+
+    /** `f.put_pixel`. */
+    pub f_put_pixel      : ptr;
+
+    /** `f.sub_image`. */
+    pub f_sub_image      : ptr;
+
+    /** `f.add_pixel`. */
+    pub f_add_pixel      : ptr;
+}
+
+/**
+ * `XSizeHints` — what tells a window manager a window may not be resized.
+ *
+ * A fixed-size window is a request, not a guarantee: a manager is free
+ * to ignore the hint. Every mainstream one honours it, and a manager
+ * that does not simply gives the player a resizable window — the
+ * framebuffer follows the size either way, so nothing breaks.
+ */
+pub extern "C" struct XSizeHints {
+    /** `long flags` — which members below are meaningful. */
+    pub flags        : i64;
+
+    /** `int x`. */
+    pub x            : i32;
+
+    /** `int y`. */
+    pub y            : i32;
+
+    /** `int width`. */
+    pub width        : i32;
+
+    /** `int height`. */
+    pub height       : i32;
+
+    /** `int min_width`. */
+    pub min_width    : i32;
+
+    /** `int min_height`. */
+    pub min_height   : i32;
+
+    /** `int max_width`. */
+    pub max_width    : i32;
+
+    /** `int max_height`. */
+    pub max_height   : i32;
+
+    /** `int width_inc`. */
+    pub width_inc    : i32;
+
+    /** `int height_inc`. */
+    pub height_inc   : i32;
+
+    /** `int min_aspect.x`. */
+    pub min_aspect_x : i32;
+
+    /** `int min_aspect.y`. */
+    pub min_aspect_y : i32;
+
+    /** `int max_aspect.x`. */
+    pub max_aspect_x : i32;
+
+    /** `int max_aspect.y`. */
+    pub max_aspect_y : i32;
+
+    /** `int base_width`. */
+    pub base_width   : i32;
+
+    /** `int base_height`. */
+    pub base_height  : i32;
+
+    /** `int win_gravity`. */
+    pub win_gravity  : i32;
+}
+
+/**
+ * `MotifWmHints` — the five words a `_MOTIF_WM_HINTS` property carries.
+ *
+ * There is no border-less window in the X protocol. Every window manager
+ * in use understands this property instead, which is a Motif convention
+ * that outlived Motif; setting `decorations` to 0 with the matching flag
+ * is what removes the title bar and the frame.
+ */
+pub extern "C" struct MotifWmHints {
+    /** Which of the members below are meaningful. */
+    pub flags       : i64;
+
+    /** Which functions the manager should offer. */
+    pub functions   : i64;
+
+    /** 0 for none, 1 for all. */
+    pub decorations : i64;
+
+    /** Input mode. */
+    pub input_mode  : i64;
+
+    /** Status. */
+    pub status      : i64;
+}

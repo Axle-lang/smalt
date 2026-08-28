@@ -29,7 +29,7 @@ const stompBounce : f64 = 10.0;
 const enemySpeed : f64 = 1.1;
 const jumpBufferFrames : i32 = 6;
 const coyoteFrames : i32 = 6;
-const frameMillis : i32 = 16;
+const frameRate : i32 = 60;
 const startLives : i32 = 3;
 
 /**

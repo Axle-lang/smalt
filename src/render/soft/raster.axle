@@ -1,6 +1,6 @@
 // raster — clip, project, and fill one triangle.
 //
-// The stage an SDL_GPU render pass would hand to the hardware. It is
+// The stage a hardware backend would hand to the GPU. It is
 // written out here because there is no hardware to hand it to.
 //
 // Three things in this file are the difference between a picture and a
@@ -33,8 +33,10 @@ use std::numeric::math;
 
 /** The near plane, in clip-space `w`. Nothing nearer is drawn. */
 const RASTER_MIN_W : f64 = 0.0001;
+
 /** A triangle with less screen area than this is degenerate. */
 const RASTER_MIN_AREA : f64 = 0.000001;
+
 /** Guard for the interpolated reciprocal depth. */
 const RASTER_MIN_INV_W : f64 = 0.0000000001;
 
@@ -48,41 +50,68 @@ const RASTER_MIN_INV_W : f64 = 0.0000000001;
 pub struct ClipVertex {
     /** Clip-space x. */
     pub cx : f64;
+
     /** Clip-space y. */
     pub cy : f64;
+
     /** Clip-space z. */
     pub cz : f64;
+
     /** Clip-space w — the view-space depth this projection divides by. */
     pub cw : f64;
+
     /** World-space x, for the specular term. */
     pub wx : f64;
+
     /** World-space y. */
     pub wy : f64;
+
     /** World-space z. */
     pub wz : f64;
+
     /** World-space normal x. */
     pub nx : f64;
+
     /** World-space normal y. */
     pub ny : f64;
+
     /** World-space normal z. */
     pub nz : f64;
+
     /** Texture coordinate u. */
-    pub u : f64;
+    pub u  : f64;
+
     /** Texture coordinate v. */
-    pub v : f64;
+    pub v  : f64;
 
     /** A clip vertex from its parts. */
     static fn make(
-        cx : f64, cy : f64, cz : f64, cw : f64,
-        wx : f64, wy : f64, wz : f64,
-        nx : f64, ny : f64, nz : f64,
-        u : f64, v : f64
+        cx : f64,
+        cy : f64,
+        cz : f64,
+        cw : f64,
+        wx : f64,
+        wy : f64,
+        wz : f64,
+        nx : f64,
+        ny : f64,
+        nz : f64,
+        u : f64,
+        v : f64
     ) : ClipVertex {
         return ClipVertex {
-            cx: cx, cy: cy, cz: cz, cw: cw,
-            wx: wx, wy: wy, wz: wz,
-            nx: nx, ny: ny, nz: nz,
-            u: u, v: v,
+            cx: cx,
+            cy: cy,
+            cz: cz,
+            cw: cw,
+            wx: wx,
+            wy: wy,
+            wz: wz,
+            nx: nx,
+            ny: ny,
+            nz: nz,
+            u: u,
+            v: v,
         };
     }
 
@@ -118,27 +147,37 @@ pub struct ClipVertex {
  */
 pub struct ScreenVertex {
     /** Pixel x. */
-    pub sx : f64;
+    pub sx   : f64;
+
     /** Pixel y. */
-    pub sy : f64;
+    pub sy   : f64;
+
     /** Reciprocal depth, 1/w — the value the depth buffer stores. */
     pub invW : f64;
+
     /** World x, divided by w. */
-    pub wx : f64;
+    pub wx   : f64;
+
     /** World y, divided by w. */
-    pub wy : f64;
+    pub wy   : f64;
+
     /** World z, divided by w. */
-    pub wz : f64;
+    pub wz   : f64;
+
     /** Normal x, divided by w. */
-    pub nx : f64;
+    pub nx   : f64;
+
     /** Normal y, divided by w. */
-    pub ny : f64;
+    pub ny   : f64;
+
     /** Normal z, divided by w. */
-    pub nz : f64;
+    pub nz   : f64;
+
     /** Texture u, divided by w. */
-    pub u : f64;
+    pub u    : f64;
+
     /** Texture v, divided by w. */
-    pub v : f64;
+    pub v    : f64;
 }
 
 /** Clipping, projection, and the scanline fill. */
@@ -233,10 +272,26 @@ pub class Raster {
         }
         let invArea : f64 = 1.0 / area;
 
-        let minX = Raster::clampInt((Raster::least3(a.sx, b.sx, c.sx)).floorToInt(), 0, target.width() - 1);
-        let maxX = Raster::clampInt((Raster::most3(a.sx, b.sx, c.sx)).ceilToInt(), 0, target.width() - 1);
-        let minY = Raster::clampInt((Raster::least3(a.sy, b.sy, c.sy)).floorToInt(), 0, target.height() - 1);
-        let maxY = Raster::clampInt((Raster::most3(a.sy, b.sy, c.sy)).ceilToInt(), 0, target.height() - 1);
+        let minX = Raster::clampInt(
+            (Raster::least3(a.sx, b.sx, c.sx)).floorToInt(),
+            0,
+            target.width() - 1
+        );
+        let maxX = Raster::clampInt(
+            (Raster::most3(a.sx, b.sx, c.sx)).ceilToInt(),
+            0,
+            target.width() - 1
+        );
+        let minY = Raster::clampInt(
+            (Raster::least3(a.sy, b.sy, c.sy)).floorToInt(),
+            0,
+            target.height() - 1
+        );
+        let maxY = Raster::clampInt(
+            (Raster::most3(a.sy, b.sy, c.sy)).ceilToInt(),
+            0,
+            target.height() - 1
+        );
         if (minX > maxX || minY > maxY) {
             return;
         }

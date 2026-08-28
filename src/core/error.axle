@@ -1,16 +1,17 @@
-// error — what the library raises when a Win32 call refuses.
+// error — what the library raises when the platform refuses.
 //
 // One root, so a game that does not care which call failed writes a
-// single `catch e : PlatformError`, and one that does reads `e.message`. This
-// is the `SDL_GetError` slot, except that it is in the type of the
-// function that failed rather than in a global read after the fact.
+// single `catch e : PlatformError`, and one that does reads `e.message`.
+// The failure is in the *type of the function that failed*, not in a
+// global to be read afterwards — which is what makes it impossible to
+// forget to check and impossible to read the wrong call's answer.
 //
 // Only *recoverable* failures come through here — a display that cannot
-// be opened, a class the window manager refused. An allocation that the
+// be opened, a window the desktop refused. An allocation that the
 // process cannot satisfy is not one of those: `Blob` aborts instead of
 // threading an out-of-memory branch through every caller.
 
-/** A Win32 call the library depends on did not succeed. */
+/** A platform call the library depends on did not succeed. */
 pub exception PlatformError {
     /** Carry the failing call and what it reported. */
     constructor(message : string) {

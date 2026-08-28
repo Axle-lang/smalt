@@ -14,12 +14,12 @@
 //
 // Build & run:  axle run            (nothing to ship — smalt is Win32)
 
-use smalt::{Platform, PlatformError, Window, WindowFlags, Clock, Events, Event, EventKind, Scancode, SoftDevice};
+use smalt::{Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode, SoftDevice, WINDOW_NONE};
 use game::World;
 use render::render;
 use config::screenW;
 use config::screenH;
-use config::frameMillis;
+use config::frameRate;
 
 fn main() : i32 {
     try {
@@ -36,7 +36,7 @@ fn run() : i32 ! PlatformError {
 
     let platform = new Platform()?;
     defer platform.close();
-    let win = platform.createWindow("Axle Mario", w, h, WindowFlags::none())?;
+    let win = platform.createWindow("Axle Mario", w, h, WINDOW_NONE)?;
     defer win.close();
     let device = new SoftDevice(w, h);
     defer device.close();
@@ -49,11 +49,13 @@ fn run() : i32 ! PlatformError {
 
     let world : World = new World();
     let running : bool = true;
+    let pacer = new FramePacer(frameRate);
 
     while (running && win.isOpen()) {
+        pacer.tick(clock);
         // The queue is drained first so the held-key state `world.update`
         // reads is this frame's, not the previous one's.
-        events.pump(win, clock.ticks());
+        events.pump(win, clock);
         while (events.hasNext()) {
             let e : Event = events.next();
             if (e.kind == EventKind::Quit) {
@@ -70,7 +72,6 @@ fn run() : i32 ! PlatformError {
             render(world, device.pixels(), w, h);
             device.endFrame(win);
         }
-        clock.delay(frameMillis);
     }
 
     return 0;

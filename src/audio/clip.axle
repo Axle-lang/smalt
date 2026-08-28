@@ -23,16 +23,20 @@
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
 use crate::io::file::AssetFile;
-use crate::platform::sys_audio::AUDIO_RATE;
+use crate::platform::audio_format::AUDIO_RATE;
 
 /** Offset of the first chunk header — past `RIFF` size `WAVE`. */
 const WAV_FIRST_CHUNK : i64 = 12;
+
 /** Bytes of a chunk header: four-character id then a `u32` size. */
 const WAV_CHUNK_HEADER : i64 = 8;
+
 /** The only sample width decoded. */
 const WAV_BITS : i32 = 16;
+
 /** The only format tag decoded — uncompressed PCM. */
 const WAV_PCM : i32 = 1;
+
 /** Bytes per decoded sample. */
 const CLIP_SAMPLE_BYTES : i64 = 2;
 
@@ -41,10 +45,13 @@ const CLIP_SAMPLE_BYTES : i64 = 2;
  * `i32` so a comparison is one integer compare rather than four.
  */
 fn fourCC(base : ptr, off : i64) : i32 {
-    return Raw::u8At(base, off)
-         | (Raw::u8At(base, off + 1) << 8)
-         | (Raw::u8At(base, off + 2) << 16)
-         | (Raw::u8At(base, off + 3) << 24);
+    return Raw::u8At(
+        base,
+        off
+    ) | (Raw::u8At(
+        base,
+        off + 1
+    ) << 8) | (Raw::u8At(base, off + 2) << 16) | (Raw::u8At(base, off + 3) << 24);
 }
 
 /** `'R','I','F','F'` packed as `fourCC` packs it. */
@@ -75,7 +82,7 @@ fn ccData() : i32 {
  */
 pub class Clip : Closeable {
     samples : Blob;
-    frames : i32;
+    frames  : i32;
 
     /** An empty clip. Playing it does nothing. */
     constructor() {

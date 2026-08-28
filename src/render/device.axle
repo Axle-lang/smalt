@@ -1,10 +1,9 @@
 // device — the rendering backend seam.
 //
-// This is the one place smalt keeps SDL's driver pattern. SDL wires
-// every subsystem through a vtable (`SDL_VideoDevice`, `SDL_GPUDevice`)
-// because it supports two dozen platforms; on a Windows-only target that
-// indirection is cost without benefit, so the *video* seam here is a
-// file boundary (`video/windows/`) rather than a runtime vtable.
+// This is the one seam in the library that is a runtime vtable. The
+// platform seams are file boundaries chosen by the build's target,
+// because which OS a binary runs on is known when it is compiled;
+// nothing is dispatched at run time and nothing could be.
 //
 // Rendering is the exception, and it is a real one: a second backend is
 // genuinely reachable. `opengl32.dll` exports the whole of OpenGL 1.1 as
@@ -31,8 +30,9 @@ use std::numeric::math;
 /**
  * What a rendering backend must be able to do.
  *
- * The shape is SDL_GPU's: bind the state that holds for the frame, then
- * issue draws that carry only what varies per object.
+ * The shape every graphics API converged on: bind the state that holds
+ * for the frame, then issue draws carrying only what varies per
+ * object.
  */
 trait RenderDevice {
     /** Framebuffer width, in pixels. */

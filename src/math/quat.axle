@@ -17,6 +17,7 @@ use std::numeric::math;
 
 /** Below this magnitude a quaternion has no meaningful orientation. */
 const QUAT_EPSILON : f64 = 0.000000001;
+
 /** Above this dot product, two orientations are close enough to lerp. */
 const QUAT_SLERP_LINEAR : f64 = 0.9995;
 
@@ -24,10 +25,13 @@ const QUAT_SLERP_LINEAR : f64 = 0.9995;
 pub struct Quat {
     /** Vector part, x. */
     pub x : f64;
+
     /** Vector part, y. */
     pub y : f64;
+
     /** Vector part, z. */
     pub z : f64;
+
     /** Scalar part. */
     pub w : f64;
 
@@ -128,10 +132,22 @@ pub struct Quat {
         let wy = self.w * self.y;
         let wz = self.w * self.z;
         return Mat4::rows(
-            1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy), 0.0,
-            2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx), 0.0,
-            2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy), 0.0,
-            0.0, 0.0, 0.0, 1.0
+            1.0 - 2.0 * (yy + zz),
+            2.0 * (xy - wz),
+            2.0 * (xz + wy),
+            0.0,
+            2.0 * (xy + wz),
+            1.0 - 2.0 * (xx + zz),
+            2.0 * (yz - wx),
+            0.0,
+            2.0 * (xz - wy),
+            2.0 * (yz + wx),
+            1.0 - 2.0 * (xx + yy),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
         );
     }
 

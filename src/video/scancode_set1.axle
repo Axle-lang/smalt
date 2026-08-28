@@ -1,0 +1,112 @@
+// scancode_set1 — the PS/2 set-1 code block, which both platforms speak.
+//
+// A `Scancode` names a position on the keyboard, and both operating
+// systems report that position with the same numbers for the main block
+// of the keyboard — the letters, the digit row, the punctuation, the
+// modifiers on the left, F1 through F12. Windows carries the set-1 code
+// in bits 16..23 of a key message's `lParam`; Linux carries an evdev
+// code, and evdev numbered its first eighty-eight keys to match set-1
+// exactly (X11 then adds 8, which is the server's own offset and not
+// part of the code).
+//
+// So this table is written once, here, in the portable half of `video/`.
+// A copy per backend would be sixty lines saying the same thing, and the
+// copy that drifted would move one key on one platform — the kind of bug
+// that is found by a player and not by a compiler.
+//
+// What is *not* shared is the extended block: the arrow cluster, the
+// keypad and the right-hand modifiers. Windows distinguishes them with
+// an `E0` prefix on a code the base block already uses, and evdev gives
+// them codes of their own from 96 up. Two genuinely different schemes,
+// so each backend's keymap holds its own.
+//
+// The values are the USB HID usage codes `Scancode` is numbered by,
+// restricted to the keys the library models.
+
+use crate::core::keyboard::Scancode;
+
+/** The set-1 code block both platforms report identically. */
+class ScancodeSet1 {
+    /**
+     * The set-1 code for a key in the shared block, or `Unknown`.
+     *
+     * `Unknown` covers both a code this table does not model and a code
+     * that is not in the shared block at all — the caller's extended
+     * table answers the second, which is why this one does not have to
+     * distinguish them.
+     */
+    static fn base(code : i32) : Scancode {
+        return match code {
+            0x01 => Scancode::Escape,
+            0x02 => Scancode::Num1,
+            0x03 => Scancode::Num2,
+            0x04 => Scancode::Num3,
+            0x05 => Scancode::Num4,
+            0x06 => Scancode::Num5,
+            0x07 => Scancode::Num6,
+            0x08 => Scancode::Num7,
+            0x09 => Scancode::Num8,
+            0x0A => Scancode::Num9,
+            0x0B => Scancode::Num0,
+            0x0C => Scancode::Minus,
+            0x0D => Scancode::Equals,
+            0x0E => Scancode::Backspace,
+            0x0F => Scancode::Tab,
+            0x10 => Scancode::Q,
+            0x11 => Scancode::W,
+            0x12 => Scancode::E,
+            0x13 => Scancode::R,
+            0x14 => Scancode::T,
+            0x15 => Scancode::Y,
+            0x16 => Scancode::U,
+            0x17 => Scancode::I,
+            0x18 => Scancode::O,
+            0x19 => Scancode::P,
+            0x1A => Scancode::LeftBracket,
+            0x1B => Scancode::RightBracket,
+            0x1C => Scancode::Return,
+            0x1D => Scancode::LeftControl,
+            0x1E => Scancode::A,
+            0x1F => Scancode::S,
+            0x20 => Scancode::D,
+            0x21 => Scancode::F,
+            0x22 => Scancode::G,
+            0x23 => Scancode::H,
+            0x24 => Scancode::J,
+            0x25 => Scancode::K,
+            0x26 => Scancode::L,
+            0x27 => Scancode::Semicolon,
+            0x28 => Scancode::Apostrophe,
+            0x29 => Scancode::Grave,
+            0x2A => Scancode::LeftShift,
+            0x2B => Scancode::Backslash,
+            0x2C => Scancode::Z,
+            0x2D => Scancode::X,
+            0x2E => Scancode::C,
+            0x2F => Scancode::V,
+            0x30 => Scancode::B,
+            0x31 => Scancode::N,
+            0x32 => Scancode::M,
+            0x33 => Scancode::Comma,
+            0x34 => Scancode::Period,
+            0x35 => Scancode::Slash,
+            0x36 => Scancode::RightShift,
+            0x38 => Scancode::LeftAlt,
+            0x39 => Scancode::Space,
+            0x3A => Scancode::CapsLock,
+            0x3B => Scancode::F1,
+            0x3C => Scancode::F2,
+            0x3D => Scancode::F3,
+            0x3E => Scancode::F4,
+            0x3F => Scancode::F5,
+            0x40 => Scancode::F6,
+            0x41 => Scancode::F7,
+            0x42 => Scancode::F8,
+            0x43 => Scancode::F9,
+            0x44 => Scancode::F10,
+            0x57 => Scancode::F11,
+            0x58 => Scancode::F12,
+            _ => Scancode::Unknown,
+        };
+    }
+}

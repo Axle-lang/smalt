@@ -16,14 +16,17 @@
 // no user dragging) are precisely what the polling this replaced could
 // never have seen.
 
-use smalt::{Platform, PlatformError, Window, WindowFlags, Clock, Events, EventKind, Win32Layout, Bmp};
+use smalt::{Platform, PlatformError, Window, Clock, Events, EventKind, Bmp, WINDOW_HIDDEN};
 
 /** Client size at startup. */
 const VIEW_W : i32 = 320;
+
 /** ditto. */
 const VIEW_H : i32 = 200;
+
 /** The size the injected `WM_SIZE` reports. */
 const RESIZE_W : i32 = 640;
+
 /** ditto. */
 const RESIZE_H : i32 = 400;
 
@@ -37,14 +40,15 @@ fn main() : i32 {
 }
 
 fn run() : i32 ! PlatformError {
-    // Before anything is sent: the records the procedure and the OS both
-    // address are the records the SDK describes. Every message below writes
+    // Before anything is sent: the records this build's platform backend
+    // addresses are the records the OS reads. Every message below writes
     // through one of them, so a drifted declaration would corrupt memory
     // here rather than report — checking it first is what makes the rest of
-    // this run mean something.
-    let wrong = Win32Layout::verify();
+    // this run mean something. The question is asked through the seam, so
+    // this example is not a Win32 test that happens to compile elsewhere.
+    let wrong = Platform::checkRecords();
     if (wrong != 0) {
-        println("Win32 record layout check ${wrong} failed");
+        println("platform record layout check ${wrong} failed");
         return 3;
     }
     // The same question for the one file format the library reads. Its two
@@ -57,9 +61,13 @@ fn run() : i32 ! PlatformError {
     }
 
     let platform = new Platform()?;
-    let win = platform.createWindow("proc_check", VIEW_W, VIEW_H, WindowFlags::hidden())?;
+    defer platform.close();
+    let win = platform.createWindow("proc_check", VIEW_W, VIEW_H, WINDOW_HIDDEN)?;
+    defer win.close();
     let clock = new Clock();
+    defer clock.close();
     let events = new Events();
+    defer events.close();
     let code = 0;
 
     // Half one: the procedure ran and recorded what it was sent.
@@ -73,7 +81,7 @@ fn run() : i32 ! PlatformError {
     // close latch was cleared by the self-check, so what reaches the
     // queue here is the resize and the focus edges it left behind.
     if (code == 0) {
-        events.pump(win, clock.ticks());
+        events.pump(win, clock);
         let sawResize = false;
         while (events.hasNext()) {
             let e = events.next();
@@ -101,9 +109,5 @@ fn run() : i32 ! PlatformError {
         println("window procedure: WM_SIZE, WM_KILLFOCUS, WM_SETFOCUS, WM_CLOSE all seen");
     }
 
-    events.close();
-    clock.close();
-    win.close();
-    platform.close();
     return code;
 }

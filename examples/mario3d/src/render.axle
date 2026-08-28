@@ -61,7 +61,9 @@ fn tileColor(t : Tile, grassy : bool) : i32 {
 
 /** Grass green on the exposed top of ground, brown dirt below. */
 fn grassColor(grassy : bool) : i32 {
-    if (grassy) { return Color::packBytes(96, 180, 84); }
+    if (grassy) {
+        return Color::packBytes(96, 180, 84);
+    }
     return Color::packBytes(150, 100, 60);
 }
 
@@ -88,12 +90,30 @@ fn render(world : World, px : i32[], w : i32, h : i32) : void {
                 // brick / ? blocks get a small inset for relief
                 match code {
                     Tile::Brick => {
-                        fillRect(px, w, h, sx + 2, sy + 2, t - 4, t - 4, Color::packBytes(150, 80, 48));
-                    }
+                        fillRect(
+                            px,
+                            w,
+                            h,
+                            sx + 2,
+                            sy + 2,
+                            t - 4,
+                            t - 4,
+                            Color::packBytes(150, 80, 48)
+                        );
+                    },
                     Tile::Question => {
-                        fillRect(px, w, h, sx + t / 2 - 2, sy + 6, 4, t - 14, Color::packBytes(90, 60, 10));
-                    }
-                    _ => {}
+                        fillRect(
+                            px,
+                            w,
+                            h,
+                            sx + t / 2 - 2,
+                            sy + 6,
+                            4,
+                            t - 14,
+                            Color::packBytes(90, 60, 10)
+                        );
+                    },
+                    _ => {},
                 }
             }
             c = c + 1;
@@ -177,10 +197,10 @@ fn drawHud(world : World, px : i32[], w : i32, h : i32) : void {
     match world.state {
         GameState::Won => {
             fillRect(px, w, h, 0, h / 2 - 18, w, 36, Color::packBytes(60, 200, 90));
-        }
+        },
         GameState::Over => {
             fillRect(px, w, h, 0, h / 2 - 18, w, 36, Color::packBytes(200, 50, 50));
-        }
-        GameState::Playing => {}
+        },
+        GameState::Playing => {},
     }
 }

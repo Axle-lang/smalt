@@ -20,12 +20,15 @@
 
 use crate::kernel::raw::Raw;
 use crate::audio::clip::Clip;
-use crate::platform::sys_audio::{SysAudio, AUDIO_CHANNELS};
+use crate::platform::audio_format::AUDIO_CHANNELS;
+use crate::platform::sys_audio::SysAudio;
 
 /** Simultaneous voices. Beyond this the oldest positional voice loses. */
 const MIX_VOICES : i32 = 32;
+
 /** Bytes per device sample. */
 const MIX_SAMPLE_BYTES : i64 = 2;
+
 /** Full-scale sample magnitude, for the clamp. */
 const MIX_CLAMP : i32 = 32767;
 
@@ -36,16 +39,16 @@ const MIX_CLAMP : i32 = 32767;
  * why a voice must not hold the clip itself.
  */
 struct Voice {
-    base : i64,
-    frames : i32,
-    cursor : i32,
-    gain : f64,
-    positional : bool,
-    x : f64,
-    y : f64,
-    z : f64,
-    range : f64,
-    active : bool,
+    base       : i64;
+    frames     : i32;
+    cursor     : i32;
+    gain       : f64;
+    positional : bool;
+    x          : f64;
+    y          : f64;
+    z          : f64;
+    range      : f64;
+    active     : bool;
 }
 
 /**
@@ -55,11 +58,11 @@ struct Voice {
  * output and fight over it.
  */
 pub class Mixer : Closeable {
-    audio : SysAudio;
+    audio  : SysAudio;
     voices : Voice[];
-    lx : f64;
-    ly : f64;
-    lz : f64;
+    lx     : f64;
+    ly     : f64;
+    lz     : f64;
 
     /** Open the device and start with every voice idle. */
     constructor() {
@@ -71,8 +74,15 @@ pub class Mixer : Closeable {
         let i : i32 = 0;
         while (i < MIX_VOICES) {
             self.voices[i] = Voice {
-                base: 0, frames: 0, cursor: 0, gain: 0.0,
-                positional: false, x: 0.0, y: 0.0, z: 0.0, range: 0.0,
+                base: 0,
+                frames: 0,
+                cursor: 0,
+                gain: 0.0,
+                positional: false,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                range: 0.0,
                 active: false,
             };
             i = i + 1;
@@ -128,8 +138,15 @@ pub class Mixer : Closeable {
         }
         let i : i32 = self.slot();
         self.voices[i] = Voice {
-            base: clip.base(), frames: clip.frameCount(), cursor: 0, gain: gain,
-            positional: false, x: 0.0, y: 0.0, z: 0.0, range: 0.0,
+            base: clip.base(),
+            frames: clip.frameCount(),
+            cursor: 0,
+            gain: gain,
+            positional: false,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            range: 0.0,
             active: true,
         };
     }
@@ -141,8 +158,15 @@ pub class Mixer : Closeable {
         }
         let i : i32 = self.slot();
         self.voices[i] = Voice {
-            base: clip.base(), frames: clip.frameCount(), cursor: 0, gain: gain,
-            positional: true, x: x, y: y, z: z, range: range,
+            base: clip.base(),
+            frames: clip.frameCount(),
+            cursor: 0,
+            gain: gain,
+            positional: true,
+            x: x,
+            y: y,
+            z: z,
+            range: range,
             active: true,
         };
     }

@@ -1,0 +1,151 @@
+// x11_layout_check — the X11 record numbers, asserted against the
+// declarations.
+//
+// `sys/linux/x11_types` declares Xlib's records so the compiler computes
+// their layout instead of an author writing offsets down. That is only
+// worth anything if the computed layout is the one the X server and
+// Xlib actually use, and "the compiler computed it, so it must be right"
+// is a belief about the *declaration*, not about the header it was
+// transcribed from.
+//
+// So the numbers from `X11/Xlib.h` live here, once, as the thing the
+// declarations are checked against. A failure means a declaration
+// drifted from the record Xlib reads — a field added in the wrong place,
+// an `unsigned long` written as `i32`, a `Bool` widened. Every one of
+// those is a silent misread at the FFI boundary, and the point of this
+// file is that it is a returned number instead.
+//
+// The numbers are the LP64 ones (`unsigned long` and every X resource id
+// 64-bit), which is what this backend builds for. The padding after
+// `int type` is the reason the file exists: it is four bytes C inserts
+// and nobody writes, and every later field of every event inherits it.
+//
+// It is reached through `Platform::checkRecords`, which `examples/proc_check`
+// calls before anything else — so the assertion runs rather than merely
+// existing.
+
+use crate::sys::x11_types::{MotifWmHints, XAnyEvent, XButtonEvent, XClientMessageEvent, XConfigureEvent, XFocusChangeEvent, XImage, XKeyEvent, XMotionEvent, XSizeHints};
+
+/** Sizes and offsets of the Xlib records, checked against `Xlib.h`. */
+pub class X11Layout {
+    /**
+     * 0 when every record matches the header, otherwise the number of
+     * the first check that failed.
+     *
+     * A number rather than a boolean: a caller that prints "layout
+     * wrong" has to bisect this file by hand, and the record that moved
+     * is the only thing worth knowing.
+     */
+    static fn verify() : i32 {
+        // The header every event shares. If this is wrong, every event
+        // below is wrong in the same way, so it is checked first.
+        if (offsetof(XAnyEvent, serial) != 8) {
+            return 1;
+        }
+        if (offsetof(XAnyEvent, send_event) != 16) {
+            return 2;
+        }
+        if (offsetof(XAnyEvent, display) != 24) {
+            return 3;
+        }
+        if (offsetof(XAnyEvent, window) != 32) {
+            return 4;
+        }
+
+        if (sizeof<XKeyEvent>() != 96) { return 5; }
+        if (offsetof(XKeyEvent, x) != 64) { return 6; }
+        if (offsetof(XKeyEvent, state) != 80) {
+            return 7;
+        }
+        if (offsetof(XKeyEvent, keycode) != 84) {
+            return 8;
+        }
+
+        // Same shape as a key event with `button` where `keycode` sits —
+        // which is the claim `x11_types` makes and this is the check of.
+        if (sizeof<XButtonEvent>() != 96) { return 9; }
+        if (offsetof(XButtonEvent, button) != 84) {
+            return 10;
+        }
+        if (offsetof(XButtonEvent, x) != 64) {
+            return 11;
+        }
+
+        if (sizeof<XMotionEvent>() != 96) { return 12; }
+        if (offsetof(XMotionEvent, x) != 64) {
+            return 13;
+        }
+        if (offsetof(XMotionEvent, is_hint) != 84) {
+            return 14;
+        }
+
+        // Two window fields, which is what makes this record longer than
+        // the header suggests: `event` at 32 and `window` at 40.
+        if (sizeof<XConfigureEvent>() != 88) {
+            return 15;
+        }
+        if (offsetof(XConfigureEvent, window) != 40) {
+            return 16;
+        }
+        if (offsetof(XConfigureEvent, width) != 56) {
+            return 17;
+        }
+        if (offsetof(XConfigureEvent, height) != 60) {
+            return 18;
+        }
+
+        if (sizeof<XFocusChangeEvent>() != 48) {
+            return 19;
+        }
+        if (offsetof(XFocusChangeEvent, mode) != 40) {
+            return 20;
+        }
+
+        // `data` is the union's widest member; `l[0]` is the only word
+        // read, and it is read to compare an atom.
+        if (sizeof<XClientMessageEvent>() != 96) {
+            return 21;
+        }
+        if (offsetof(XClientMessageEvent, message_type) != 40) {
+            return 22;
+        }
+        if (offsetof(XClientMessageEvent, format) != 48) {
+            return 23;
+        }
+        if (offsetof(XClientMessageEvent, data) != 56) {
+            return 24;
+        }
+
+        // The image record is filled by this library and read by Xlib,
+        // which is the one record here that crosses in that direction —
+        // a wrong offset writes the pixel pointer into a field the
+        // server then dereferences.
+        if (sizeof<XImage>() != 136) { return 25; }
+        if (offsetof(XImage, data) != 16) { return 26; }
+        if (offsetof(XImage, depth) != 40) { return 27; }
+        if (offsetof(XImage, bytes_per_line) != 44) {
+            return 28;
+        }
+        if (offsetof(XImage, red_mask) != 56) {
+            return 29;
+        }
+        if (offsetof(XImage, f_create_image) != 88) {
+            return 30;
+        }
+
+        if (sizeof<XSizeHints>() != 80) { return 31; }
+        if (offsetof(XSizeHints, min_width) != 24) {
+            return 32;
+        }
+        if (offsetof(XSizeHints, max_width) != 32) {
+            return 33;
+        }
+
+        if (sizeof<MotifWmHints>() != 40) { return 34; }
+        if (offsetof(MotifWmHints, decorations) != 16) {
+            return 35;
+        }
+
+        return 0;
+    }
+}

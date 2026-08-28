@@ -1,0 +1,213 @@
+// sys_audio — the platform seam for getting PCM out of the process.
+//
+// THE CONTRACT, a three-call cycle the mixer drives and nothing above
+// this file may look behind:
+//
+//   reclaim()            the index of a block the device has finished
+//                        with and the caller may overwrite, or -1 when
+//                        every block is still in flight
+//   blockAddress(i)      where to write block i's frames
+//   blockFrames()        how many frames fit in a block
+//   submit(i)            hand block i to the device
+//
+// Interleaved signed 16-bit frames, `AUDIO_CHANNELS` per frame, at
+// `AUDIO_RATE` — `platform::audio_format`'s, not this file's.
+//
+// WHY A CYCLE AND NOT A CALLBACK. Every low-latency audio API wants to
+// call *you* on its own thread. Axle cannot hand out a function address,
+// so the whole design turns on finding a path where the device reports
+// its state as something the caller *polls*. ALSA's
+// `SND_PCM_ACCESS_RW_INTERLEAVED` is that path: the caller pushes, and
+// `snd_pcm_avail_update` answers how much room there is.
+//
+// WHAT DIFFERS FROM WINDOWS, and it is one thing. `waveOut` owns the
+// caller's blocks until it has played them, so a block is in flight
+// until the device says otherwise — hence four of them. `snd_pcm_writei`
+// **copies** into the device's own ring and returns, so a block is free
+// again the moment submit returns and the queue depth lives in the
+// device's ring instead. Two blocks here, and the latency is asked for
+// once, at open, in microseconds.
+//
+// The other difference is the one a port gets wrong: ALSA reports an
+// underrun as an error the caller must clear. `waveOut` simply plays the
+// next block; ALSA stops dead until `snd_pcm_recover` runs. So every
+// call that can return a negative here is followed by one, and a stutter
+// costs a frame of silence rather than the rest of the program's audio.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::platform::alsa::pcm_handle::{pcm, recover};
+use crate::platform::audio_format::{AudioFormat, AUDIO_BLOCK_FRAMES, AUDIO_CHANNELS, AUDIO_RATE};
+use crate::sys::alsa_lib::{snd_pcm_avail_update, snd_pcm_close, snd_pcm_drop, snd_pcm_open, snd_pcm_prepare, snd_pcm_recover, snd_pcm_set_params, snd_pcm_writei, SND_PCM_ACCESS_RW_INTERLEAVED, SND_PCM_FORMAT_S16_LE, SND_PCM_NONBLOCK, SND_PCM_STREAM_PLAYBACK};
+
+/**
+ * Staging blocks the mixer rotates through.
+ *
+ * Two rather than Windows' four, because `snd_pcm_writei` copies: a
+ * block is reusable as soon as submit returns, so these buffer the
+ * *mixer*, not the device. The device's own queue depth is `AUDIO_LATENCY_US`.
+ */
+const AUDIO_BLOCKS : i32 = 2;
+
+/** Microseconds in a second, for the latency the device is asked for. */
+const MICROS_PER_SEC : i64 = 1000000;
+
+/** How many blocks' worth of slack the device's ring is asked to hold. */
+const AUDIO_RING_BLOCKS : i64 = 4;
+
+/** The device name that reaches whatever sound system is running. */
+const AUDIO_DEVICE : string = "default";
+
+/** `snd_pcm_set_params`'s soft-resample flag, on. */
+const AUDIO_SOFT_RESAMPLE : i32 = 1;
+
+/** `snd_pcm_recover`'s silent flag, on — a stutter is not a log line. */
+const AUDIO_RECOVER_SILENT : i32 = 1;
+
+/**
+ * The output device and its blocks.
+ *
+ * A failed open is not an error anyone should have to handle: a machine
+ * with no sound card, or none ALSA can reach, should still run the game.
+ * `isOpen` reports it and every other call becomes a no-op, so a caller
+ * never branches.
+ */
+pub class SysAudio : Closeable {
+    handle  : Blob; // the snd_pcm_t* slot the open call writes through
+    samples : Blob; // AUDIO_BLOCKS * block bytes, contiguous
+    opened  : bool;
+    cursor  : i32;
+
+    /** Open the default output device. */
+    constructor() {
+        self.handle = new Blob(8);
+        self.samples = new Blob((AUDIO_BLOCKS as i64) * AudioFormat::blockBytes());
+        self.opened = false;
+        self.cursor = 0;
+
+        // Non-blocking, because `reclaim` has to be able to answer "no
+        // room" rather than wait: the mixer polls this from its own
+        // thread and a blocking write would hold it there.
+        if (snd_pcm_open(
+            self.handle.at(),
+            AUDIO_DEVICE,
+            SND_PCM_STREAM_PLAYBACK,
+            SND_PCM_NONBLOCK
+        ) != 0) {
+            return;
+        }
+        let pcm = pcm(self.handle);
+        if (snd_pcm_set_params(
+            pcm,
+            SND_PCM_FORMAT_S16_LE,
+            SND_PCM_ACCESS_RW_INTERLEAVED,
+            AUDIO_CHANNELS,
+            AUDIO_RATE,
+            AUDIO_SOFT_RESAMPLE,
+            SysAudio::latencyUs()
+        ) != 0) {
+            snd_pcm_close(pcm);
+            return;
+        }
+        // Configured is not the same as ready: `prepare` is what puts the
+        // stream in the state where `avail_update` reports the ring's
+        // room instead of an error.
+        if (snd_pcm_prepare(pcm) != 0) {
+            snd_pcm_close(pcm);
+            return;
+        }
+        self.opened = true;
+    }
+
+    /** Frames the caller may write into one block. */
+    static fn blockFrames() : i32 {
+        return AUDIO_BLOCK_FRAMES;
+    }
+
+    /** Whether the device opened. Everything else is a no-op if not. */
+    fn isOpen(self) : bool {
+        return self.opened;
+    }
+
+    /** The address of block `i`'s first frame. */
+    fn blockAddress(self, i : i32) : i64 {
+        unsafe {
+            return Raw::addr(self.samples.at()) + (i as i64) * AudioFormat::blockBytes();
+        }
+    }
+
+    /**
+     * A block the caller may overwrite, or -1 while the device has no
+     * room for another one.
+     *
+     * Answering -1 is the normal case, not a failure: it means the ring
+     * still holds enough and the mixer has nothing to do.
+     *
+     * A negative `avail` is an underrun or a suspend — the device
+     * stopped and will stay stopped until it is recovered, so that is
+     * done here and the answer is still -1. The mixer tries again on its
+     * next pump, by which time the stream is running.
+     */
+    fn reclaim(mut self) : i32 {
+        if (!self.opened) {
+            return -1;
+        }
+        let avail : i64 = snd_pcm_avail_update(pcm(self.handle));
+        if (avail < 0) {
+            recover(self.handle, avail);
+            return -1;
+        }
+        if (avail < (AUDIO_BLOCK_FRAMES as i64)) {
+            return -1;
+        }
+        return self.cursor;
+    }
+
+    /**
+     * Hand block `i` to the device.
+     *
+     * A short write is not an error and its tail is dropped: what is
+     * lost is the end of a 23 ms block, which is inaudible, and tracking
+     * the remainder would mean a partially-consumed block the whole
+     * cycle above would have to model.
+     */
+    fn submit(mut self, i : i32) : void {
+        if (!self.opened || i < 0 || i >= AUDIO_BLOCKS) {
+            return;
+        }
+        let written : i64 = 0;
+        unsafe {
+            written = snd_pcm_writei(
+                pcm(self.handle),
+                Raw::at(self.blockAddress(i)),
+                AUDIO_BLOCK_FRAMES as i64
+            );
+        }
+        if (written < 0) {
+            recover(self.handle, written);
+        }
+        // The block is reusable either way — the write copied it, or it
+        // failed and its frames are gone. Advancing regardless is what
+        // keeps `reclaim` from handing back the block a failed write
+        // left half-consumed.
+        self.cursor = (self.cursor + 1) % AUDIO_BLOCKS;
+    }
+
+    /**
+     * Stop the device and release everything.
+     *
+     * `snd_pcm_drop` first: closing a running stream is allowed and
+     * leaves whatever is queued to be played by a device the process no
+     * longer owns, which on the exit path is a tail of sound after the
+     * window is gone.
+     */
+    fn close(self) : void {
+        if (self.opened) {
+            let pcm = pcm(self.handle);
+            snd_pcm_drop(pcm);
+            snd_pcm_close(pcm);
+        }
+        self.samples.close();
+        self.handle.close();
+    }
+}

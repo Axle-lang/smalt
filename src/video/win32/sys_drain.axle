@@ -1,0 +1,83 @@
+// sys_drain — the Win32 half of the event pump: messages into events.
+//
+// THE SEAM'S CONTRACT, which a port honours and nothing above it may
+// look behind:
+//
+//   newScratch()                       an owned block sized for exactly
+//                                      one OS event record, reused for
+//                                      the life of the queue
+//   drain(scratch, win, stamp, q, k, m)
+//                                      everything the OS has for this
+//                                      window since the last call, as
+//                                      pushes onto `q` and edges on the
+//                                      held-state objects
+//
+// Reused rather than allocated per drain because a drain runs every
+// frame and the record is fixed-size — a fresh block per frame would be
+// a malloc and a free sixty times a second for no gain.
+//
+// Windows: `MSG`, drained with `PeekMessageW(PM_REMOVE)`. Everything the
+// OS **posts** arrives here — every keyboard and mouse input. What it
+// **sends** (`WM_SIZE`, `WM_SETFOCUS`, `WM_CLOSE`) never reaches a queue
+// and is recorded by the window procedure instead (`video::win_proc`),
+// which is why `win` is not read on this platform: the edges are already
+// latched on it by the time the pump asks.
+//
+// `TranslateMessage` runs after decoding, so the `WM_CHAR` it synthesises
+// from a `WM_KEYDOWN` arrives on a later turn of the loop — which is why
+// text and key events are independent here.
+//
+// Linux: `XEvent`, drained with `XPending` / `XNextEvent`. X11 has no
+// procedure and no sent/posted split, so a port latches the window edges
+// from `ConfigureNotify` / `FocusIn` / `ClientMessage` inside this loop,
+// and `win` is what it latches them on.
+
+use crate::core::event::{Event, EventKind, EventQueue};
+use crate::core::keyboard::{KeyboardState, Scancode};
+use crate::core::mouse::{MouseButton, MouseState};
+use crate::kernel::blob::Blob;
+use crate::sys::win32_types::MSG;
+use crate::kernel::raw::Raw;
+use crate::sys::win32_user::{PeekMessageW, TranslateMessage, DispatchMessageW};
+use crate::video::win_const::{PM_REMOVE, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP};
+use crate::video::sys_window::SysWindow;
+use crate::video::win32::msg_decode::handle;
+
+/** Decoding of the `MSG` fields, and the drain loop over the queue. */
+class SysDrain {
+    /** A block sized for exactly one `MSG`. */
+    static fn newScratch() : Blob {
+        return new Blob(sizeof<MSG>());
+    }
+
+    /**
+     * Drain the thread's message queue into `queue`.
+     *
+     * `scratch` is the caller's reusable `MSG` block — one allocation for
+     * the life of the program rather than one per frame. `win` is unread
+     * on this platform: Windows *sends* the window edges straight to the
+     * procedure, which has already latched them on it (`video::win_proc`).
+     * The parameter is the seam's, not this file's — a port that drains
+     * one queue for both halves needs it.
+     */
+    static fn drain(
+        scratch : Blob,
+        win : SysWindow,
+        stamp : i64,
+        queue : EventQueue,
+        keys : KeyboardState,
+        mouse : MouseState
+    ) : void {
+        unsafe {
+            let m : ptr<MSG> = scratch.at() as ptr<MSG>;
+            while (PeekMessageW(m, Raw::nil(), 0, 0, PM_REMOVE) != 0) {
+                let message = (*m).message as i32;
+                let wp = (*m).wParam as i64;
+                let lp = (*m).lParam;
+                handle(message, wp, lp, stamp, queue, keys, mouse);
+                TranslateMessage(m);
+                DispatchMessageW(m);
+            }
+        }
+    }
+}

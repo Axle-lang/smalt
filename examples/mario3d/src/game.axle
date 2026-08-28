@@ -119,6 +119,7 @@ class World {
         self.addEnemy(135.0 * t, groundTop, 128.0 * t, 145.0 * t);
         self.addEnemy(175.0 * t, groundTop, 168.0 * t, 185.0 * t);
     }
+
     /** Add a live coin at world position `(px, py)`. */
     fn addCoin(mut self, px : f64, py : f64) : void {
         let i : i32 = self.nCoins;
@@ -153,7 +154,9 @@ class World {
         }
         self.player.accelerate(dir);
 
-        let jumpHeld : bool = events.isKeyDown(Scancode::Space) || events.isKeyDown(Scancode::W) || events.isKeyDown(Scancode::Up);
+        let jumpHeld : bool = events.isKeyDown(
+            Scancode::Space
+        ) || events.isKeyDown(Scancode::W) || events.isKeyDown(Scancode::Up);
         if (jumpHeld) {
             self.jumpBuffer = jumpBufferFrames;
         }
@@ -240,12 +243,7 @@ class World {
         let i : i32 = 0;
         while (i < self.nCoins) {
             if (self.cAlive[i] == 1) {
-                if (self.player.overlapsRect(
-                    self.cx[i],
-                    self.cy[i],
-                    coinSize,
-                    coinSize
-                )) {
+                if (self.player.overlapsRect(self.cx[i], self.cy[i], coinSize, coinSize)) {
                     self.cAlive[i] = 0;
                     self.coinCount = self.coinCount + 1;
                 }

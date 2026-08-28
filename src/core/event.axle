@@ -1,23 +1,26 @@
 // event — the event type and the queue it waits in.
 //
-// SDL3's `SDL_Event` is a union of thirty-odd structs sharing a fixed
-// prefix. The Axle counterpart of that union is a payload-bearing
-// `enum`, and this file does not use one: the union is **flattened**
-// instead, into one struct with every field plus a `kind` that says
-// which of them are meaningful. That is what a union is anyway, minus
-// the overlap — 64 bytes against 128, and no addressing arithmetic.
+// An event could be a payload-bearing `enum` — one variant per kind,
+// each carrying exactly its own fields, matched with `match`. It is a
+// **flat struct** instead: every field of every kind, plus a `kind` that
+// says which of them are meaningful.
 //
-// The flat form is a choice rather than a constraint. A variant payload
-// carries a scalar, a payload-free `enum`, a `string`, an owning object,
-// a `Shared`/`Weak` handle or a dynamic array — `KeyDown(i64, Scancode,
-// bool)` and `Click(i64, MouseButton, i32, i32)` are all admissible — so
-// a reader who prefers `match` over a `kind` field can have it. What it
-// would cost is the producer side in `win_pump`, which builds one event
-// per message from a shared prefix.
+// That is a choice, not a constraint, and it is the producer's. A drain
+// builds one event per OS message out of a shared prefix — a timestamp,
+// a kind — and then fills the two or three fields that message carries.
+// With variants, each of those would be a separate constructor call with
+// its own argument list, written once per platform. With a flat struct
+// it is a literal with the fields that apply, which is why the two
+// backends' decode tables read as tables.
 //
-// SDL3's other event decision is kept as-is: window events are distinct
-// top-level kinds (`WindowResized`, not `Window` with a sub-type), which
-// is the simplification SDL3 itself made over SDL2.
+// The cost is the record's width: every event is as big as the widest
+// one. At this many fields that is a handful of words in a block the
+// queue owns and reuses, which is not the thing to optimise.
+//
+// Window notices are **top-level kinds** — `WindowResized`, not a
+// `Window` kind with a sub-type inside it. A sub-type is a second
+// dispatch a reader has to know about, and a game that cares about a
+// resize should be able to say so in one arm.
 
 use crate::core::keyboard::Scancode;
 use crate::core::mouse::MouseButton;
@@ -25,34 +28,47 @@ use crate::core::mouse::MouseButton;
 /** Events the queue can hold; a full queue drops the oldest. */
 const EVENT_QUEUE_SLOTS : i64 = 256;
 
-/** What happened. The `SDL_EventType` counterpart. */
+/** What happened — the tag that says which fields below are meaningful. */
 pub enum EventKind : i32 {
     /** The queue was empty — never delivered by `next()`. */
     None = 0,
+
     /** The window was closed. */
     Quit = 1,
+
     /** A key went down; `repeat` says whether it is an auto-repeat. */
     KeyDown = 2,
+
     /** A key came up. */
     KeyUp = 3,
+
     /** A character was typed; read `text`, not `scancode`. */
     TextInput = 4,
+
     /** The pointer moved. */
     MouseMotion = 5,
+
     /** A mouse button went down. */
     MouseButtonDown = 6,
+
     /** A mouse button came up. */
     MouseButtonUp = 7,
+
     /** The wheel turned. */
     MouseWheel = 8,
+
     /** The client area changed size; read `width` / `height`. */
     WindowResized = 9,
+
     /** The window took input focus. */
     WindowFocusGained = 10,
+
     /** The window lost input focus. */
     WindowFocusLost = 11,
+
     /** The window was minimised. */
     WindowMinimised = 12,
+
     /** The window came back from being minimised. */
     WindowRestored = 13,
 }
@@ -73,31 +89,43 @@ pub enum EventKind : i32 {
  */
 pub struct Event {
     /** What happened. Every other field is read through this. */
-    pub kind : EventKind;
+    pub kind      : EventKind;
+
     /** Milliseconds since the library was initialised. */
     pub timestamp : i64;
+
     /** The physical key, for `KeyDown` / `KeyUp`. */
-    pub scancode : Scancode = Scancode::Unknown;
+    pub scancode  : Scancode = Scancode::Unknown;
+
     /** Whether a `KeyDown` is the hardware auto-repeat rather than a fresh press. */
-    pub repeat : bool = false;
+    pub repeat    : bool = false;
+
     /** The Unicode codepoint, for `TextInput`. */
-    pub text : i32 = 0;
+    pub text      : i32 = 0;
+
     /** The button, for the button kinds. */
-    pub button : MouseButton = MouseButton::Left;
+    pub button    : MouseButton = MouseButton::Left;
+
     /** Pointer x in client pixels, for the mouse kinds. */
-    pub x : i32 = 0;
+    pub x         : i32 = 0;
+
     /** Pointer y in client pixels, for the mouse kinds. */
-    pub y : i32 = 0;
+    pub y         : i32 = 0;
+
     /** Horizontal motion since the previous event, for `MouseMotion`. */
-    pub dx : i32 = 0;
+    pub dx        : i32 = 0;
+
     /** Vertical motion since the previous event, for `MouseMotion`. */
-    pub dy : i32 = 0;
+    pub dy        : i32 = 0;
+
     /** Wheel notches, for `MouseWheel`; positive is away from the user. */
-    pub wheel : i32 = 0;
+    pub wheel     : i32 = 0;
+
     /** New client width, for `WindowResized`. */
-    pub width : i32 = 0;
+    pub width     : i32 = 0;
+
     /** New client height, for `WindowResized`. */
-    pub height : i32 = 0;
+    pub height    : i32 = 0;
 
     /** The empty event — what an exhausted queue answers. */
     static fn none() : Event {
@@ -106,8 +134,11 @@ pub struct Event {
 }
 
 /**
- * A bounded ring of pending events — SDL's `SDL_EventQ`, minus the
- * linked list and the 65535-deep growth.
+ * A bounded ring of pending events.
+ *
+ * Fixed-size and allocated once: a queue that grew would allocate on the
+ * input path, sixty times a second, to hold events a frame is about to
+ * drain anyway.
  *
  * When the ring is full the **oldest** event is dropped rather than the
  * newest. A game that stops polling is already misbehaving; keeping the
@@ -116,7 +147,7 @@ pub struct Event {
  */
 pub class EventQueue {
     items : Event[];
-    head : i32;
+    head  : i32;
     count : i32;
 
     /** An empty queue. */

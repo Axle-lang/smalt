@@ -1,33 +1,30 @@
 // pump — the event subsystem: one call a frame, everything that happened.
 //
 // `Events` is what a game holds. It owns the queue, the keyboard and
-// mouse state, and the reusable `MSG` block, and it is where the two
-// halves of the input story are joined:
+// mouse state, and the reusable OS event record, and it is where the two
+// halves of the input story are joined: what the platform reports as a
+// stream (`SysDrain::drain` — every keyboard and mouse input) and what
+// it latches on the window (a close request, a resize, a focus or
+// minimise edge).
 //
-//   * the **posted** messages, drained by `WinPump::drain` — every
-//     keyboard and mouse input;
-//   * the **sent** messages, which never reach a queue and are recorded
-//     by the window procedure as they arrive (`video::windows::win_proc`).
+// The split is the platform's, not this file's, and it differs: Win32
+// posts input to a thread queue and *sends* the window messages straight
+// to a procedure, while X11 delivers both down one connection. Which is
+// exactly why the drain takes the window — a port latches the edges
+// inside its own loop, and this file reads them the same way either way.
 //
-// The second half used to be *reconstructed* here, by diffing the client
-// rect, the foreground window and the iconic flag against the previous
-// frame — the library could not install a procedure, so the only notice
-// it got of a resize was that the numbers had changed by the time it
-// next looked. That is gone: what arrives now is the `WM_SIZE` itself,
-// with the size Windows sent, and a close is a *request* the game can
-// refuse rather than a window already destroyed.
-//
-// `pump` still takes the window, as `SDL_PumpEvents` reaches into the
-// video driver: the edges live on the window's procedure block.
+// `pump` takes the window because that is where the edges are latched
+// — a close request, a resize, a focus or minimise change all belong to
+// one window, and a process may have more than one.
 
 use crate::core::event::{Event, EventKind, EventQueue};
+use crate::core::timer::Clock;
 use crate::core::keyboard::{KeyboardState, Scancode};
 use crate::core::mouse::{MouseButton, MouseState};
 use crate::kernel::blob::Blob;
-use crate::platform::sys_pump::SysPump;
+use crate::video::sys_cursor::SysCursor;
+use crate::video::sys_drain::SysDrain;
 use crate::video::window::Window;
-use crate::video::windows::win_pump::WinPump;
-use crate::video::windows::win_relative::WinRelative;
 
 /**
  * The event subsystem.
@@ -35,7 +32,7 @@ use crate::video::windows::win_relative::WinRelative;
  * The frame shape a game writes:
  *
  * ```
- * events.pump(win, clock.ticks());
+ * events.pump(win, clock);
  * while (events.hasNext()) {
  *     let e = events.next();
  *     ...
@@ -44,23 +41,36 @@ use crate::video::windows::win_relative::WinRelative;
  * ```
  *
  * Edge events come out of the queue; held state is read straight off
- * this object, exactly as SDL splits `SDL_PollEvent` from
- * `SDL_GetKeyboardState`.
+ * this object. The split is the point: an edge is a thing that
+ * happened once and must not be missed, and held state is a question
+ * with an answer right now.
  */
 pub class Events : Closeable {
-    queue : EventQueue;
-    keys : KeyboardState;
-    mouse : MouseState;
-    msg : Blob;
-    sentQuit : bool;
+    queue         : EventQueue;
+    keys          : KeyboardState;
+    mouse         : MouseState;
+    msg           : Blob;
+    sentQuit      : bool;
+
+    /**
+     * A relative-mouse change waiting for a window to apply it to.
+     *
+     * The pointer's visibility is a property of a *window* on one of the
+     * two platforms and of the process on the other, and `setRelativeMouse`
+     * is handed neither. So the request is latched and applied in `pump`,
+     * which has the window — one frame later, which is a frame in which
+     * the pointer is already pinned and only its visibility lags.
+     */
+    cursorPending : bool;
 
     /** A pump with an empty queue and nothing held. */
     constructor() {
         self.queue = new EventQueue();
         self.keys = new KeyboardState();
         self.mouse = new MouseState();
-        self.msg = SysPump::newMessageScratch();
+        self.msg = SysDrain::newScratch();
         self.sentQuit = false;
+        self.cursorPending = false;
     }
 
     /** Whether an event is waiting. */
@@ -114,8 +124,7 @@ pub class Events : Closeable {
     }
 
     /**
-     * Pin and hide the pointer so motion never runs out of screen —
-     * `SDL_SetWindowRelativeMouseMode`.
+     * Pin and hide the pointer so motion never runs out of screen.
      *
      * The pointer is recentred at the end of every pump while this is
      * on, so `mouseDX` / `mouseDY` keep reporting motion however far the
@@ -126,18 +135,23 @@ pub class Events : Closeable {
             return;
         }
         self.mouse.setRelative(on);
-        WinRelative::showCursor(!on);
+        self.cursorPending = true;
     }
 
     /**
      * Collect everything that happened since the previous call.
      *
-     * `stamp` is the timestamp events are marked with — a game passes
-     * `clock.ticks()`.
+     * The clock is read once, so a frame's events share one timestamp
+     * rather than a spread of readings taken while draining.
      */
-    fn pump(mut self, win : Window, stamp : i64) : void {
+    fn pump(mut self, win : Window, clock : Clock) : void {
+        let stamp = clock.ticks();
         self.mouse.newFrame();
-        WinPump::drain(self.msg, stamp, self.queue, self.keys, self.mouse);
+        if (self.cursorPending) {
+            SysCursor::showCursor(win.native(), !self.mouse.isRelative());
+            self.cursorPending = false;
+        }
+        SysDrain::drain(self.msg, win.native(), stamp, self.queue, self.keys, self.mouse);
 
         // A close the user asked for. The procedure records `WM_CLOSE`
         // rather than obeying it, so the window is still alive here and
@@ -159,12 +173,14 @@ pub class Events : Closeable {
         }
 
         if (win.syncSize()) {
-            self.queue.push(Event {
-                kind: EventKind::WindowResized,
-                timestamp: stamp,
-                width: win.width(),
-                height: win.height(),
-            });
+            self.queue.push(
+                Event {
+                    kind: EventKind::WindowResized,
+                    timestamp: stamp,
+                    width: win.width(),
+                    height: win.height(),
+                }
+            );
         }
 
         let focused = win.focused();
@@ -193,7 +209,7 @@ pub class Events : Closeable {
         if (self.mouse.isRelative() && focused && !minimised) {
             let cx = win.width() / 2;
             let cy = win.height() / 2;
-            WinRelative::recentre(win.handle(), cx, cy);
+            SysCursor::recentre(win.native(), cx, cy);
             self.mouse.warpTo(cx, cy);
         }
     }

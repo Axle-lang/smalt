@@ -1,21 +1,21 @@
 // keyboard — physical key identity, and the state of every key.
 //
-// The values are SDL's own scancode numbers, and the semantics are
-// SDL's: a `Scancode` names a **position on the keyboard**, not the
-// character it produces. `Scancode::W` is the key above `Scancode::S`
-// on every layout — the `Z` key of an AZERTY board — which is exactly
-// what a movement binding wants. Text, where the layout does matter,
-// arrives as an `EventKind::TextInput` codepoint instead.
+// A `Scancode` names a **position on the keyboard**, not the character
+// it produces. `Scancode::W` is the key above `Scancode::S` on every
+// layout — the `Z` key of an AZERTY board — which is exactly what a
+// movement binding wants. Text, where the layout does matter, arrives as
+// an `EventKind::TextInput` codepoint instead.
 //
-// Win32 gives the physical code in bits 16..23 of a key message's
-// `lParam`, so nothing here depends on the virtual-key code and no
-// layout is consulted (see `win_keymap`).
+// The numbering is the USB HID usage table's, which is what both
+// backends can reach without consulting a layout: Windows carries the
+// hardware code in bits 16..23 of a key message's `lParam`, and X11
+// carries an evdev keycode. Neither is the virtual key.
 
 /** Slots in the key-state array; scancodes stay under this. */
 const SCANCODE_SLOTS : i64 = 256;
 
 /**
- * A key by physical position, numbered as SDL numbers scancodes.
+ * A key by physical position, numbered as USB HID numbers keys.
  *
  * A key the library does not model maps to `Unknown`, which is never
  * reported as down.
@@ -97,6 +97,7 @@ pub enum Scancode : i32 {
     Left = 80,
     Down = 81,
     Up = 82,
+
     /** The keypad's own Enter — a different key from `Return`. */
     KeypadEnter = 88,
     LeftControl = 224,
@@ -109,7 +110,7 @@ pub enum Scancode : i32 {
 
 /**
  * Which keys are held, indexed by scancode — the counterpart of
- * `SDL_GetKeyboardState`.
+ * every key that is held right now.
  *
  * Edge events (`KeyDown` / `KeyUp`) say *when* a key changed; this says
  * *what is held right now*, which is what a movement loop reads.

@@ -1,0 +1,193 @@
+// sys_blit — the platform seam for putting a framebuffer on the screen.
+//
+// THE CONTRACT:
+//
+//   present(surface, pixels, srcW, srcH, dstW, dstH)
+//       copy a `srcW` by `srcH` block of 32-bit pixels, row 0 at the
+//       TOP, onto the `dstW` by `dstH` drawable named by `surface`,
+//       scaling when the two differ. `surface` is whatever the window
+//       layer calls a drawable — this file is the only one that knows.
+//
+// The scaling is not a nicety: it is what lets a resized window keep
+// drawing at the old framebuffer resolution for the frame between the
+// resize event and the target's reallocation, instead of showing garbage.
+//
+// The seam takes a bare `i32[]` rather than a `RenderTarget` so that
+// `platform/` stays *below* `render/`. A blit that knew what a render
+// target was would be a layer reaching upward, and the port would
+// inherit that coupling for nothing.
+//
+// Linux: `surface` is an `XSurface` — the `(Display *, Window, GC)`
+// triple `XPutImage` needs. The pixel format matches by construction:
+// the window is created from the root's visual, and every target this
+// backend builds for gives that visual an `XRGB8888` layout, which is
+// the same word the software renderer already writes.
+//
+// WHAT THIS PLATFORM DOES NOT GIVE AWAY. GDI's `StretchDIBits` scales in
+// the driver; the X protocol has no scaling put at all. So the resample
+// below is work Windows never does, and it is done here rather than one
+// layer up because it is a platform's cost and not the renderer's — the
+// seam's contract says "scaling when the two differ", and this is what
+// honouring it costs on X11.
+//
+// The resample is nearest-neighbour, stepped in 16.16 fixed point: one
+// add and one shift per pixel, no division inside either loop. Bilinear
+// would be four reads and three lerps per pixel to soften an image the
+// caller is about to have magnified anyway — and a software renderer
+// scaling *up* to fill a window wants its pixels crisp, not blurred.
+//
+// A put still copies the whole window's worth of pixels down the X
+// connection every frame. `XShmPutImage` over a shared segment removes
+// that copy and is the version a full-screen software renderer wants;
+// it needs `XShmQueryExtension`, an `XShmSegmentInfo`, and the System V
+// shared-memory calls, and it fits behind this same `present` with a
+// run-time fallback to the path below for a remote display, where a
+// shared segment cannot exist.
+
+use crate::kernel::blob::Blob;
+use crate::platform::x11::blit_scale::ScaleScratch;
+use crate::kernel::raw::Raw;
+use crate::platform::x_surface::XSurface;
+use crate::sys::x11_lib::{XFlush, XInitImage, XPutImage};
+use crate::sys::x11_types::XImage;
+use crate::sys::x11_const::{X_BITMAP_UNIT, X_BITS_PER_PIXEL, X_BLUE_MASK, X_GREEN_MASK, X_LSB_FIRST, X_RED_MASK, X_TRUE_COLOR_DEPTH, X_Z_PIXMAP};
+
+/** Bytes in one 32-bit pixel. */
+const BLIT_PIXEL_BYTES : i32 = 4;
+
+/** Fractional bits of the 16.16 step the resample walks the source with. */
+const BLIT_FRACTION_BITS : i32 = 16;
+
+/**
+ * The blit path.
+ *
+ * Owns the image record describing the framebuffer's format, rewritten
+ * only when its size changes, and the scratch a scaled frame is
+ * resampled into — allocated only once a frame actually needs scaling,
+ * so a game whose window matches its framebuffer never pays for it.
+ */
+pub class SysBlit : Closeable {
+    image      : Blob;
+    scaled     : ScaleScratch;
+    describedW : i32;
+    describedH : i32;
+
+    /** A blit path with no format described and no scratch taken. */
+    constructor() {
+        self.image = new Blob(sizeof<XImage>());
+        self.scaled = new ScaleScratch();
+        self.describedW = 0;
+        self.describedH = 0;
+    }
+
+    /** The block, read as the record it holds. */
+    fn header(self) : ptr<XImage> {
+        unsafe {
+            return self.image.at() as ptr<XImage>;
+        }
+    }
+
+    /**
+     * Point the image record at a `w` by `h`, top-down framebuffer.
+     *
+     * `XInitImage` is what completes the record — it installs the six
+     * function pointers Xlib dispatches through. Re-running it on a size
+     * change is the whole cost of a resize here, and it is a few stores.
+     */
+    fn describe(mut self, w : i32, h : i32) : void {
+        if (w == self.describedW && h == self.describedH) {
+            return;
+        }
+        unsafe {
+            let img = self.header();
+            (*img).width = w;
+            (*img).height = h;
+            (*img).xoffset = 0;
+            (*img).format = X_Z_PIXMAP;
+            (*img).byte_order = X_LSB_FIRST;
+            (*img).bitmap_unit = X_BITMAP_UNIT;
+            (*img).bitmap_bit_order = X_LSB_FIRST;
+            (*img).bitmap_pad = X_BITMAP_UNIT;
+            (*img).depth = X_TRUE_COLOR_DEPTH;
+            // Stated rather than left for `XInitImage` to derive: a row
+            // of this framebuffer is exactly its width, with no padding,
+            // and a derived stride that disagreed would shear the image
+            // by one pixel per row.
+            (*img).bytes_per_line = w * BLIT_PIXEL_BYTES;
+            (*img).bits_per_pixel = X_BITS_PER_PIXEL;
+            (*img).red_mask = X_RED_MASK;
+            (*img).green_mask = X_GREEN_MASK;
+            (*img).blue_mask = X_BLUE_MASK;
+            (*img).obdata = Raw::nil();
+            XInitImage(img);
+        }
+        self.describedW = w;
+        self.describedH = h;
+    }
+
+    /**
+     * Copy `pixels` onto `surface`, scaling to the destination size.
+     *
+     * A nil surface or a non-positive extent is a no-op rather than an
+     * error: both happen legitimately while a window is minimised, and a
+     * frame loop should not have to test for it.
+     */
+    fn present(
+        mut self,
+        surface : ptr,
+        pixels : i32[],
+        srcW : i32,
+        srcH : i32,
+        dstW : i32,
+        dstH : i32
+    ) : void {
+        if (Raw::isNil(surface) || dstW <= 0 || dstH <= 0 || srcW <= 0 || srcH <= 0) {
+            return;
+        }
+        unsafe {
+            let target : ptr<XSurface> = surface as ptr<XSurface>;
+            let display = (*target).display;
+            if (Raw::isNil(display)) {
+                return;
+            }
+
+            let putW = srcW;
+            let putH = srcH;
+            let source = Raw::pixelsOf(pixels);
+            if (srcW != dstW || srcH != dstH) {
+                self.scaled.reserve((dstW as i64) * (dstH as i64));
+                self.scaled.resample(pixels, srcW, srcH, dstW, dstH);
+                putW = dstW;
+                putH = dstH;
+                source = self.scaled.at();
+            }
+
+            self.describe(putW, putH);
+            let img = self.header();
+            (*img).data = source;
+            XPutImage(
+                (*target).display,
+                (*target).window,
+                (*target).gc,
+                img,
+                0,
+                0,
+                0,
+                0,
+                putW,
+                putH
+            );
+            // The put is buffered like every other X request. Without
+            // this the frame reaches the server whenever the next call
+            // happens to flush, which is a frame of latency that comes
+            // and goes with whatever else the loop did.
+            XFlush(display);
+        }
+    }
+
+    /** Release the image record and the resample scratch. */
+    fn close(self) : void {
+        self.scaled.close();
+        self.image.close();
+    }
+}

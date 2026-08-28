@@ -3,7 +3,9 @@ name = "donut3d"
 version = "0.1.0"
 
 # No `[link]`. The window, the framebuffer and the event queue come from
-# smalt, which is Axle calling Win32 directly — so there is no SDL2.dll
-# to ship and no vcpkg prefix to find.
+# smalt, which is Axle calling the OS directly — Win32, or X11 and ALSA,
+# depending on the build's target. Every library the link line needs is
+# named by the `extern "C" from "…"` block inside smalt that imports
+# from it, so there is nothing to list here.
 [dependencies]
 smalt = { path = "../.." }

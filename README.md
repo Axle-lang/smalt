@@ -50,23 +50,24 @@
 | | |
 |---|---|
 | **Language** | 100% [Axle](https://axle-lang.dev) — no C, no bindings, no vendored library |
-| **Platform** | Windows (Win32: `kernel32`, `user32`, `gdi32`, `winmm`) |
+| **Platforms** | Windows (Win32: `kernel32`, `user32`, `gdi32`, `winmm`) and Linux (X11 + ALSA: `X11`, `asound`, `c`) — one source tree, the target picks the backend |
 | **Scope** | What a 3D game needs — roughly SDL3 minus gamepads, plus the maths and the renderer SDL leaves to you |
 | **Rendering** | Software rasteriser on the CPU — near-plane clipping, back-face culling, depth buffer, perspective-correct interpolation, Blinn-Phong |
 | **Failure** | A subsystem that cannot start raises `PlatformError` **from its constructor** — there is no half-built object to test |
 | **Teardown** | Every handle-holding class is `Closeable`, so dropping one without `close()` is a compile error (**E0511**), not a leak found later |
-| **`unsafe`** | Only where an OS record is laid out through a typed pointer — `kernel/raw` (the accessors every other site goes through), the five `video/windows/` files, the three `platform/` seams that fill an OS struct, and `io/bmp`. Nothing above them contains one. |
-| **Size** | ~7 300 lines across 53 modules |
+| **Portability** | The OS lives under `src/*/<os>/` and nowhere else. Not one `use` in the portable half names a platform, and `tools/check_seam.sh` is that sentence enforced. |
+| **`unsafe`** | Only where an OS record is laid out through a typed pointer — `kernel/raw` (the accessors every other site goes through), the platform backends, and `io/bmp`. Nothing above them contains one. |
 
 ## ✨ Highlights
 
-- 🪟 **A real window, not a canvas** — `RegisterClassExW` with our own window procedure, so the messages Windows *sends* (`WM_CLOSE`, `WM_SIZE`, focus, minimise) arrive as events alongside the ones it posts.
+- 🪟 **A real window, not a canvas** — `RegisterClassExW` with our own window procedure on Windows, `XCreateSimpleWindow` with `WM_DELETE_WINDOW` on X11. Either way a close is a *request* the game may refuse, not an obituary.
+- 🧩 **Two backends, one API** — a module path resolves to `platform/<os>/sys_clock.axle`, so a portable file writes `use crate::platform::sys_clock::SysClock;` and never learns which OS it got. Building for the other target is `--target`, not a flag day.
 - 🎮 **SDL's event model, kept** — the queue is decoupled from the OS message pump, every event carries the same `kind` / `timestamp` prefix, and scancodes are physical positions, so `Scancode::W` is the key above `Scancode::S` on AZERTY too.
 - 📐 **The maths SDL never shipped** — `Vec2` `Vec3` `Vec4` `Mat4` `Quat` `Aabb` `Plane` `Frustum`, all value structs, all tested by a headless example.
 - 🎨 **A complete software 3D pipeline** — clip, project, cull, half-space fill with a reciprocal depth buffer, perspective-correct attributes, one directional light. No GPU touched, nothing to install.
-- 🔊 **Sound with no callback** — every low-latency audio API wants to call *you*, and Axle cannot hand out a function address. `waveOut` opened with `CALLBACK_NULL` reports a finished block as a flag you poll, so the mixer is a three-call cycle instead — the same shape ALSA's `snd_pcm_writei` takes.
+- 🔊 **Sound with no callback** — every low-latency audio API wants to call *you*, and Axle cannot hand out a function address. `waveOut` opened with `CALLBACK_NULL` reports a finished block as a flag you poll; ALSA's `snd_pcm_avail_update` answers the same question. One three-call cycle, both platforms.
 - 🧯 **Failure and teardown are the compiler's business** — constructors raise, `Closeable` is enforced, and `defer` covers the six ways out of `Bmp::read`.
-- 🪶 **Nothing to ship** — the produced `.exe` runs on a stock Windows box. No runtime DLL, no redistributable.
+- 🪶 **Nothing to ship** — the produced binary runs on a stock Windows box, or against the `libX11` and `libasound` any Linux desktop already has. No runtime DLL, no redistributable, no vendored library.
 
 ## 🚀 Quick start
 
@@ -80,7 +81,7 @@ smalt = { path = "../smalt" }
 ```
 
 ```axle
-use smalt::{Platform, PlatformError, WindowFlags, Events, EventKind, Clock, SoftDevice, Camera, Color};
+use smalt::{Platform, PlatformError, Events, EventKind, Clock, FramePacer, SoftDevice, Camera, Color, WINDOW_RESIZABLE};
 
 fn main() : i32 {
     try {
@@ -93,15 +94,22 @@ fn main() : i32 {
 
 fn run() : i32 ! PlatformError {
     let platform = new Platform()?;
-    let win = platform.createWindow("game", 1280, 720, WindowFlags::resizable())?;
+    defer platform.close();
+    let win = platform.createWindow("game", 1280, 720, WINDOW_RESIZABLE)?;
+    defer win.close();
     let clock = new Clock();
+    defer clock.close();
     let events = new Events();
+    defer events.close();
     let device = new SoftDevice(1280, 720);
+    defer device.close();
     let camera = new Camera();
 
+    let pacer = new FramePacer(60);
     let running = true;
     while (running) {
-        events.pump(win, clock.ticks());
+        let dt = pacer.tick(clock);
+        events.pump(win, clock);
         while (events.hasNext()) {
             let e = events.next();
             match e.kind {
@@ -115,11 +123,6 @@ fn run() : i32 ! PlatformError {
         device.endFrame(win);
     }
 
-    device.close();
-    events.close();
-    clock.close();
-    win.close();
-    platform.close();
     return 0;
 }
 ```
@@ -160,7 +163,7 @@ A textured cube on a tiled floor, lit and depth-tested, at a locked 60 fps. `WAS
 | `donut3d` | **its own** renderer, over `SoftDevice::pixels()` — smalt is only the window |
 | `mario3d` | same: a game that already had a renderer and just wanted a framebuffer |
 | `hello_window` | the smallest thing that opens and closes cleanly |
-| `math_check` | asserts the maths — runs headless, no display needed |
+| `self_check` | asserts the maths and the frame pacer — runs headless, no display needed |
 | `audio_check` | asserts the WAV decode and the device's block cycle |
 | `proc_check` | asserts the window procedure — headless, under a second |
 
@@ -173,9 +176,9 @@ A program that already has a renderer should not have to adopt one to get a wind
 | `SDL_Init` / `SDL_Quit` | `new Platform()` / `platform.close()` |
 | `SDL_GetError` | `catch e : PlatformError` → `e.message` |
 | `SDL_CreateWindow` | `platform.createWindow(title, w, h, flags)` |
-| `SDL_WindowFlags` | `WindowFlags::resizable()` and friends |
+| `SDL_WindowFlags` | `WINDOW_RESIZABLE` and friends, combined with `\|` |
 | `SDL_DestroyWindow` | `win.close()` |
-| `SDL_PumpEvents` | `events.pump(win, stamp)` |
+| `SDL_PumpEvents` | `events.pump(win, clock)` |
 | `SDL_PollEvent` | `events.hasNext()` / `events.next()` |
 | `SDL_Event` (a union) | `Event` — one flat struct + `EventKind` |
 | `SDL_GetKeyboardState` | `events.isKeyDown(Scancode::W)` |
@@ -185,6 +188,7 @@ A program that already has a renderer should not have to adopt one to get a wind
 | `SDL_GetTicks` | `clock.ticks()` |
 | `SDL_GetPerformanceCounter` | `clock.counter()` / `clock.frequency()` |
 | `SDL_Delay` / `SDL_DelayPrecise` | `clock.delay(ms)` / `clock.delayUntil(us)` |
+| *(SDL ships no frame pacer)* | `FramePacer` — `pacer.tick(clock)` sleeps and answers `dt` |
 | `SDL_LoadBMP` | `Bmp::load(path)`; `Bmp::read` raises `IOException` |
 | `SDL_LoadFile` | `AssetFile::readAll(path)` |
 | `SDL_Rect` | `Rect` |
@@ -220,33 +224,85 @@ Layers, bottom to top. **A module never reaches upward.**
    ├─────────────────────────────────────────────────────────────────────┤
    │  math/     vec · mat · quat · geom          io/  file · bmp          │
    ├─────────────────────────────────────────────────────────────────────┤
-   │  video/    window · display                                          │
-   │            windows/ class · window · pump · keymap · relative        │
-   │                     proc · const                                     │
+   │  video/    window · display · scancode_set1                          │
+   │            SEAM  sys_window · sys_drain · sys_cursor                 │
+   │            windows/ class · window · proc · keymap · const           │
+   │            linux/   x_keymap                                         │
    ├─────────────────────────────────────────────────────────────────────┤
    │  core/     init · error · timer · event · keyboard · mouse · pump    │
    ├─────────────────────────────────────────────────────────────────────┤
-   │  platform/ THE PORT SEAM — one file per OS capability                │
-   │            sys_clock · sys_app · sys_screen · sys_blit               │
-   │            sys_pump · sys_audio                                      │
+   │  platform/ audio_format                                              │
+   │            SEAM  sys_app · sys_clock · sys_screen · sys_blit         │
+   │                  sys_audio                                           │
    ├─────────────────────────────────────────────────────────────────────┤
-   │  sys/      win32_types · win32_const · win32_layout_check            │
-   │            win32_kernel · win32_user · win32_gdi · win32_mm          │
+   │  sys/      dib (the BMP / DIB records — a data format, portable)     │
+   │            windows/ win32_types · win32_const · win32_kernel         │
+   │                     win32_user · win32_gdi · win32_mm · wide         │
+   │                     win32_layout_check                               │
+   │            linux/   x11_types · x11_const · x11_lib · alsa_lib       │
+   │                     posix_time · x11_layout_check                    │
    ├─────────────────────────────────────────────────────────────────────┤
-   │  kernel/   raw ← the pointer accessors · blob · wide                 │
+   │  kernel/   raw ← the pointer accessors · blob                        │
    └─────────────────────────────────────────────────────────────────────┘
 ```
+
+**How one tree builds for two platforms.** There is no `#[cfg]` in Axle,
+and there is not one here either. A module path resolves to
+`<path>.axle` when a capability has one implementation and to
+`<dir>/<os>/<name>.axle` when it has one per target, so a portable file
+writes
+
+```axle
+use crate::platform::sys_clock::SysClock;   // core/timer.axle
+```
+
+and gets `platform/windows/sys_clock.axle` or `platform/linux/sys_clock.axle`
+depending on the build's `--target` — the other file is not compiled at
+all, which is why a Win32 `extern "C" from "gdi32"` never reaches a Linux
+link line. Two shapes are refused rather than guessed: a path satisfied
+by *both* a portable file and an overlay, and a path whose target has no
+implementation while a sibling platform does — the second names the file
+to write.
+
+The invariant that makes it hold is one sentence: **the operating system
+lives under `src/*/<os>/` and nowhere else, and not one `use` in the
+portable half names a platform.** `tools/check_seam.sh` is that sentence
+enforced — three rules, each with a `--selftest` that plants the
+violation it is for and fails if the check passes on it.
 
 `platform/` sits below `core/` on purpose. A seam that lived beside the
 code it serves would be reachable from it, and the first shortcut past it
 would go unnoticed; from underneath it can only be called down into. That
 is also why `sys_blit` takes a bare `i32[]` rather than a `RenderTarget`,
-and why the `SM_*` and raster-op constants moved out of `video/windows/`
-and into `sys/`.
+and why `x_surface` — the `(Display *, Window, GC)` triple X11 needs
+where Win32 has a single `HDC` — lives under `platform/` and not beside
+the window that fills it.
+
+**The eight seams, and what each costs on either side.**
+
+| Seam | Windows | Linux |
+|---|---|---|
+| `sys_app` | `GetModuleHandleW`, `RegisterClassExW`, `timeBeginPeriod` | `XOpenDisplay` / `XCloseDisplay`, detectable auto-repeat; no granularity to raise |
+| `sys_clock` | `QueryPerformanceCounter`, `Sleep` | `clock_gettime(CLOCK_MONOTONIC)`, `nanosleep` — the frequency is a constant |
+| `sys_screen` | `GetSystemMetrics` | `XDisplayWidth` / `XDisplayHeight` on a connection of its own |
+| `sys_blit` | `StretchDIBits` — the driver scales | `XPutImage` — **X11 has no scaling blit**, so the backend owns a 16.16 nearest-neighbour resample |
+| `sys_audio` | `waveOut` + `CALLBACK_NULL`, four blocks polled for `WHDR_DONE` | `snd_pcm_writei` + `snd_pcm_avail_update`, two staging blocks, `snd_pcm_recover` on an underrun |
+| `sys_window` | `HWND` + `HDC`; the latches are written by our window procedure | `Window` + `GC`; the latches are written by the drain, out of `ConfigureNotify` / `FocusIn` / `ClientMessage` |
+| `sys_drain` | `PeekMessageW` over the thread queue | `XPending` / `XNextEvent` over the connection — one stream for input *and* window notices |
+| `sys_cursor` | `ClientToScreen` + `SetCursorPos`; `ShowCursor`'s balanced counter | `XWarpPointer` (window-relative, no conversion); hiding is a cursor with no pixels, so it is a resource with a lifetime |
+
+What is deliberately **not** duplicated: the PS/2 set-1 code block
+(`video/scancode_set1`), which Windows reads out of `lParam` bits 16..23
+and evdev numbered identically for its first eighty-eight keys; the DIB
+records (`sys/dib`), which are a published data format both a `.bmp` file
+and `StretchDIBits` carry; and the PCM format (`platform/audio_format`),
+which is the seam's contract — a backend that kept its own copy could
+open a device at 48 kHz while the mixer still wrote 44.1, and nothing
+would fail.
 
 **Objects vs values.** What has identity and a lifetime is a class: `Platform`, `Window`, `Events`, `Clock`, `SoftDevice`, `Mesh`, `Texture`, `Camera`, `RenderTarget`, `Blob`. What is data is a value struct: `Vec3`, `Mat4`, `Quat`, `Color`, `Vertex`, `Material`, `Event`, `Rect`, `Aabb`. Free functions appear only in the raw kernel, where the carrier is context rather than subject.
 
-**Why the rendering seam is a trait and the video seam is not.** SDL routes every subsystem through a vtable (`SDL_VideoDevice`, `VideoBootStrap`) because it supports two dozen platforms. On a Windows-only target that indirection buys nothing and costs a dispatch on every window operation, so the platform seam here is a *file* boundary rather than a vtable: each OS-specific capability is one file under `platform/`, stating its contract in its header, and a port replaces those files. Five capabilities are seams today — `sys_clock` (counter, sleep), `sys_app` (process token, timer resolution), `sys_screen` (display metrics), `sys_blit` (framebuffer to drawable) and `sys_pump` (the OS event record's size). Each header names the X11/POSIX call it was shaped against, so a port has a contract to implement rather than a diff to reverse-engineer. One reference outside them remains and is not a seam: `io/bmp` reads `BITMAPINFOHEADER`, which is the **BMP file format's** header and identical on every OS — it is declared under `sys/win32_types` only because that is where Windows also happens to define it. Rendering is different — a second backend is genuinely reachable — so `RenderDevice` is a real trait with `SoftDevice` behind it.
+**Why the rendering seam is a trait and the platform seam is not.** SDL routes every subsystem through a vtable (`SDL_VideoDevice`, `VideoBootStrap`) because a backend is chosen at *run time*. Here it is chosen at compile time, and a vtable would buy nothing but a dispatch on every window operation — so the platform seam is a *file* boundary: one file per capability per OS, each stating its contract in its header, and a port writes the files the compiler names. Rendering is the one place where a second backend is genuinely reachable at run time, so `RenderDevice` is a real trait with `SoftDevice` behind it.
 
 ## ⚙️ How it works
 
@@ -297,7 +353,7 @@ Display enumeration covers the primary monitor only — `EnumDisplayMonitors` ta
 
 Three language rules shape the signatures here:
 
-- **A `pub const` does not cross a crate boundary** (**E0035**). Anything a consumer needs as a constant is exposed as a static method (`WindowFlags::resizable()`) or an `enum` (`Scancode`, `EventKind`), both of which do cross.
+- **A `pub const` crosses a crate boundary** and is how a constant is published — `WINDOW_RESIZABLE` and friends. A global's initialiser must be a literal, so a constant derived from another is spelled out with the derivation in its doc comment.
 - **Storing a parameter into a field or an array element needs `own`** (**E0513** otherwise) when the parameter is a *reference* or a value that owns a resource. A plain value struct — `Vertex`, `Vec3`, `Event` — is copied into the slot and needs no keyword.
 - **`mut` on a class parameter is rejected as never-mutated** (**E0281**): calling a mutating method through it is not a mutation *of the binding*.
 

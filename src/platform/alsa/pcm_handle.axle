@@ -1,0 +1,44 @@
+// pcm_handle — the ALSA device handle and its recovery, kept off the seam.
+//
+// `SysAudio` presents the cycle the mixer drives — `reclaim`,
+// `blockAddress`, `blockFrames`, `submit` — and nothing else, because a
+// name declared on one port and not another is a call that compiles for
+// one target and fails for the other. A `snd_pcm_t` and an xrun to clear
+// are ALSA's; waveOut has neither and could not answer them. They live
+// here, private to this port.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::platform::audio_format::{AUDIO_BLOCK_FRAMES, AUDIO_RATE};
+use crate::sys::alsa_lib::snd_pcm_recover;
+
+/** Microseconds in a second. */
+const PCM_MICROS_PER_SEC : i64 = 1000000;
+
+/** Blocks the device's own ring holds. */
+const PCM_RING_BLOCKS : i64 = 2;
+
+/**
+ * `snd_pcm_recover`'s silent flag: whatever it cannot fix leaves the
+ * device stopped and every later call failing the same way, which is
+ * the right failure for a game — the sound stops, the frame loop does
+ * not.
+ */
+const PCM_RECOVER_SILENT : i32 = 1;
+
+/** The opaque device handle the open call wrote into its slot. */
+pub fn pcm(handle : Blob) : ptr {
+    unsafe {
+        return Raw::at(*(handle.at() as ptr<i64>));
+    }
+}
+
+/** Clear an underrun or a suspend. */
+pub fn recover(handle : Blob, err : i64) : void {
+    snd_pcm_recover(pcm(handle), err as i32, PCM_RECOVER_SILENT);
+}
+
+/** The device's queue depth, in microseconds. */
+pub fn latencyUs() : i32 {
+    return (((AUDIO_BLOCK_FRAMES as i64) * PCM_RING_BLOCKS * PCM_MICROS_PER_SEC) / (AUDIO_RATE as i64)) as i32;
+}

@@ -1,0 +1,105 @@
+// sys_clock — the platform seam for monotonic time and sleeping.
+//
+// THE CONTRACT, which a port must honour and nothing above this file may
+// look behind:
+//
+//   counter()    a monotonic tick count, origin unspecified, never
+//                decreasing, never wrapping within a process's life
+//   frequency()  ticks per second of that counter, constant for the
+//                process — read once, not per reading
+//   sleep(ms)    hand at least `ms` back to the scheduler; returning
+//                late is allowed, returning early is not
+//
+// `Clock` builds everything else — seconds, milliseconds, a spun tail —
+// on those three, so a port replaces this file and nothing else.
+//
+// Linux: `clock_gettime(CLOCK_MONOTONIC)`, whose tick is a nanosecond by
+// definition, so the frequency is a constant and not a call. The sleep is
+// `nanosleep`, which resolves far below a frame with no granularity to
+// raise first — the reason `SysApp`'s timer-resolution pair is a no-op
+// on this platform.
+//
+// A signal cutting `nanosleep` short returns `-EINTR` with the remaining
+// time in `rem`, and this file does not retry: the contract says a sleep
+// may return late, and the frame pacer above re-reads the clock and
+// sleeps again anyway. Retrying here would be the same loop, written
+// twice, in the file that knows less about the deadline.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::sys::posix_time::{clock_gettime, nanosleep, timespec};
+
+/** `CLOCK_MONOTONIC` — unaffected by an NTP step or a timezone change. */
+const CLOCK_MONOTONIC : i32 = 1;
+
+/** Nanoseconds in a second — the counter's own frequency. */
+const NANOS_PER_SEC : i64 = 1000000000;
+
+/** Nanoseconds in a millisecond. */
+const NANOS_PER_MS : i64 = 1000000;
+
+/** Milliseconds in a second. */
+const MS_PER_SEC : i64 = 1000;
+
+/**
+ * The platform clock.
+ *
+ * Owns the two records the calls read and write, so a reading and a
+ * sleep allocate nothing: both are on the frame path, and a `malloc` per
+ * frame for sixteen bytes is a cost with no purpose.
+ */
+pub class SysClock : Closeable {
+    now : Blob;
+    nap : Blob;
+
+    /** A clock with its own reading and sleeping records. */
+    constructor() {
+        self.now = new Blob(sizeof<timespec>());
+        self.nap = new Blob(sizeof<timespec>());
+    }
+
+    /**
+     * Ticks per second of `counter`. Constant for the process.
+     *
+     * A nanosecond, by the definition of `struct timespec` — there is no
+     * call to ask, and nothing to clamp against zero.
+     */
+    fn frequency(self) : i64 {
+        return NANOS_PER_SEC;
+    }
+
+    /**
+     * The monotonic tick count, in nanoseconds.
+     *
+     * A failed `clock_gettime` leaves the record as it was, so the
+     * reading repeats rather than jumping — a clock that stalls is
+     * survivable and a clock that goes backwards is not, and
+     * `CLOCK_MONOTONIC` is supported everywhere this backend runs.
+     */
+    fn counter(self) : i64 {
+        unsafe {
+            let out = self.now.at() as ptr<timespec>;
+            clock_gettime(CLOCK_MONOTONIC, out);
+            return (*out).tv_sec * NANOS_PER_SEC + (*out).tv_nsec;
+        }
+    }
+
+    /** Hand at least `ms` milliseconds back to the scheduler. */
+    fn sleep(self, ms : i32) : void {
+        if (ms <= 0) {
+            return;
+        }
+        unsafe {
+            let req = self.nap.at() as ptr<timespec>;
+            (*req).tv_sec = (ms as i64) / MS_PER_SEC;
+            (*req).tv_nsec = ((ms as i64) % MS_PER_SEC) * NANOS_PER_MS;
+            nanosleep(req, Raw::nil());
+        }
+    }
+
+    /** Release the two records. */
+    fn close(self) : void {
+        self.nap.close();
+        self.now.close();
+    }
+}

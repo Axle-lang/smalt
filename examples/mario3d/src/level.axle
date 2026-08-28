@@ -84,6 +84,7 @@ class Level {
         }
         return false;
     }
+
     /** Fill the tile rectangle `c0..c1 × r0..r1` with `t`. */
     fn fillRect(mut self, c0 : i32, r0 : i32, c1 : i32, r1 : i32, t : Tile) : void {
         let r : i32 = r0;

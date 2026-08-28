@@ -1,7 +1,7 @@
 // vec — 2, 3 and 4 component vectors.
 //
-// SDL ships no vector maths at all: every SDL-based 3D game brings its
-// own. This is that, in Axle.
+// The types every 3D program needs before it can do anything at all, so
+// that no game built on this library has to bring its own.
 //
 // They are `struct`s, so they are values — copied on assignment, stored
 // inline in an array, never aliased and never heap-allocated. Axle has
@@ -22,6 +22,7 @@ const VEC_EPSILON : f64 = 0.000000001;
 pub struct Vec2 {
     /** Horizontal component. */
     pub x : f64;
+
     /** Vertical component. */
     pub y : f64;
 
@@ -65,8 +66,10 @@ pub struct Vec2 {
 pub struct Vec3 {
     /** X component. */
     pub x : f64;
+
     /** Y component. */
     pub y : f64;
+
     /** Z component. */
     pub z : f64;
 
@@ -185,10 +188,13 @@ pub struct Vec3 {
 pub struct Vec4 {
     /** X component. */
     pub x : f64;
+
     /** Y component. */
     pub y : f64;
+
     /** Z component. */
     pub z : f64;
+
     /** Homogeneous component; 1 for a position, 0 for a direction. */
     pub w : f64;
 

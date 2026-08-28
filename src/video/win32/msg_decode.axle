@@ -1,0 +1,184 @@
+// msg_decode — the `MSG` fields, unpacked, and the translation table.
+//
+// `SysDrain` presents the two calls a portable file makes — `newScratch`
+// and `drain` — plus `buttonOf`, which both ports answer. Everything
+// else here reads bit ranges out of a `wParam` / `lParam` pair that
+// exists only on Windows, so it is port-private: a name declared on one
+// port and not another is a call that compiles for one target and fails
+// for the other.
+
+use crate::core::event::{Event, EventKind, EventQueue};
+use crate::core::keyboard::{KeyboardState, Scancode};
+use crate::core::mouse::{MouseButton, MouseState};
+use crate::video::win_const::{WHEEL_DELTA, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP};
+use crate::video::win_keymap::WinKeymap;
+
+/** The first UTF-16 surrogate — a code unit that is half a character. */
+const SURROGATE_LOW_BOUND : i32 = 55296;
+
+/** The last UTF-16 surrogate. */
+const SURROGATE_HIGH_BOUND : i32 = 57343;
+
+/** The sign bound of a 16-bit field. */
+const WORD_SIGN_BOUND : i64 = 32768;
+
+/** One past the largest 16-bit value. */
+const WORD_MODULUS : i64 = 65536;
+
+/** A 16-bit field read as signed — a coordinate may be off-screen. */
+pub fn signedWord(v : i64) : i32 {
+    let low : i64 = v & 0xFFFF;
+    if (low >= WORD_SIGN_BOUND) {
+        return (low - WORD_MODULUS) as i32;
+    }
+    return low as i32;
+}
+
+/** The x coordinate packed in the low half of a mouse `lParam`. */
+pub fn mouseX(lp : i64) : i32 {
+    return signedWord(lp);
+}
+
+/** The y coordinate packed in the high half of a mouse `lParam`. */
+pub fn mouseY(lp : i64) : i32 {
+    return signedWord(lp >>> 16);
+}
+
+/** The hardware scancode, `lParam` bits 16..23. */
+pub fn scanOf(lp : i64) : i32 {
+    return ((lp >>> 16) & 0xFF) as i32;
+}
+
+/** The extended-key prefix, `lParam` bit 24. */
+pub fn extendedOf(lp : i64) : bool {
+    return ((lp >>> 24) & 1) != 0;
+}
+
+/**
+ * Whether the key was already down, `lParam` bit 30.
+ *
+ * This is what separates a fresh press from the hardware
+ * auto-repeat, which a game must ignore for a jump but honour for a
+ * text cursor.
+ */
+pub fn repeatOf(lp : i64) : bool {
+    return ((lp >>> 30) & 1) != 0;
+}
+
+/** The scancode a key message names. */
+pub fn keyOf(lp : i64) : Scancode {
+    return WinKeymap::lookup(scanOf(lp), extendedOf(lp));
+}
+
+/** Wheel notches, from the signed high half of `wParam`. */
+pub fn wheelOf(wp : i64) : i32 {
+    return signedWord(wp >>> 16) / WHEEL_DELTA;
+}
+
+/**
+ * Turn one message into state changes and queued events.
+ *
+ * Split out of the drain loop so the loop stays a loop: this is the
+ * whole translation table, and it reads as one.
+ */
+pub fn handle(
+    message : i32,
+    wp : i64,
+    lp : i64,
+    stamp : i64,
+    queue : EventQueue,
+    keys : KeyboardState,
+    mouse : MouseState
+) : void {
+    if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
+        let sc = keyOf(lp);
+        keys.press(sc);
+        queue.push(
+            Event { kind: EventKind::KeyDown, timestamp: stamp, scancode: sc, repeat: repeatOf(lp) }
+        );
+        return;
+    }
+    if (message == WM_KEYUP || message == WM_SYSKEYUP) {
+        let sc = keyOf(lp);
+        keys.release(sc);
+        queue.push(Event { kind: EventKind::KeyUp, timestamp: stamp, scancode: sc });
+        return;
+    }
+    if (message == WM_CHAR) {
+        let cp : i32 = (wp & 0xFFFF) as i32;
+        // A surrogate half is not a character. Dropping it loses
+        // astral-plane text input, which no key on a keyboard
+        // produces; pairing it would need state this layer has no
+        // reason to carry.
+        if (cp < SURROGATE_LOW_BOUND || cp > SURROGATE_HIGH_BOUND) {
+            queue.push(Event { kind: EventKind::TextInput, timestamp: stamp, text: cp });
+        }
+        return;
+    }
+    if (message == WM_MOUSEMOVE) {
+        let nx = mouseX(lp);
+        let ny = mouseY(lp);
+        let known = mouse.isPrimed();
+        let px = mouse.posX();
+        let py = mouse.posY();
+        mouse.moveTo(nx, ny);
+        // The very first motion has no previous position to subtract, so
+        // the delta stays at the field's own default rather than being a
+        // jump from wherever the pointer happened to enter.
+        let e = Event { kind: EventKind::MouseMotion, timestamp: stamp, x: nx, y: ny };
+        if (known) {
+            e.dx = nx - px;
+            e.dy = ny - py;
+        }
+        queue.push(e);
+        return;
+    }
+    if (message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN || message == WM_MBUTTONDOWN) {
+        let b = buttonOf(message);
+        mouse.press(b);
+        queue.push(
+            Event {
+                kind: EventKind::MouseButtonDown,
+                timestamp: stamp,
+                button: b,
+                x: mouseX(lp),
+                y: mouseY(lp),
+            }
+        );
+        return;
+    }
+    if (message == WM_LBUTTONUP || message == WM_RBUTTONUP || message == WM_MBUTTONUP) {
+        let b = buttonOf(message);
+        mouse.release(b);
+        queue.push(
+            Event {
+                kind: EventKind::MouseButtonUp,
+                timestamp: stamp,
+                button: b,
+                x: mouseX(lp),
+                y: mouseY(lp),
+            }
+        );
+        return;
+    }
+    if (message == WM_MOUSEWHEEL) {
+        let notches = wheelOf(wp);
+        mouse.scroll(notches);
+        queue.push(Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: notches });
+        return;
+    }
+    if (message == WM_CLOSE || message == WM_QUIT) {
+        queue.push(Event { kind: EventKind::Quit, timestamp: stamp });
+    }
+}
+
+/** The button a message names, or `Left` for a message that names none. */
+pub fn buttonOf(message : i32) : MouseButton {
+    return match message {
+        WM_RBUTTONDOWN => MouseButton::Right,
+        WM_RBUTTONUP => MouseButton::Right,
+        WM_MBUTTONDOWN => MouseButton::Middle,
+        WM_MBUTTONUP => MouseButton::Middle,
+        _ => MouseButton::Left,
+    };
+}

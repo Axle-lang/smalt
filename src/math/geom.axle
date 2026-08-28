@@ -1,9 +1,8 @@
 // geom — rectangles, boxes, planes, and the frustum that culls by them.
 //
-// SDL provides `SDL_Rect` and its intersection helpers, and stops there:
-// there is no `SDL_AABB` and no frustum, because SDL does not know what
-// a scene is. A 3D game needs both, and needs them before it needs
-// anything else in this file — the cheapest triangle is the one never
+// A rectangle is what a 2D overlay clips against. A box and a frustum
+// are what a 3D scene culls with, and a game needs them before it needs
+// anything else here — the cheapest triangle is the one never
 // submitted.
 //
 // `Frustum` extracts its six planes from a view-projection matrix by the
@@ -18,14 +17,17 @@ use std::numeric::math;
 /** Below this, a plane normal has no direction and the plane is skipped. */
 const GEOM_EPSILON : f64 = 0.000000001;
 
-/** An axis-aligned rectangle in pixels — the `SDL_Rect` counterpart. */
+/** An axis-aligned rectangle, in pixels. */
 pub struct Rect {
     /** Left edge. */
     pub x : i32;
+
     /** Top edge. */
     pub y : i32;
+
     /** Width; a rectangle with a non-positive extent is empty. */
     pub w : i32;
+
     /** Height. */
     pub h : i32;
 
@@ -60,6 +62,7 @@ pub struct Rect {
 pub struct Aabb {
     /** Corner with the smallest coordinates. */
     pub min : Vec3;
+
     /** Corner with the largest coordinates. */
     pub max : Vec3;
 
@@ -114,16 +117,8 @@ pub struct Aabb {
     /** This box grown to enclose `p`. */
     fn including(self, p : Vec3) : Aabb {
         return Aabb {
-            min: Vec3::make(
-                self.min.x.min(p.x),
-                self.min.y.min(p.y),
-                self.min.z.min(p.z)
-            ),
-            max: Vec3::make(
-                self.max.x.max(p.x),
-                self.max.y.max(p.y),
-                self.max.z.max(p.z)
-            ),
+            min: Vec3::make(self.min.x.min(p.x), self.min.y.min(p.y), self.min.z.min(p.z)),
+            max: Vec3::make(self.max.x.max(p.x), self.max.y.max(p.y), self.max.z.max(p.z)),
         };
     }
 }
@@ -132,8 +127,9 @@ pub struct Aabb {
 pub struct Plane {
     /** Unit normal; the positive side is the side it points to. */
     pub normal : Vec3;
+
     /** Signed distance from the origin along the normal. */
-    pub d : f64;
+    pub d      : f64;
 
     /** A plane from the four coefficients of `ax + by + cz + d = 0`, normalised. */
     static fn coefficients(a : f64, b : f64, c : f64, d : f64) : Plane {
@@ -160,17 +156,22 @@ pub struct Plane {
  */
 pub struct Frustum {
     /** Left plane. */
-    pub left : Plane;
+    pub left   : Plane;
+
     /** Right plane. */
-    pub right : Plane;
+    pub right  : Plane;
+
     /** Bottom plane. */
     pub bottom : Plane;
+
     /** Top plane. */
-    pub top : Plane;
+    pub top    : Plane;
+
     /** Near plane. */
-    pub near : Plane;
+    pub near   : Plane;
+
     /** Far plane. */
-    pub far : Plane;
+    pub far    : Plane;
 
     /**
      * The frustum of a view-projection matrix.

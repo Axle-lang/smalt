@@ -1,0 +1,27 @@
+// wave_block — the two waveOut addresses, kept off the seam.
+//
+// `SysAudio` presents the cycle the mixer drives — `reclaim`,
+// `blockAddress`, `blockFrames`, `submit` — and nothing else, because a
+// name declared on one port and not another is a call that compiles for
+// one target and fails for the other. A header address and a device
+// handle are Windows records; the ALSA port has neither and could not
+// answer them. They live here, private to this port.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::sys::win32_types::WAVEHDR;
+
+/** Header `i` of a contiguous `WAVEHDR` block, read as the record it is. */
+pub fn headerAt(headers : Blob, i : i32) : ptr<WAVEHDR> {
+    unsafe {
+        let base : i64 = Raw::addr(headers.at()) + (i as i64) * (sizeof<WAVEHDR>() as i64);
+        return Raw::at(base) as ptr<WAVEHDR>;
+    }
+}
+
+/** The opaque device handle the open call wrote into its slot. */
+pub fn deviceHandle(device : Blob) : ptr {
+    unsafe {
+        return Raw::at(*(device.at() as ptr<i64>));
+    }
+}

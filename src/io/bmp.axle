@@ -1,7 +1,8 @@
-// bmp — the one image format, as in SDL.
+// bmp — the one image format the library decodes.
 //
-// SDL core decodes exactly one format: BMP (`SDL_LoadBMP`). Everything
-// else lives in the separate SDL_image library. This matches that scope
+// BMP, and nothing else. PNG needs an inflate, JPEG needs a DCT, and
+// both are a decoder's worth of code that has nothing to do with opening
+// a window. BMP is a header and rows of pixels. This is that scope
 // deliberately — a PNG decoder is an inflate implementation, and that is
 // a different project.
 //
@@ -18,7 +19,7 @@ use crate::io::file::AssetFile;
 use crate::kernel::blob::Blob;
 use crate::render::color::Color;
 use crate::render::texture::Texture;
-use crate::sys::win32_types::BITMAPINFOHEADER;
+use crate::sys::dib::BITMAPINFOHEADER;
 
 /**
  * `BITMAPFILEHEADER` — the 14 bytes a `.bmp` opens with.
@@ -32,15 +33,19 @@ use crate::sys::win32_types::BITMAPINFOHEADER;
 @packed
 extern "C" struct BITMAPFILEHEADER {
     /** `WORD bfType` — `BM`, little-endian, so `0x4D42`. */
-    bfType : u16;
+    bfType      : u16;
+
     /** `DWORD bfSize` — the whole file. */
-    bfSize : u32;
+    bfSize      : u32;
+
     /** `WORD bfReserved1`. */
     bfReserved1 : u16;
+
     /** `WORD bfReserved2`. */
     bfReserved2 : u16;
+
     /** `DWORD bfOffBits` — where the pixel rows begin. */
-    bfOffBits : u32;
+    bfOffBits   : u32;
 }
 
 /**
@@ -54,6 +59,7 @@ extern "C" struct BITMAPFILEHEADER {
 extern "C" struct BMPHEADER {
     /** The file header. */
     file : BITMAPFILEHEADER;
+
     /** The DIB header — shared with the present path's own use of it. */
     info : BITMAPINFOHEADER;
 }
@@ -65,16 +71,22 @@ extern "C" struct BMPHEADER {
  * of bytes was a consequence of addressing the header by offset.
  */
 const BMP_MAGIC : i32 = 19778;
+
 /** `B`, the byte the file opens with. */
 const BMP_MAGIC_B : i32 = 66;
+
 /** `M`, the one after it. */
 const BMP_MAGIC_M : i32 = 77;
+
 /** `BI_RGB` — the only compression accepted. */
 const BMP_UNCOMPRESSED : i32 = 0;
+
 /** Rows are padded up to a multiple of this many bytes. */
 const BMP_ROW_ALIGN : i32 = 4;
+
 /** Side of the placeholder returned when a load fails. */
 const BMP_MISSING_SIZE : i32 = 64;
+
 /** Squares per side of the placeholder. */
 const BMP_MISSING_CELLS : i32 = 8;
 
@@ -92,16 +104,24 @@ pub class Bmp {
      * grows by two.
      */
     static fn verifyLayout() : i32 {
-        if (sizeof<BITMAPFILEHEADER>() != 14) { return 1; }
-        if (offsetof(BITMAPFILEHEADER, bfSize) != 2) { return 2; }
-        if (offsetof(BITMAPFILEHEADER, bfOffBits) != 10) { return 3; }
+        if (sizeof<BITMAPFILEHEADER>() != 14) {
+            return 1;
+        }
+        if (offsetof(BITMAPFILEHEADER, bfSize) != 2) {
+            return 2;
+        }
+        if (offsetof(BITMAPFILEHEADER, bfOffBits) != 10) {
+            return 3;
+        }
         // The DIB header starts where the file header ends, with nothing
         // between them — the outer record is packed for that reason alone.
         if (offsetof(BMPHEADER, info) != 14) { return 4; }
         if (sizeof<BMPHEADER>() != 54) { return 5; }
         // `BM`, little-endian: the two bytes this decoder compared
         // separately are one `WORD` field.
-        if (BMP_MAGIC != (BMP_MAGIC_M * 256) + BMP_MAGIC_B) { return 6; }
+        if (BMP_MAGIC != (BMP_MAGIC_M * 256) + BMP_MAGIC_B) {
+            return 6;
+        }
         return 0;
     }
 

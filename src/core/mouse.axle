@@ -1,6 +1,6 @@
 // mouse — pointer position, buttons, wheel, and relative motion.
 //
-// Two coordinate stories, as in SDL. `x` / `y` are the pointer's
+// Two coordinate stories, and they are not one. `x` / `y` are the pointer's
 // position in the window's client area, which is what a menu or a
 // cursor needs. `dx` / `dy` are the motion accumulated since the last
 // pump, which is what a first-person camera needs — and the two are not
@@ -12,7 +12,7 @@
 // rather than a raw-input device registration, which keeps the whole
 // mechanism inside the polled model the library is built on.
 
-/** Buttons, numbered as SDL numbers them. */
+/** Buttons, numbered as the OS numbers them: 1 is the left one. */
 pub enum MouseButton : i32 {
     Left = 1,
     Middle = 2,
@@ -22,18 +22,18 @@ pub enum MouseButton : i32 {
 }
 
 /**
- * The pointer's state — the counterpart of `SDL_GetMouseState` plus
- * `SDL_GetRelativeMouseState`.
+ * The pointer's state: where it is, what is held, and how far it moved
+ * since the last pump.
  */
 pub class MouseState {
-    x : i32;
-    y : i32;
-    dx : i32;
-    dy : i32;
-    wheel : i32;
-    buttons : i32;
+    x        : i32;
+    y        : i32;
+    dx       : i32;
+    dy       : i32;
+    wheel    : i32;
+    buttons  : i32;
     relative : bool;
-    primed : bool;
+    primed   : bool;
 
     /** Pointer at the origin, nothing held, position not yet known. */
     constructor() {

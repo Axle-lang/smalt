@@ -1,0 +1,45 @@
+// posix_time — the libc clock and sleep imports.
+//
+// Declarations only. Both calls take a `struct timespec` the caller
+// owns, so the record is declared here rather than described by an
+// offset: the kernel and this library address the same bytes because
+// both computed them from the same declaration.
+//
+// `clock_gettime` is what a monotonic clock is on Linux. `gettimeofday`
+// is not — it follows the wall clock, so an NTP step or a daylight-saving
+// change makes a frame pacer sleep for an hour or not at all.
+
+/**
+ * `struct timespec { time_t tv_sec; long tv_nsec; };`
+ *
+ * Both members are 64-bit on the LP64 targets this backend builds for,
+ * which is also what makes the record 16 bytes with no padding.
+ */
+pub extern "C" struct timespec {
+    /** `time_t tv_sec` — whole seconds. */
+    pub tv_sec  : i64;
+
+    /** `long tv_nsec` — nanoseconds, 0..999999999. */
+    pub tv_nsec : i64;
+}
+
+extern "C" from "c" {
+    /**
+     * `int clock_gettime(clockid_t, struct timespec *)` — 0 on success.
+     *
+     * `clockid_t` is an `int`; the only value this library passes is
+     * `CLOCK_MONOTONIC`.
+     */
+    fn clock_gettime(clk : i32, out : ptr<timespec>) : i32;
+
+    /**
+     * `int nanosleep(const struct timespec *req, struct timespec *rem)`.
+     *
+     * Returns -1 with `EINTR` when a signal cuts the sleep short, and
+     * writes what was left into `rem`. `rem` is declared untyped because
+     * the only value this library passes is NULL: the frame pacer above
+     * re-reads the clock and sleeps again, so what was left over is a
+     * number it would compute for itself anyway.
+     */
+    fn nanosleep(req : ptr<timespec>, rem : ptr) : i32;
+}

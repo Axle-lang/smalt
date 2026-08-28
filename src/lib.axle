@@ -1,4 +1,4 @@
-// smalt — a window, an event queue and a software 3D renderer, on Win32.
+// smalt — a window, an event queue and a software 3D renderer.
 //
 // This file is the crate's wiring header: it names every module so the
 // build pulls the whole tree into the compilation unit, and carries no
@@ -7,38 +7,50 @@
 //
 // Layers, bottom to top — a module never reaches upward:
 //
-//   kernel   raw memory, owned blocks, UTF-16
-//   sys      the Win32 records, and the imports, one block per DLL
+//   kernel   raw memory and owned blocks
+//   sys      the records and the imports at the OS boundary
+//   platform the seams below the event queue: the process token, the
+//            clock, the screen, the blit, the audio device
 //   core     init, time, the event queue, keyboard and mouse state
-//   video    the window, and the Win32 driver behind it
+//   video    the window, its driver, the event drain and the cursor
 //   math     vectors, matrices, quaternions, geometry
 //   render   meshes, textures, the camera, and the software rasteriser
 //   audio    WAV clips, the software mixer, and banks of variants
+//   io       whole-file reads and the BMP decoder
+//
+// NOT ONE `use` BELOW NAMES AN OPERATING SYSTEM, and that is the point.
+// A module path resolves to `<path>.axle` when there is one
+// implementation and to `<dir>/<os>/<name>.axle` when there is one per
+// target, so a seam keeps its name and the build's `--target` picks the
+// file. What is per-OS is therefore answered by the *tree* — everything
+// under a `windows/` or `linux/` directory, and nothing else — instead
+// of by tracing imports. `tools/check_seam.sh` is that sentence,
+// enforced.
+//
+// Only the seams are named here. Each backend's private modules — the
+// Win32 records and the `user32` imports, the Xlib and ALSA ones — are
+// pulled into the build by the seam file that imports them, which is
+// what keeps this header from having to know they exist.
 
-use crate::kernel::{raw, blob, wide};
+use crate::kernel::{raw, blob, mem};
 
-use crate::sys::{
-    win32_types, win32_const, win32_layout_check,
-    win32_kernel, win32_user, win32_gdi, win32_mm,
-};
+use crate::sys::dib;
 
-use crate::platform::{sys_clock, sys_app, sys_screen, sys_blit, sys_pump, sys_audio};
+use crate::platform::audio_format;
+use crate::platform::{sys_clock, sys_app, sys_screen, sys_blit, sys_audio};
 
 use crate::audio::{clip, mixer, bank};
 
 use crate::core::{error, init, timer, event, keyboard, mouse, pump};
 
-use crate::video::{window, display};
-use crate::video::windows::{
-    win_const, win_class, win_proc, win_window, win_keymap, win_pump, win_relative,
-};
+use crate::video::{window, display, scancode_set1, sys_window, sys_drain, sys_cursor};
 
 use crate::render::color;
 use crate::render::soft::{target, present, device_soft};
 
 use crate::math::{vec, mat};
 
-use crate::render::{device, vertex, texture, mesh, camera};
+use crate::render::{device, vertex, texture, mesh, camera, surface};
 use crate::render::soft::{shade, raster};
 
 use crate::math::{quat, geom};

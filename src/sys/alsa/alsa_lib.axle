@@ -1,0 +1,101 @@
+// alsa_lib — the `libasound` imports, and the numbers they take.
+//
+// Declarations only, and deliberately few: the whole device is opened
+// through `snd_pcm_set_params`, which is ALSA's one-call configuration
+// helper. The alternative is the `snd_pcm_hw_params_*` sequence — a
+// dozen calls around an opaque struct that has to be allocated with
+// `snd_pcm_hw_params_malloc` and whose size the caller is not allowed to
+// know. Every one of those calls is a way to get the device into a state
+// that fails later, and none of them buys anything a game needs.
+//
+// The error convention is C's: a negative return is `-errno`. The two
+// that matter are `-EPIPE` (an underrun — the caller did not write in
+// time) and `-ESTRPIPE` (the stream was suspended); both are recovered
+// from with `snd_pcm_recover`, which is the one difference from Windows
+// worth stating, because `waveOut` simply plays the next block and ALSA
+// stops until it is told to continue.
+
+/** `SND_PCM_STREAM_PLAYBACK`. */
+pub const SND_PCM_STREAM_PLAYBACK : i32 = 0;
+
+/** `SND_PCM_NONBLOCK` — a write returns rather than waiting for room. */
+pub const SND_PCM_NONBLOCK : i32 = 1;
+
+/** `SND_PCM_FORMAT_S16_LE` — the format the mixer already produces. */
+pub const SND_PCM_FORMAT_S16_LE : i32 = 2;
+
+/** `SND_PCM_ACCESS_RW_INTERLEAVED` — the push model, no callback. */
+pub const SND_PCM_ACCESS_RW_INTERLEAVED : i32 = 3;
+
+extern "C" from "asound" {
+    /**
+     * `int snd_pcm_open(snd_pcm_t **, const char *name, int stream,
+     *                   int mode)` — 0 on success, `-errno` otherwise.
+     *
+     * The name is `"default"`, which is whatever the user's ALSA
+     * configuration says: PulseAudio and PipeWire both install
+     * themselves there, so this one string reaches every sound system in
+     * use rather than fighting the one that is running.
+     */
+    fn snd_pcm_open(handle : ptr, name : string, stream : i32, mode : i32) : i32;
+
+    /**
+     * `int snd_pcm_set_params(snd_pcm_t *, snd_pcm_format_t,
+     *                         snd_pcm_access_t, unsigned int channels,
+     *                         unsigned int rate, int soft_resample,
+     *                         unsigned int latency_us)`.
+     *
+     * `soft_resample` is 1: a device that cannot run at the mixer's rate
+     * should resample rather than refuse, because a machine whose sound
+     * card is 48 kHz only is not a machine that should have no sound.
+     */
+    fn snd_pcm_set_params(
+        pcm : ptr,
+        format : i32,
+        access : i32,
+        channels : i32,
+        rate : i32,
+        softResample : i32,
+        latencyUs : i32
+    ) : i32;
+
+    /**
+     * `snd_pcm_sframes_t snd_pcm_avail_update(snd_pcm_t *)` — frames the
+     * device could accept right now, or `-errno`.
+     *
+     * This is what makes ALSA answerable by *polling* rather than by
+     * callback, which is the whole reason this backend can exist: Axle
+     * cannot hand out a function address, so a device that only reports
+     * through a callback is unreachable.
+     */
+    fn snd_pcm_avail_update(pcm : ptr) : i64;
+
+    /**
+     * `snd_pcm_sframes_t snd_pcm_writei(snd_pcm_t *, const void *,
+     *                                   snd_pcm_uframes_t frames)`.
+     *
+     * Returns frames written, or `-errno`. A short write is possible and
+     * is not an error; the caller drops the tail rather than tracking a
+     * partial block, because the tail of a 23 ms block is inaudible and
+     * the bookkeeping is not free.
+     */
+    fn snd_pcm_writei(pcm : ptr, buffer : ptr, frames : i64) : i64;
+
+    /**
+     * `int snd_pcm_recover(snd_pcm_t *, int err, int silent)`.
+     *
+     * Clears an underrun or a suspend and returns 0; anything else it
+     * cannot fix comes back as `-errno`. `silent` is 1 so a stutter does
+     * not print to the program's stderr.
+     */
+    fn snd_pcm_recover(pcm : ptr, err : i32, silent : i32) : i32;
+
+    /** `int snd_pcm_prepare(snd_pcm_t *)` — back to the ready state. */
+    fn snd_pcm_prepare(pcm : ptr) : i32;
+
+    /** `int snd_pcm_drop(snd_pcm_t *)` — stop, discarding what is queued. */
+    fn snd_pcm_drop(pcm : ptr) : i32;
+
+    /** `int snd_pcm_close(snd_pcm_t *)`. */
+    fn snd_pcm_close(pcm : ptr) : i32;
+}

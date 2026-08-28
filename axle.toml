@@ -2,10 +2,29 @@
 name = "smalt"
 version = "0.1.0"
 kind = "lib"
+# The targets this library promises to serve. The promise is what the
+# port checks enforce: an incomplete port is an error only for a target
+# named here.
+targets = ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]
 
-# No `[link]` section. Win32 only, and every DLL is named by the block that
-# imports from it — `extern "C" from "gdi32" { … }` in `sys/win32_gdi`,
-# `"winmm"` in `sys/win32_mm`. The declaration that needs a library is the
-# declaration that names it, so a consumer of this crate links what it uses
-# without being told twice. `kernel32` / `user32` are default-linked by the
-# compiler; naming them in their blocks is documentation the linker ignores.
+# No `[link]` section, on either port. Every library is named by the block
+# that imports from it — `extern "C" from "gdi32"` in `sys/win32/win32_gdi`,
+# `from "X11"` in `sys/x11/x11_lib`, `from "asound"` in `sys/alsa/alsa_lib`
+# — so a consumer links what it uses without being told twice, and links
+# only what its own target compiles. `kernel32` / `user32` on Windows and
+# `c` on Linux are default-linked; naming them in their blocks is
+# documentation the linker ignores.
+
+# The ports: one condition, and the directories that carry it.
+#
+# The names describe the *backend*, not the OS — `sys_clock` on Linux is
+# POSIX and has nothing to do with X11, and a future Wayland port would
+# also be `os = "linux"`. Nothing here is reserved by the compiler: a
+# directory this table does not name is an ordinary directory.
+[port.win32]
+when = { os = "windows" }
+dirs = ["win32"]
+
+[port.x11]
+when = { os = "linux" }
+dirs = ["x11", "posix", "alsa"]

@@ -1,0 +1,74 @@
+// x_keymap — an X11 keycode to a `Scancode`.
+//
+// A `Scancode` names a position on the keyboard, so this file consults
+// no layout: `XLookupString` is what turns a key into a *character*, and
+// it is called from the drain for text input only. A movement binding
+// built on the character would land under the player's little finger on
+// an AZERTY board, which is the same mistake the Win32 backend avoids by
+// reading the hardware code out of `lParam` rather than the virtual key.
+//
+// Two translations, in this order:
+//
+//   1. **The server's offset.** An X11 keycode is the kernel's evdev
+//      code plus 8. That offset is a protocol artefact — X11 reserves
+//      keycodes 0..7 — and has nothing to do with the keyboard.
+//   2. **The block.** evdev numbered its first eighty-eight keys to
+//      match PS/2 set-1 exactly, so the main block is
+//      `video::scancode_set1`'s table, shared with the Win32 backend.
+//      Above that the two schemes diverge completely: Windows prefixes
+//      an `E0` onto a code the base block already uses, and evdev gives
+//      the arrow cluster, the keypad's own keys and the right-hand
+//      modifiers codes of their own from 96 up. That half is here.
+//
+// A code this file does not model becomes `Unknown`, which is never
+// reported as held.
+
+use crate::core::keyboard::Scancode;
+use crate::video::scancode_set1::ScancodeSet1;
+
+/** X11 reserves keycodes below this; an evdev code is the keycode minus it. */
+const X_KEYCODE_OFFSET : i32 = 8;
+
+/** The last evdev code that matches PS/2 set-1. */
+const EVDEV_SHARED_MAX : i32 = 88;
+
+/** The X11 keycode to a position on the keyboard. */
+class XKeymap {
+    /**
+     * The evdev codes above the shared block.
+     *
+     * Every one of these is a key Windows reaches with an `E0` prefix on
+     * a code that already means something else — which is why the two
+     * tables cannot be one.
+     */
+    static fn extended(code : i32) : Scancode {
+        return match code {
+            96 => Scancode::KeypadEnter,
+            97 => Scancode::RightControl,
+            100 => Scancode::RightAlt,
+            102 => Scancode::Home,
+            103 => Scancode::Up,
+            104 => Scancode::PageUp,
+            105 => Scancode::Left,
+            106 => Scancode::Right,
+            107 => Scancode::End,
+            108 => Scancode::Down,
+            109 => Scancode::PageDown,
+            110 => Scancode::Insert,
+            111 => Scancode::Delete,
+            _ => Scancode::Unknown,
+        };
+    }
+
+    /** The scancode an X11 key event names. */
+    static fn lookup(keycode : i32) : Scancode {
+        let code = keycode - X_KEYCODE_OFFSET;
+        if (code <= 0) {
+            return Scancode::Unknown;
+        }
+        if (code <= EVDEV_SHARED_MAX) {
+            return ScancodeSet1::base(code);
+        }
+        return XKeymap::extended(code);
+    }
+}

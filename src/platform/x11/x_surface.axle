@@ -1,0 +1,27 @@
+// x_surface — what "a drawable" is on X11, behind one token.
+//
+// `SysBlit::present` takes a single `ptr` for the thing it draws onto,
+// because on Win32 that is all a drawable is: an `HDC` carries the
+// window, the visual and the drawing state together. X11 splits the same
+// three across a `Display *`, a `Window` id and a `GC`, and `XPutImage`
+// wants all three.
+//
+// So the token this backend hands across the seam is the address of this
+// record. `video::sys_window` owns one for the life of the window and
+// fills it once; `platform::sys_blit` reads it and never writes it.
+//
+// It lives under `platform/` and not beside the window because the blit
+// is below the window in the layering: a record the blit reads has to be
+// somewhere the blit can see.
+
+/** The three handles `XPutImage` needs, as one token. */
+pub extern "C" struct XSurface {
+    /** The connection the window was created on. */
+    pub display : ptr;
+
+    /** The window id — a `Drawable`. */
+    pub window  : i64;
+
+    /** The graphics context the put is issued through. */
+    pub gc      : ptr;
+}

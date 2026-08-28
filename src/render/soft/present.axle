@@ -34,14 +34,27 @@ pub class Presenter : Closeable {
      * reallocation.
      */
     fn present(mut self, surface : ptr, target : RenderTarget, dstW : i32, dstH : i32) : void {
-        self.blit.present(
-            surface,
-            target.pixels(),
-            target.width(),
-            target.height(),
-            dstW,
-            dstH
-        );
+        self.presentPixels(surface, target.pixels(), target.width(), target.height(), dstW, dstH);
+    }
+
+    /**
+     * The same blit, for a caller that owns pixels and no depth buffer.
+     *
+     * `Surface` is that caller, and so is a game that fills a
+     * framebuffer with a renderer of its own. Splitting it out costs one
+     * call and removes the claim that a presented frame must have come
+     * from the 3D pipeline — which is not true and never was.
+     */
+    fn presentPixels(
+        mut self,
+        surface : ptr,
+        pixels : i32[],
+        srcW : i32,
+        srcH : i32,
+        dstW : i32,
+        dstH : i32
+    ) : void {
+        self.blit.present(surface, pixels, srcW, srcH, dstW, dstH);
     }
 
     /** Release the platform blit. */

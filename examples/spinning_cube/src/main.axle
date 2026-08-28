@@ -2,29 +2,30 @@
 //
 // A textured cube turning on a tiled ground plane, lit by one
 // directional light, drawn by the software rasteriser into a window
-// that smalt created from raw Win32. Nothing here links SDL.
+// that smalt opened, on whichever platform this was built for.
 //
 // Controls: WASD to move, Space and Shift for up and down, Tab to
 // capture the mouse and look around, Escape to quit.
 
-use smalt::{
-    Platform, PlatformError, Window, WindowFlags, Clock, Events, Event, EventKind, Scancode,
-    Color, SoftDevice, Camera, Mesh, Primitives, Texture, Material, DirectionalLight,
-    Mat4, Vec3,
-};
+use smalt::{Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode, Color, SoftDevice, Camera, Mesh, Primitives, Texture, Material, DirectionalLight, Mat4, Vec3, WINDOW_RESIZABLE};
 
 /** Client width at startup. */
 const VIEW_W : i32 = 1024;
+
 /** Client height at startup. */
 const VIEW_H : i32 = 640;
+
 /** Metres per second the camera walks. */
 const WALK_SPEED : f64 = 4.0;
+
 /** Radians of turn per pixel of mouse motion. */
 const LOOK_SPEED : f64 = 0.0035;
-/** Microseconds in a 60 Hz frame. */
-const FRAME_BUDGET_US : i64 = 16667;
-/** Microseconds in a second, for the frame counter. */
-const ONE_SECOND_US : i64 = 1000000;
+
+/** Frames per second the loop is paced to. */
+const FRAME_RATE : i32 = 60;
+
+/** How often the measured rate is written into the title bar. */
+const TITLE_PERIOD : f64 = 0.5;
 
 fn main() : i32 {
     try {
@@ -38,11 +39,16 @@ fn main() : i32 {
 /** The program proper; every startup failure leaves through `!`. */
 fn run() : i32 ! PlatformError {
     let platform = new Platform()?;
-    let win = platform.createWindow("smalt — cube", VIEW_W, VIEW_H, WindowFlags::resizable())?;
+    defer platform.close();
+    let win = platform.createWindow("smalt — cube", VIEW_W, VIEW_H, WINDOW_RESIZABLE)?;
+    defer win.close();
 
     let clock = new Clock();
+    defer clock.close();
     let events = new Events();
+    defer events.close();
     let device = new SoftDevice(VIEW_W, VIEW_H);
+    defer device.close();
 
     let camera = new Camera();
     camera.moveTo(Vec3::make(0.0, 1.6, 4.5));
@@ -51,8 +57,13 @@ fn run() : i32 ! PlatformError {
 
     let cube = Primitives::cube(1.6);
     let ground = Primitives::ground(24.0, 12.0);
-    let crate1 = Texture::checker(128, 8, Color::rgb(0.90, 0.62, 0.28), Color::rgb(0.34, 0.22, 0.12));
-    let tiles = Texture::checker(128, 2, Color::rgb(0.30, 0.33, 0.38), Color::rgb(0.18, 0.20, 0.24));
+    let crate1 = Texture::checker(
+        128,
+        8,
+        Color::rgb(0.9, 0.62, 0.28),
+        Color::rgb(0.34, 0.22, 0.12)
+    );
+    let tiles = Texture::checker(128, 2, Color::rgb(0.3, 0.33, 0.38), Color::rgb(0.18, 0.2, 0.24));
 
     let cubeMaterial = Material::glossy(0.35, 48.0);
     let groundMaterial = Material::textured();
@@ -61,22 +72,18 @@ fn run() : i32 ! PlatformError {
     let running = true;
     let looking = false;
     let spin : f64 = 0.0;
-    let frames : i64 = 0;
-    let fpsMark : i64 = 0;
-    let last = clock.micros();
+    let pacer = new FramePacer(FRAME_RATE);
+    let sinceTitle : f64 = 0.0;
 
     while (running) {
-        let now = clock.micros();
-        let dt = ((now - last) as f64) / (ONE_SECOND_US as f64);
-        last = now;
-
-        events.pump(win, clock.ticks());
+        let dt = pacer.tick(clock);
+        events.pump(win, clock);
         while (events.hasNext()) {
             let e = events.next();
             match e.kind {
                 EventKind::Quit => {
                     running = false;
-                }
+                },
                 EventKind::KeyDown => {
                     if (e.scancode == Scancode::Escape) {
                         running = false;
@@ -85,12 +92,12 @@ fn run() : i32 ! PlatformError {
                         looking = !looking;
                         events.setRelativeMouse(looking);
                     }
-                }
+                },
                 EventKind::WindowResized => {
                     device.resize(e.width, e.height);
                     camera.setViewport(e.width, e.height);
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
 
@@ -103,11 +110,10 @@ fn run() : i32 ! PlatformError {
         walk(camera, events, dt);
 
         spin += dt * 0.7;
-        frames += 1;
-        if (now - fpsMark >= ONE_SECOND_US) {
-            win.setTitle("smalt — cube — ${frames} fps");
-            frames = 0;
-            fpsMark = now;
+        sinceTitle += dt;
+        if (sinceTitle >= TITLE_PERIOD) {
+            win.setTitle("smalt — cube — ${pacer.fps().round()} fps");
+            sinceTitle = 0.0;
         }
 
         if (!win.minimised()) {
@@ -117,23 +123,16 @@ fn run() : i32 ! PlatformError {
             device.drawMesh(cube, cubeModel(spin), crate1, cubeMaterial);
             device.endFrame(win);
         }
-
-        clock.delayUntil(now + FRAME_BUDGET_US);
     }
 
-    device.close();
-    events.close();
-    clock.close();
-    win.close();
-    platform.close();
     return 0;
 }
 
 /** The cube's transform: turning about Y, nodding about X, held above the floor. */
 fn cubeModel(spin : f64) : Mat4 {
-    return Mat4::translation(Vec3::make(0.0, 1.1, 0.0))
-        .mul(Mat4::rotationY(spin))
-        .mul(Mat4::rotationX(spin * 0.55));
+    return Mat4::translation(
+        Vec3::make(0.0, 1.1, 0.0)
+    ).mul(Mat4::rotationY(spin)).mul(Mat4::rotationX(spin * 0.55));
 }
 
 /** Move the camera from the held keys, framerate-independently. */

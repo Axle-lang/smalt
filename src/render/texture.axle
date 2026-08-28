@@ -20,8 +20,8 @@ const TEXTURE_UNIT_SIZE : i32 = 1;
 /** A sampled image. */
 pub class Texture {
     texels : i32[];
-    w : i32;
-    h : i32;
+    w      : i32;
+    h      : i32;
 
     /** A `w` by `h` texture, black. */
     constructor(w : i32, h : i32) {

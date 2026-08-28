@@ -1,0 +1,44 @@
+// audio_format — the PCM format the audio seam speaks, on every target.
+//
+// These four numbers are the *contract*, not a backend's preference. The
+// mixer sums into a block at this rate with this many channels, the WAV
+// decoder resamples to this rate at load, and the device backend hands
+// the OS exactly those frames. A backend that answered with its own copy
+// of them could open a device at 48 kHz while the mixer still wrote 44.1
+// — nothing would fail, and everything would play a semitone flat.
+//
+// So they live in the portable half of `platform/`, beside the overlay
+// directories rather than inside one: `platform/audio_format.axle` has
+// one implementation for every target, which is what a path with no
+// overlay means.
+//
+// What is *not* here is how many blocks a backend keeps in flight. That
+// is a latency choice against how the OS reports a block as finished —
+// four `WAVEHDR`s polled for `WHDR_DONE` is not the same trade as ALSA's
+// ring measured with `snd_pcm_avail_update` — so each backend owns its
+// own.
+
+/** Frames per second. */
+pub const AUDIO_RATE : i32 = 44100;
+
+/** Interleaved channels per frame. */
+pub const AUDIO_CHANNELS : i32 = 2;
+
+/** Bytes per sample — signed 16-bit. */
+pub const AUDIO_SAMPLE_BYTES : i32 = 2;
+
+/** Frames in one block; at 44.1 kHz this is about 23 ms. */
+pub const AUDIO_BLOCK_FRAMES : i32 = 1024;
+
+/** Sizes derived from the format, so no backend recomputes them. */
+pub class AudioFormat {
+    /** Bytes in one frame — one sample per channel. */
+    static fn frameBytes() : i64 {
+        return (AUDIO_CHANNELS as i64) * (AUDIO_SAMPLE_BYTES as i64);
+    }
+
+    /** Bytes in one block of `AUDIO_BLOCK_FRAMES` frames. */
+    static fn blockBytes() : i64 {
+        return (AUDIO_BLOCK_FRAMES as i64) * AudioFormat::frameBytes();
+    }
+}
