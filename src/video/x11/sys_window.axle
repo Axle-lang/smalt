@@ -54,7 +54,6 @@ use crate::sys::x11_types::{
     MotifWmHints, XAnyEvent, XClientMessageEvent, XConfigureEvent, XSizeHints,
 };
 use crate::sys::x11_const::{
-use crate::video::x11::x_window_ops::{pinSize, registerCloseProtocol, removeDecorations, roundTrip};
     X_CLIENT_MESSAGE, X_CONFIGURE_NOTIFY, X_DESTROY_NOTIFY, X_FALSE, X_FOCUS_IN, X_FOCUS_OUT,
     X_MAP_NOTIFY, X_MASK_BUTTON_PRESS, X_MASK_BUTTON_RELEASE, X_MASK_EXPOSURE,
     X_MASK_FOCUS_CHANGE, X_MASK_KEY_PRESS, X_MASK_KEY_RELEASE, X_MASK_POINTER_MOTION,
@@ -62,6 +61,7 @@ use crate::video::x11::x_window_ops::{pinSize, registerCloseProtocol, removeDeco
     X_EVENT_BYTES, X_MOTIF_HINTS_WORDS, X_NONE, X_PROP_MODE_REPLACE, X_SIZE_HINT_MIN_MAX,
     X_TRUE, X_UNMAP_NOTIFY,
 };
+use crate::video::x11::x_window_ops::{pinSize, registerCloseProtocol, removeDecorations, roundTrip};
 
 /** The property that carries a close request. */
 const WM_PROTOCOLS_ATOM : string = "WM_PROTOCOLS";

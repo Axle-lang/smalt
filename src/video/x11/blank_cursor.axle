@@ -16,7 +16,7 @@ use crate::kernel::blob::Blob;
 use crate::sys::x11_const::X_NONE;
 use crate::sys::x11_lib::{XCreateBitmapFromData, XCreatePixmapCursor, XFreePixmap};
 use crate::video::sys_window::SysWindow;
-use crate::video::x11::x_window_ops::{adoptBlankCursor, blankCursor, connection, id};
+use crate::video::x11::x_window_ops::{adoptBlankCursor, cachedBlankCursor, connection, id};
 
 /** Side of the bitmap the blank cursor is built from. */
 const CURSOR_BITMAP_SIDE : i32 = 1;
@@ -35,7 +35,7 @@ const CURSOR_HOTSPOT : i32 = 0;
  * "no pointer" and not "a black square".
  */
 pub fn blankCursor(win : SysWindow) : i64 {
-    let existing = blankCursor(win);
+    let existing = cachedBlankCursor(win);
     if (existing != X_NONE) {
         return existing;
     }

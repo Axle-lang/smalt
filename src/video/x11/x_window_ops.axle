@@ -94,7 +94,7 @@ pub fn connection(win : SysWindow) : ptr {
 }
 
 /** The cursor that draws nothing, or `None` if none was ever made. */
-pub fn blankCursor(win : SysWindow) : i64 {
+pub fn cachedBlankCursor(win : SysWindow) : i64 {
     return win.blank;
 }
 
@@ -133,7 +133,7 @@ pub fn absorb(win : SysWindow, event : ptr) : bool {
         }
         if (kind == X_CONFIGURE_NOTIFY) {
             let cfg : ptr<XConfigureEvent> = event as ptr<XConfigureEvent>;
-            win.noteResize((*cfg).width, (*cfg).height);
+            noteResize(win, (*cfg).width, (*cfg).height);
             return true;
         }
         if (kind == X_DESTROY_NOTIFY) {
@@ -141,19 +141,19 @@ pub fn absorb(win : SysWindow, event : ptr) : bool {
             return true;
         }
         if (kind == X_FOCUS_IN) {
-            win.noteFocus(true);
+            noteFocus(win, true);
             return true;
         }
         if (kind == X_FOCUS_OUT) {
-            win.noteFocus(false);
+            noteFocus(win, false);
             return true;
         }
         if (kind == X_UNMAP_NOTIFY) {
-            win.noteMinimised(true);
+            noteMinimised(win, true);
             return true;
         }
         if (kind == X_MAP_NOTIFY) {
-            win.noteMinimised(false);
+            noteMinimised(win, false);
             return true;
         }
         return false;
@@ -241,7 +241,7 @@ pub fn roundTrip(win : SysWindow, scratch : Blob, kind : i32, w : i32, h : i32) 
             XNextEvent(win.display, scratch.at());
             let back : ptr<XAnyEvent> = scratch.at() as ptr<XAnyEvent>;
             let seen : i32 = (*back).type_;
-            win.absorb(scratch.at());
+            absorb(win, scratch.at());
             if (seen == kind) {
                 return true;
             }

@@ -27,7 +27,7 @@ use crate::sys::x11_lib::{XCreateBitmapFromData, XCreatePixmapCursor, XDefineCur
 use crate::sys::x11_const::X_NONE;
 use crate::video::x11::blank_cursor::blankCursor;
 use crate::video::sys_window::SysWindow;
-use crate::video::x11::x_window_ops::{blankCursor, connection, id};
+use crate::video::x11::x_window_ops::{connection, id};
 
 /** Pointer confinement and visibility. */
 class SysCursor {
