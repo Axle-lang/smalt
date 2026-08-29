@@ -1,0 +1,105 @@
+// xdg_decoration — asking the compositor to draw the title bar.
+//
+// **Wayland has no decorations.** A toplevel is a rectangle of pixels
+// the client owns entirely: no frame, no title bar, no close button,
+// unless the client draws them itself. That is not an omission, it is
+// the protocol's position — the compositor does not know what a window
+// looks like, and X11's habit of drawing a frame around someone else's
+// content is what it was designed away from.
+//
+// `zxdg_decoration_manager_v1` is the extension that lets the two
+// negotiate: the client asks for a mode, the compositor answers with the
+// mode it will actually use, and `SERVER_SIDE` is a compositor that
+// agrees to draw the frame. It is an *extension*, so three things can
+// happen and all three are normal:
+//
+//   * the compositor does not offer the manager — nothing to ask, and
+//     the window wears whatever frame that desktop puts on it, which on
+//     a compositor with no decorations at all is none;
+//   * it offers it and answers `SERVER_SIDE` — a title bar appears, in
+//     the desktop's own style, because the desktop drew it;
+//   * it offers it and answers `CLIENT_SIDE` — the client is expected to
+//     draw its own, which this library does not do.
+//
+// So this file asks, and the answer is the compositor's to give. Like
+// xdg-shell, the tables are built here because an extension's are
+// generated per project and exist in no library.
+
+use crate::kernel::raw::Raw;
+use crate::sys::wl_lib::{WlInterface, WlMessage};
+use crate::sys::wl_libc::cstr;
+use crate::sys::wl_table::{nullTypes, putMessage, recordAt, typesOf2};
+
+/** `zxdg_decoration_manager_v1.destroy`. */
+pub const ZXDG_DECORATION_MANAGER_DESTROY : i32 = 0;
+
+/** `zxdg_decoration_manager_v1.get_toplevel_decoration`. */
+pub const ZXDG_DECORATION_GET_TOPLEVEL : i32 = 1;
+
+/** `zxdg_toplevel_decoration_v1.destroy`. */
+pub const ZXDG_TOPLEVEL_DECORATION_DESTROY : i32 = 0;
+
+/** `zxdg_toplevel_decoration_v1.set_mode`. */
+pub const ZXDG_TOPLEVEL_DECORATION_SET_MODE : i32 = 1;
+
+/** The mode where the compositor draws the frame. */
+pub const ZXDG_DECORATION_MODE_SERVER_SIDE : i64 = 2;
+
+/** Requests in the manager and in one toplevel's decoration. */
+const MANAGER_REQUESTS : i64 = 2;
+const DECORATION_REQUESTS : i64 = 3;
+
+/** The two tables the negotiation needs. */
+pub extern "C" struct XdgDecorationTables {
+    pub manager : ptr;
+    pub decoration : ptr;
+}
+
+/**
+ * Build the manager's table and the per-toplevel one.
+ *
+ * `xdgToplevel` is xdg-shell's own table, which
+ * `get_toplevel_decoration` names as its second argument.
+ */
+pub fn buildDecorationTables(out : ptr<XdgDecorationTables>, xdgToplevel : ptr) : void {
+    unsafe {
+        let block = Raw::take(2 * sizeof<WlInterface>());
+        let manager : ptr<WlInterface> = recordAt(block, 0, sizeof<WlInterface>()) as ptr<WlInterface>;
+        let decoration : ptr<WlInterface> = recordAt(block, 1, sizeof<WlInterface>()) as ptr<WlInterface>;
+        (*out).manager = manager as ptr;
+        (*out).decoration = decoration as ptr;
+
+        // The manager: two requests, and no events at all — the answer
+        // comes on the per-toplevel object, not on the factory.
+        let mMethods = Raw::take(MANAGER_REQUESTS * sizeof<WlMessage>());
+        putMessage(mMethods, 0, "destroy", "", Raw::nil());
+        putMessage(
+            mMethods,
+            1,
+            "get_toplevel_decoration",
+            "no",
+            typesOf2(decoration as ptr, xdgToplevel)
+        );
+        (*manager).name = cstr("zxdg_decoration_manager_v1");
+        (*manager).version = 1;
+        (*manager).methodCount = MANAGER_REQUESTS as i32;
+        (*manager).methods = mMethods;
+        (*manager).eventCount = 0;
+        (*manager).events = Raw::nil();
+
+        // One toplevel's decoration: three requests, and the one event
+        // that carries the compositor's decision.
+        let dMethods = Raw::take(DECORATION_REQUESTS * sizeof<WlMessage>());
+        putMessage(dMethods, 0, "destroy", "", Raw::nil());
+        putMessage(dMethods, 1, "set_mode", "u", nullTypes(1));
+        putMessage(dMethods, 2, "unset_mode", "", Raw::nil());
+        let dEvents = Raw::take(sizeof<WlMessage>());
+        putMessage(dEvents, 0, "configure", "u", nullTypes(1));
+        (*decoration).name = cstr("zxdg_toplevel_decoration_v1");
+        (*decoration).version = 1;
+        (*decoration).methodCount = DECORATION_REQUESTS as i32;
+        (*decoration).methods = dMethods;
+        (*decoration).eventCount = 1;
+        (*decoration).events = dEvents;
+    }
+}

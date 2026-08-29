@@ -1,0 +1,42 @@
+// sys_screen — the platform seam for what the primary display measures.
+//
+// THE CONTRACT:
+//
+//   width()   the primary display's width in pixels
+//   height()  its height
+//
+// Both may report nonsense on a headless or misconfigured session, so
+// every caller clamps rather than trusting the answer — `Display`'s
+// suggestedSize is the one that does it.
+//
+// Wayland: the mode of the first `wl_output` the registry offers. Like
+// the X11 seam, these two calls are static and take no token, so this
+// file opens a connection of its own, asks, and closes it — a game asks
+// in order to *choose* a window size, which is before it has a
+// connection to borrow.
+//
+// Unlike X11 there is no combined screen to misread: a compositor
+// advertises one `wl_output` per monitor and this reads the first, so
+// the answer is one monitor's mode rather than the bounding box of all
+// of them. That is the number a window wants. Which monitor is "first"
+// is the compositor's order, not a preference this port can express —
+// naming a primary needs `xdg-output`, another extension, for a number
+// `Display::suggestedSize` already clamps.
+//
+// A compositor that reports no mode at all leaves both at zero, which is
+// exactly the nonsense the contract warns callers to clamp.
+
+use crate::platform::wayland::wl_screen_probe::measure;
+
+pub class SysScreen {
+    /** The first output's current mode width, or 0. */
+    static fn width() : i32 {
+        return measure(true);
+    }
+
+    /** The first output's current mode height, or 0. */
+    static fn height() : i32 {
+        return measure(false);
+    }
+}
+

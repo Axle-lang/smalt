@@ -1,0 +1,68 @@
+// evdev_keymap — a Linux key code to a position on the keyboard.
+//
+// The kernel's own numbering, which both Linux backends end up holding:
+// X11 hands out a keycode that is this plus eight, and Wayland hands out
+// this. So the table lives in `posix/`, which both ports name and the
+// Windows one does not, and each port converts to it rather than
+// carrying a copy that can drift from the other.
+//
+// A `Scancode` names a position, so nothing here consults a layout — a
+// movement binding built on the *character* would land under the
+// player's little finger on an AZERTY board.
+//
+// Two blocks, because evdev and PS/2 agree and then stop. The first
+// eighty-eight codes match set-1 exactly, so they are
+// `video::scancode_set1`'s table, shared with the Win32 backend. Above
+// that the two schemes diverge completely: Windows prefixes an `E0` onto
+// a code the base block already uses, and evdev gives the arrow cluster,
+// the keypad's own keys and the right-hand modifiers codes of their own
+// from 96 up.
+//
+// A code this file does not model becomes `Unknown`, which is never
+// reported as held.
+
+use crate::core::keyboard::Scancode;
+use crate::video::scancode_set1::ScancodeSet1;
+
+/** The last evdev code that matches PS/2 set-1. */
+const EVDEV_SHARED_MAX : i32 = 88;
+
+/** The kernel's key codes, as positions on the keyboard. */
+pub class EvdevKeymap {
+    /**
+     * The codes above the shared block.
+     *
+     * Every one of these is a key Windows reaches with an `E0` prefix on
+     * a code that already means something else — which is why the two
+     * tables cannot be one.
+     */
+    static fn extended(code : i32) : Scancode {
+        return match code {
+            96 => Scancode::KeypadEnter,
+            97 => Scancode::RightControl,
+            100 => Scancode::RightAlt,
+            102 => Scancode::Home,
+            103 => Scancode::Up,
+            104 => Scancode::PageUp,
+            105 => Scancode::Left,
+            106 => Scancode::Right,
+            107 => Scancode::End,
+            108 => Scancode::Down,
+            109 => Scancode::PageDown,
+            110 => Scancode::Insert,
+            111 => Scancode::Delete,
+            _ => Scancode::Unknown,
+        };
+    }
+
+    /** The scancode an evdev key code names. */
+    static fn lookup(code : i32) : Scancode {
+        if (code <= 0) {
+            return Scancode::Unknown;
+        }
+        if (code <= EVDEV_SHARED_MAX) {
+            return ScancodeSet1::base(code);
+        }
+        return EvdevKeymap::extended(code);
+    }
+}

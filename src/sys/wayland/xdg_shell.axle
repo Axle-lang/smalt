@@ -1,0 +1,176 @@
+// xdg_shell — the three interface tables no library hands out.
+//
+// A Wayland extension's `wl_interface` tables are generated per project
+// by `wayland-scanner` and end up in the generated C. There is no
+// generated C here, so they are built at startup out of the same three
+// fields the generator emits — a name, a signature, and the interfaces
+// each argument names — from the protocol's own definition.
+//
+// **Version 1, deliberately.** An event table must be complete for the
+// version bound: the library dispatches an incoming event by using its
+// opcode as an index into the listener, so a table shorter than what the
+// compositor may send reads past the end of the listener struct. Version
+// 1 is the version whose whole event set is `xdg_wm_base.ping`,
+// `xdg_surface.configure`, `xdg_toplevel.configure` and
+// `xdg_toplevel.close` — four callbacks, all of them written. The later
+// versions add `configure_bounds` and `wm_capabilities`, which a
+// compositor sends only to a client that bound them.
+//
+// A request this port never sends still keeps its slot, because an
+// opcode is a position and removing one would renumber its successors.
+// Its `types` array is null: the library reads a message's types only
+// when it marshals that message.
+
+use crate::kernel::raw::Raw;
+use crate::sys::wl_lib::{WlInterface, WlMessage};
+use crate::sys::wl_libc::cstr;
+use crate::sys::wl_table::{
+    nullTypes, putMessage, recordAt, typesOf1, typesOf2, typesOfObjectThen,
+};
+
+/** `xdg_wm_base.destroy`. */
+pub const XDG_WM_BASE_DESTROY : i32 = 0;
+
+/** `xdg_wm_base.get_xdg_surface`. */
+pub const XDG_WM_BASE_GET_XDG_SURFACE : i32 = 2;
+
+/** `xdg_wm_base.pong`. */
+pub const XDG_WM_BASE_PONG : i32 = 3;
+
+/** `xdg_surface.destroy`. */
+pub const XDG_SURFACE_DESTROY : i32 = 0;
+
+/** `xdg_surface.get_toplevel`. */
+pub const XDG_SURFACE_GET_TOPLEVEL : i32 = 1;
+
+/** `xdg_surface.ack_configure`. */
+pub const XDG_SURFACE_ACK_CONFIGURE : i32 = 4;
+
+/** `xdg_toplevel.destroy`. */
+pub const XDG_TOPLEVEL_DESTROY : i32 = 0;
+
+/** `xdg_toplevel.set_title`. */
+pub const XDG_TOPLEVEL_SET_TITLE : i32 = 2;
+
+/** `xdg_toplevel.set_app_id`. */
+pub const XDG_TOPLEVEL_SET_APP_ID : i32 = 3;
+
+/** `xdg_toplevel.set_max_size`. */
+pub const XDG_TOPLEVEL_SET_MAX_SIZE : i32 = 7;
+
+/** `xdg_toplevel.set_min_size`. */
+pub const XDG_TOPLEVEL_SET_MIN_SIZE : i32 = 8;
+
+/** `xdg_toplevel.set_minimized`. */
+pub const XDG_TOPLEVEL_SET_MINIMIZED : i32 = 13;
+
+/** Requests in `xdg_wm_base`, `xdg_surface` and `xdg_toplevel` at v1. */
+const XDG_WM_BASE_REQUESTS : i64 = 4;
+const XDG_SURFACE_REQUESTS : i64 = 5;
+const XDG_TOPLEVEL_REQUESTS : i64 = 14;
+
+/** The three tables, held where every marshal can reach them. */
+pub extern "C" struct XdgTables {
+    pub wmBase : ptr;
+    pub surface : ptr;
+    pub toplevel : ptr;
+}
+
+/**
+ * Build the three tables and fill `out` with their addresses.
+ *
+ * `wlSurface`, `wlSeat` and `wlOutput` are the core tables the xdg
+ * messages refer to — a `get_xdg_surface` names a `wl_surface`, a
+ * `show_window_menu` names a `wl_seat`, a `set_fullscreen` names a
+ * `wl_output`. They come from [`crate::sys::wl_core`].
+ */
+pub fn buildXdgTables(out : ptr<XdgTables>, wlSurface : ptr, wlSeat : ptr, wlOutput : ptr) : void {
+    unsafe {
+        let block = Raw::take(3 * sizeof<WlInterface>());
+        let wmBase : ptr<WlInterface> = recordAt(block, 0, sizeof<WlInterface>()) as ptr<WlInterface>;
+        let surface : ptr<WlInterface> = recordAt(block, 1, sizeof<WlInterface>()) as ptr<WlInterface>;
+        let toplevel : ptr<WlInterface> = recordAt(block, 2, sizeof<WlInterface>()) as ptr<WlInterface>;
+        (*out).wmBase = wmBase as ptr;
+        (*out).surface = surface as ptr;
+        (*out).toplevel = toplevel as ptr;
+
+        describeWmBase(wmBase, surface as ptr, wlSurface);
+        describeSurface(surface, toplevel as ptr);
+        describeToplevel(toplevel, wlSeat, wlOutput);
+    }
+}
+
+/** Fill in one interface's header, once its messages exist. */
+fn describe(
+    iface : ptr<WlInterface>,
+    name : string,
+    methods : ptr,
+    methodCount : i64,
+    events : ptr,
+    eventCount : i64
+) : void {
+    unsafe {
+        (*iface).name = cstr(name);
+        (*iface).version = 1;
+        (*iface).methodCount = methodCount as i32;
+        (*iface).methods = methods;
+        (*iface).eventCount = eventCount as i32;
+        (*iface).events = events;
+    }
+}
+
+/** `xdg_wm_base` — 4 requests, 1 event. */
+fn describeWmBase(iface : ptr<WlInterface>, xdgSurface : ptr, wlSurface : ptr) : void {
+    let methods = Raw::take(XDG_WM_BASE_REQUESTS * sizeof<WlMessage>());
+    putMessage(methods, 0, "destroy", "", Raw::nil());
+    putMessage(methods, 1, "create_positioner", "n", nullTypes(1));
+    putMessage(methods, 2, "get_xdg_surface", "no", typesOf2(xdgSurface, wlSurface));
+    putMessage(methods, 3, "pong", "u", nullTypes(1));
+
+    let events = Raw::take(sizeof<WlMessage>());
+    putMessage(events, 0, "ping", "u", nullTypes(1));
+
+    describe(iface, "xdg_wm_base", methods, XDG_WM_BASE_REQUESTS, events, 1);
+}
+
+/** `xdg_surface` — 5 requests, 1 event. */
+fn describeSurface(iface : ptr<WlInterface>, xdgToplevel : ptr) : void {
+    let methods = Raw::take(XDG_SURFACE_REQUESTS * sizeof<WlMessage>());
+    putMessage(methods, 0, "destroy", "", Raw::nil());
+    putMessage(methods, 1, "get_toplevel", "n", typesOf1(xdgToplevel));
+    putMessage(methods, 2, "get_popup", "n?oo", nullTypes(3));
+    putMessage(methods, 3, "set_window_geometry", "iiii", nullTypes(4));
+    putMessage(methods, 4, "ack_configure", "u", nullTypes(1));
+
+    let events = Raw::take(sizeof<WlMessage>());
+    putMessage(events, 0, "configure", "u", nullTypes(1));
+
+    describe(iface, "xdg_surface", methods, XDG_SURFACE_REQUESTS, events, 1);
+}
+
+/** `xdg_toplevel` — 14 requests, 2 events. */
+fn describeToplevel(iface : ptr<WlInterface>, wlSeat : ptr, wlOutput : ptr) : void {
+    unsafe {
+        let methods = Raw::take(XDG_TOPLEVEL_REQUESTS * sizeof<WlMessage>());
+        putMessage(methods, 0, "destroy", "", Raw::nil());
+        putMessage(methods, 1, "set_parent", "?o", typesOf1(iface as ptr));
+        putMessage(methods, 2, "set_title", "s", nullTypes(1));
+        putMessage(methods, 3, "set_app_id", "s", nullTypes(1));
+        putMessage(methods, 4, "show_window_menu", "ouii", typesOfObjectThen(wlSeat, 3));
+        putMessage(methods, 5, "move", "ou", typesOfObjectThen(wlSeat, 1));
+        putMessage(methods, 6, "resize", "ouu", typesOfObjectThen(wlSeat, 2));
+        putMessage(methods, 7, "set_max_size", "ii", nullTypes(2));
+        putMessage(methods, 8, "set_min_size", "ii", nullTypes(2));
+        putMessage(methods, 9, "set_maximized", "", Raw::nil());
+        putMessage(methods, 10, "unset_maximized", "", Raw::nil());
+        putMessage(methods, 11, "set_fullscreen", "?o", typesOf1(wlOutput));
+        putMessage(methods, 12, "unset_fullscreen", "", Raw::nil());
+        putMessage(methods, 13, "set_minimized", "", Raw::nil());
+
+        let events = Raw::take(2 * sizeof<WlMessage>());
+        putMessage(events, 0, "configure", "iia", nullTypes(3));
+        putMessage(events, 1, "close", "", Raw::nil());
+
+        describe(iface, "xdg_toplevel", methods, XDG_TOPLEVEL_REQUESTS, events, 2);
+    }
+}

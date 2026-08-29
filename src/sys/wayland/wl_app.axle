@@ -1,0 +1,300 @@
+// wl_app — the connection, and everything one is worth once it is open.
+//
+// On X11 the platform token is a `Display *` and nothing else: the
+// server answers every question through it. Wayland answers nothing on
+// its own — a client asks the registry what the compositor offers, binds
+// each global it wants, and holds the resulting proxies for the run. So
+// the token here is a record, and this file is what fills it.
+//
+// Four steps, in an order none of them can be moved out of: connect, so
+// there is something to ask; look up the core tables, so a request can
+// be encoded at all; build the extension tables, because they name each
+// other and the core ones; then sweep and bind, which needs all three.
+//
+// The listeners the sweep installs live in [`crate::sys::wl_globals`].
+
+use crate::kernel::raw::Raw;
+use crate::sys::wl_args::WlArgs;
+use crate::sys::wl_core::{loadCore, WlCore};
+use crate::sys::wl_token::{OutputListener, RegistryListener, WlApp, WlAppListeners};
+use crate::sys::wl_globals::{
+    bindGlobal, onGlobal, onGlobalRemove, onOutputDescription, onOutputDone, onOutputGeometry,
+    onOutputMode, onOutputName, onOutputScale, onSeatCapabilities, onSeatName,
+};
+use crate::sys::wl_lib::{
+    wl_display_connect, wl_display_disconnect, wl_display_roundtrip, wl_proxy_add_listener,
+    wl_proxy_get_version, wl_proxy_marshal_array_flags,
+};
+use crate::sys::wl_request::{
+    WL_BIND_VERSION, WL_DISPLAY_GET_REGISTRY, WL_SEAT_CAPABILITY_KEYBOARD,
+    WL_SEAT_CAPABILITY_POINTER, WL_SEAT_GET_KEYBOARD, WL_SEAT_GET_POINTER,
+};
+use crate::sys::xdg_decoration::{buildDecorationTables, XdgDecorationTables};
+use crate::sys::xdg_shell::{buildXdgTables, XdgTables};
+
+/**
+ * Open a connection, sweep the registry, bind what a window needs.
+ *
+ * Answers the token, or nil when there is no compositor or when it
+ * offers no xdg-shell — a Wayland server without one cannot map a
+ * toplevel at all, so there is no degraded mode to fall back to and a
+ * token that survived would be a promise the window layer could not
+ * keep.
+ */
+pub fn connect() : ptr {
+    unsafe {
+        let display = wl_display_connect(Raw::nil());
+        if (Raw::isNil(display)) {
+            return Raw::nil();
+        }
+
+        let app : ptr<WlApp> = Raw::take(sizeof<WlApp>()) as ptr<WlApp>;
+        Raw::clear(app as ptr, sizeof<WlApp>());
+        (*app).display = display;
+        (*app).core = Raw::take(sizeof<WlCore>());
+        (*app).xdg = Raw::take(sizeof<XdgTables>());
+        (*app).decor = Raw::take(sizeof<XdgDecorationTables>());
+        (*app).listeners = Raw::take(sizeof<WlAppListeners>());
+
+        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        if (!loadCore(core)) {
+            return abandon(app);
+        }
+        let xdg : ptr<XdgTables> = (*app).xdg as ptr<XdgTables>;
+        buildXdgTables(xdg, (*core).surface, (*core).seat, (*core).output);
+        buildDecorationTables((*app).decor as ptr<XdgDecorationTables>, (*xdg).toplevel);
+
+        let args = new WlArgs();
+        defer args.close();
+
+        if (!sweep(app, args)) {
+            return abandon(app);
+        }
+        if (!bindShell(app, args)) {
+            return abandon(app);
+        }
+        bindSeat(app, args);
+        bindOutput(app, args);
+        bindDecorations(app, args);
+
+        // A second round trip, so the answers to the binds — the
+        // output's mode, the seat's capabilities — have arrived before
+        // anything is asked of them.
+        wl_display_roundtrip(display);
+
+        // And only now the devices: a seat is asked for a keyboard it
+        // reported having, never before the answer.
+        openSeatDevices(app, args);
+        return app as ptr;
+    }
+}
+
+/** Close the connection the token names, and let its blocks go. */
+pub fn disconnect(token : ptr) : void {
+    unsafe {
+        if (Raw::isNil(token)) {
+            return;
+        }
+        let app : ptr<WlApp> = token as ptr<WlApp>;
+        if (!Raw::isNil((*app).display)) {
+            // One call releases every proxy made on this connection:
+            // the registry, the globals, and anything a window left
+            // behind. There is nothing to destroy one at a time.
+            wl_display_disconnect((*app).display);
+            (*app).display = Raw::nil();
+        }
+        // After the proxies, never before: a listener block is what the
+        // library would dispatch an in-flight event into.
+        releaseBlocks(app);
+        Raw::release(token);
+    }
+}
+
+/** Ask the registry what there is, and wait for the answer. */
+fn sweep(app : ptr<WlApp>, args : WlArgs) : bool {
+    unsafe {
+        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        args.set(0, 0);
+        let registry = wl_proxy_marshal_array_flags(
+            (*app).display,
+            WL_DISPLAY_GET_REGISTRY,
+            (*core).registry,
+            wl_proxy_get_version((*app).display),
+            0,
+            args.at()
+        );
+        if (Raw::isNil(registry)) {
+            return false;
+        }
+        (*app).registry = registry;
+
+        let listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
+        (*listeners).registry.global = onGlobal;
+        (*listeners).registry.globalRemove = onGlobalRemove;
+        wl_proxy_add_listener(registry, (*app).listeners, app as ptr);
+        wl_display_roundtrip((*app).display);
+        return true;
+    }
+}
+
+/** The three globals without which there is no window. */
+fn bindShell(app : ptr<WlApp>, args : WlArgs) : bool {
+    unsafe {
+        if ((*app).compositorName == 0 || (*app).shmName == 0 || (*app).wmBaseName == 0) {
+            return false;
+        }
+        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        let xdg : ptr<XdgTables> = (*app).xdg as ptr<XdgTables>;
+        (*app).compositor = bindGlobal(
+            args, (*app).registry, (*app).compositorName, (*core).compositor, "wl_compositor"
+        );
+        (*app).shm = bindGlobal(args, (*app).registry, (*app).shmName, (*core).shm, "wl_shm");
+        (*app).wmBase =
+            bindGlobal(args, (*app).registry, (*app).wmBaseName, (*xdg).wmBase, "xdg_wm_base");
+        return !Raw::isNil((*app).compositor)
+            && !Raw::isNil((*app).shm)
+            && !Raw::isNil((*app).wmBase);
+    }
+}
+
+/**
+ * The seat, and the two devices this library reads.
+ *
+ * Optional: a compositor with no seat is a session with no input, which
+ * is a program that draws and quits rather than one that fails.
+ */
+fn bindSeat(app : ptr<WlApp>, args : WlArgs) : void {
+    unsafe {
+        if ((*app).seatName == 0) {
+            return;
+        }
+        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        (*app).seat = bindGlobal(args, (*app).registry, (*app).seatName, (*core).seat, "wl_seat");
+        if (Raw::isNil((*app).seat)) {
+            return;
+        }
+        let listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
+        (*listeners).seat.capabilities = onSeatCapabilities;
+        (*listeners).seat.name = onSeatName;
+        wl_proxy_add_listener((*app).seat, seatListenerAt(app), app as ptr);
+    }
+}
+
+/**
+ * Ask the seat for the devices it reported having.
+ *
+ * Asking for one it did not report is a protocol error — the seat has
+ * no such object to hand back — so this runs after the round trip that
+ * delivers `wl_seat.capabilities` and not with the bind that precedes
+ * it.
+ */
+fn openSeatDevices(app : ptr<WlApp>, args : WlArgs) : void {
+    unsafe {
+        if (Raw::isNil((*app).seat)) {
+            return;
+        }
+        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        if (hasCapability((*app).seatCaps as i32, WL_SEAT_CAPABILITY_POINTER)) {
+            args.set(0, 0);
+            (*app).pointer =
+                args.send((*app).seat, WL_SEAT_GET_POINTER, (*core).pointer, WL_BIND_VERSION);
+        }
+        if (hasCapability((*app).seatCaps as i32, WL_SEAT_CAPABILITY_KEYBOARD)) {
+            args.set(0, 0);
+            (*app).keyboard =
+                args.send((*app).seat, WL_SEAT_GET_KEYBOARD, (*core).keyboard, WL_BIND_VERSION);
+        }
+    }
+}
+
+/** Whether the capability `bit` is among the ones `caps` reports. */
+fn hasCapability(caps : i32, bit : i32) : bool {
+    return ((caps / bit) % 2) == 1;
+}
+
+/** The first monitor, for the one question `SysScreen` asks. */
+fn bindOutput(app : ptr<WlApp>, args : WlArgs) : void {
+    unsafe {
+        if ((*app).outputName == 0) {
+            return;
+        }
+        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        (*app).output =
+            bindGlobal(args, (*app).registry, (*app).outputName, (*core).output, "wl_output");
+        if (Raw::isNil((*app).output)) {
+            return;
+        }
+        let listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
+        (*listeners).output.geometry = onOutputGeometry;
+        (*listeners).output.mode = onOutputMode;
+        (*listeners).output.done = onOutputDone;
+        (*listeners).output.scale = onOutputScale;
+        (*listeners).output.name = onOutputName;
+        (*listeners).output.description = onOutputDescription;
+        wl_proxy_add_listener((*app).output, outputListenerAt(app), app as ptr);
+    }
+}
+
+/**
+ * The decoration manager, where there is one.
+ *
+ * Asking is free and the answer is the compositor's: a desktop that
+ * draws frames offers this, one that does not is not offering it.
+ */
+fn bindDecorations(app : ptr<WlApp>, args : WlArgs) : void {
+    unsafe {
+        if ((*app).decorationName == 0) {
+            return;
+        }
+        let decor : ptr<XdgDecorationTables> = (*app).decor as ptr<XdgDecorationTables>;
+        (*app).decorationManager = bindGlobal(
+            args,
+            (*app).registry,
+            (*app).decorationName,
+            (*decor).manager,
+            "zxdg_decoration_manager_v1"
+        );
+    }
+}
+
+/**
+ * The address `wl_proxy_add_listener` is given for the seat.
+ *
+ * A listener is an array of function pointers and the library reads it
+ * as one, so what it must receive is the address of the *first* slot of
+ * that subscription — which for the second and third members of the
+ * block is not the block's own address.
+ */
+fn seatListenerAt(app : ptr<WlApp>) : ptr {
+    unsafe {
+        let base = Raw::addr((*app).listeners);
+        return Raw::at(base + sizeof<RegistryListener>() + sizeof<OutputListener>());
+    }
+}
+
+/** Likewise for the output — see [`seatListenerAt`]. */
+fn outputListenerAt(app : ptr<WlApp>) : ptr {
+    unsafe {
+        return Raw::at(Raw::addr((*app).listeners) + sizeof<RegistryListener>());
+    }
+}
+
+/** A connection that cannot serve a window: close it, answer nil. */
+fn abandon(app : ptr<WlApp>) : ptr {
+    unsafe {
+        wl_display_disconnect((*app).display);
+        releaseBlocks(app);
+        Raw::release(app as ptr);
+        return Raw::nil();
+    }
+}
+
+/** The four blocks the token owns. */
+fn releaseBlocks(app : ptr<WlApp>) : void {
+    unsafe {
+        Raw::release((*app).listeners);
+        Raw::release((*app).decor);
+        Raw::release((*app).xdg);
+        Raw::release((*app).core);
+    }
+}

@@ -1,0 +1,429 @@
+// wl_input — the seat's callbacks, the ring they fill, and the
+// non-blocking read that runs them.
+//
+// **A callback cannot reach the queue.** It is C calling us, with one
+// `void *` and nothing else, and an `EventQueue` is an Axle object with
+// no address to pass. So each callback writes a record into the ring on
+// [`WlWinState`], and the drain — Axle code, holding the queue — reads
+// the ring out. The Win32 backend has the same shape for the same
+// reason; X11 has none, because there the events arrive on a connection
+// the drain reads itself.
+//
+// **The seat says what it has.** `wl_seat.capabilities` is not
+// informational: asking for a keyboard the seat does not report is a
+// protocol error, and a device the seat loses stops existing. So the
+// keyboard and the pointer are created when the capability arrives and
+// not before — which is why the subscription happens on the first drain
+// rather than at connection time, when the answer has not been heard.
+//
+// **Reading without blocking takes four calls, in one order.** A frame
+// loop must never wait for input, and `wl_display_dispatch` waits. The
+// sequence in [`readAvailable`] is libwayland's own answer: announce the
+// intent to read, flush what is queued to send, ask the kernel whether
+// anything arrived, then either read it or say the read is off. Skipping
+// the announcement is what races with another thread doing the same;
+// skipping the flush is what deadlocks a client waiting for the answer
+// to a request it never sent.
+
+use crate::core::event::{Event, EventKind, EventQueue};
+use crate::core::keyboard::KeyboardState;
+use crate::core::mouse::{MouseButton, MouseState};
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::sys::wl_token::WlApp;
+use crate::sys::wl_lib::{
+    wl_display_cancel_read, wl_display_dispatch_pending, wl_display_flush, wl_display_get_error,
+    wl_display_get_fd, wl_display_prepare_read, wl_display_read_events, wl_proxy_add_listener,
+};
+use crate::sys::wl_libc::{closeFd, poll, PollFd, POLL_IN};
+use crate::video::evdev_keymap::EvdevKeymap;
+use crate::video::wayland::wl_win_state::{WlWinState, WL_RING_STRIDE, WL_RING_WORDS};
+
+/** Ring record kinds. */
+const RING_KEY : i64 = 1;
+const RING_BUTTON : i64 = 2;
+const RING_MOTION : i64 = 3;
+const RING_WHEEL : i64 = 4;
+const RING_ENTER : i64 = 5;
+const RING_LEAVE : i64 = 6;
+
+/** `wl_keyboard.key`'s state: pressed, as against released. */
+const KEY_PRESSED : i64 = 1;
+
+/** evdev button codes, which is what a `wl_pointer.button` carries. */
+const BTN_LEFT : i64 = 272;
+const BTN_RIGHT : i64 = 273;
+const BTN_MIDDLE : i64 = 274;
+
+/** `wl_pointer.axis` — the vertical scroll axis. */
+const AXIS_VERTICAL : i64 = 0;
+
+/** One wheel notch, as the rest of the library counts them. */
+const WHEEL_NOTCH : i32 = 1;
+
+/**
+ * `wl_fixed_t` is a 24.8 fixed-point number; a surface-local coordinate
+ * arrives as one and a pixel is what the caller wants.
+ */
+const FIXED_SHIFT : i64 = 8;
+
+/** `struct wl_keyboard_listener` — six slots, the last for a v4 binding. */
+pub extern "C" struct KeyboardListener {
+    pub keymap : extern "C" (ptr, ptr, u32, i32, u32) => void;
+    pub enter : extern "C" (ptr, ptr, u32, ptr, ptr) => void;
+    pub leave : extern "C" (ptr, ptr, u32, ptr) => void;
+    pub key : extern "C" (ptr, ptr, u32, u32, u32, u32) => void;
+    pub modifiers : extern "C" (ptr, ptr, u32, u32, u32, u32, u32) => void;
+    pub repeatInfo : extern "C" (ptr, ptr, i32, i32) => void;
+}
+
+/**
+ * `struct wl_pointer_listener`.
+ *
+ * Eleven slots for a version-1 binding that can only receive five. The
+ * library indexes this struct with the incoming event's opcode, so the
+ * slots later versions added are present and do nothing — six words
+ * against a read past the end of the struct.
+ */
+pub extern "C" struct PointerListener {
+    pub enter : extern "C" (ptr, ptr, u32, ptr, i32, i32) => void;
+    pub leave : extern "C" (ptr, ptr, u32, ptr) => void;
+    pub motion : extern "C" (ptr, ptr, u32, i32, i32) => void;
+    pub button : extern "C" (ptr, ptr, u32, u32, u32, u32) => void;
+    pub axis : extern "C" (ptr, ptr, u32, u32, i32) => void;
+    pub frame : extern "C" (ptr, ptr) => void;
+    pub axisSource : extern "C" (ptr, ptr, u32) => void;
+    pub axisStop : extern "C" (ptr, ptr, u32, u32) => void;
+    pub axisDiscrete : extern "C" (ptr, ptr, u32, i32) => void;
+    pub axisValue120 : extern "C" (ptr, ptr, u32, i32) => void;
+    pub axisRelativeDirection : extern "C" (ptr, ptr, u32, u32) => void;
+}
+
+// ── What the compositor writes ──────────────────────────────────────
+
+/**
+ * The keymap the compositor would have this client interpret keys with.
+ *
+ * Unread, and the descriptor is closed rather than kept: a `Scancode`
+ * names a *position* on the keyboard, and the position is the evdev code
+ * `key` already carries. What a keymap would add is the character a key
+ * produces under the user's layout — text input, which this port does
+ * not yet report and which is where the descriptor would be needed.
+ */
+pub fn onKeymap(data : ptr, keyboard : ptr, format : u32, fd : i32, size : u32) : void {
+    unsafe {
+        closeKeymapFd(fd);
+    }
+}
+
+pub fn onKeyEnter(data : ptr, keyboard : ptr, serial : u32, surface : ptr, keys : ptr) : void {
+    unsafe {
+        push(data as ptr<WlWinState>, RING_ENTER, 0, 0);
+    }
+}
+
+pub fn onKeyLeave(data : ptr, keyboard : ptr, serial : u32, surface : ptr) : void {
+    unsafe {
+        push(data as ptr<WlWinState>, RING_LEAVE, 0, 0);
+    }
+}
+
+pub fn onKey(data : ptr, keyboard : ptr, serial : u32, time : u32, key : u32, state : u32) : void {
+    unsafe {
+        push(data as ptr<WlWinState>, RING_KEY, state as i64, key as i64);
+    }
+}
+
+pub fn onModifiers(
+    data : ptr,
+    keyboard : ptr,
+    serial : u32,
+    depressed : u32,
+    latched : u32,
+    locked : u32,
+    group : u32
+) : void {
+}
+
+/**
+ * How fast the client should repeat a held key.
+ *
+ * Recorded by nobody: a compositor sends no repeats of its own and
+ * expects the client to make them, and this port does not — a held key
+ * reports one `KeyDown` and stays down, which `KeyboardState::isDown`
+ * answers for. The X11 backend gets repeats from the server instead, so
+ * the two ports differ here and the difference is the protocol's.
+ */
+pub fn onRepeatInfo(data : ptr, keyboard : ptr, rate : i32, delay : i32) : void {
+}
+
+pub fn onPointerEnter(
+    data : ptr,
+    pointer : ptr,
+    serial : u32,
+    surface : ptr,
+    x : i32,
+    y : i32
+) : void {
+    unsafe {
+        let st : ptr<WlWinState> = data as ptr<WlWinState>;
+        (*st).pointerSerial = serial;
+        push(st, RING_MOTION, (x as i64) >> FIXED_SHIFT, (y as i64) >> FIXED_SHIFT);
+    }
+}
+
+pub fn onPointerLeave(data : ptr, pointer : ptr, serial : u32, surface : ptr) : void {
+}
+
+pub fn onPointerMotion(data : ptr, pointer : ptr, time : u32, x : i32, y : i32) : void {
+    unsafe {
+        push(
+            data as ptr<WlWinState>,
+            RING_MOTION,
+            (x as i64) >> FIXED_SHIFT,
+            (y as i64) >> FIXED_SHIFT
+        );
+    }
+}
+
+pub fn onPointerButton(
+    data : ptr,
+    pointer : ptr,
+    serial : u32,
+    time : u32,
+    button : u32,
+    state : u32
+) : void {
+    unsafe {
+        push(data as ptr<WlWinState>, RING_BUTTON, state as i64, button as i64);
+    }
+}
+
+/**
+ * A scroll.
+ *
+ * The value is a `wl_fixed_t` distance, positive when the content should
+ * move down — the opposite sign from the notch count the rest of the
+ * library uses, where a positive notch is a wheel turned away.
+ */
+pub fn onPointerAxis(data : ptr, pointer : ptr, time : u32, axis : u32, value : i32) : void {
+    unsafe {
+        if ((axis as i64) != AXIS_VERTICAL || value == 0) {
+            return;
+        }
+        let notches = 0 - WHEEL_NOTCH;
+        if (value < 0) {
+            notches = WHEEL_NOTCH;
+        }
+        push(data as ptr<WlWinState>, RING_WHEEL, notches as i64, 0);
+    }
+}
+
+pub fn onPointerFrame(data : ptr, pointer : ptr) : void {}
+pub fn onAxisSource(data : ptr, pointer : ptr, source : u32) : void {}
+pub fn onAxisStop(data : ptr, pointer : ptr, time : u32, axis : u32) : void {}
+pub fn onAxisDiscrete(data : ptr, pointer : ptr, axis : u32, discrete : i32) : void {}
+pub fn onAxisValue120(data : ptr, pointer : ptr, axis : u32, value : i32) : void {}
+pub fn onAxisRelativeDirection(data : ptr, pointer : ptr, axis : u32, direction : u32) : void {}
+
+// ── What the drain does with it ─────────────────────────────────────
+
+/**
+ * Point the seat's devices at this window, once the seat has said which
+ * it has.
+ *
+ * Asking for a device the capabilities do not report is a protocol
+ * error, so this runs on the first drain — by which time the sweep's
+ * round trip has delivered the answer — and not at connection time.
+ */
+pub fn bindInput(app : ptr<WlApp>, st : ptr<WlWinState>) : void {
+    unsafe {
+        if ((*st).inputBound != 0) {
+            return;
+        }
+        (*st).inputBound = 1;
+        if (!Raw::isNil((*app).keyboard)) {
+            (*st).keyboardListener = Raw::take(sizeof<KeyboardListener>());
+            let kl : ptr<KeyboardListener> = (*st).keyboardListener as ptr<KeyboardListener>;
+            (*kl).keymap = onKeymap;
+            (*kl).enter = onKeyEnter;
+            (*kl).leave = onKeyLeave;
+            (*kl).key = onKey;
+            (*kl).modifiers = onModifiers;
+            (*kl).repeatInfo = onRepeatInfo;
+            wl_proxy_add_listener((*app).keyboard, (*st).keyboardListener, st as ptr);
+        }
+        if (!Raw::isNil((*app).pointer)) {
+            (*st).pointerListener = Raw::take(sizeof<PointerListener>());
+            let pl : ptr<PointerListener> = (*st).pointerListener as ptr<PointerListener>;
+            (*pl).enter = onPointerEnter;
+            (*pl).leave = onPointerLeave;
+            (*pl).motion = onPointerMotion;
+            (*pl).button = onPointerButton;
+            (*pl).axis = onPointerAxis;
+            (*pl).frame = onPointerFrame;
+            (*pl).axisSource = onAxisSource;
+            (*pl).axisStop = onAxisStop;
+            (*pl).axisDiscrete = onAxisDiscrete;
+            (*pl).axisValue120 = onAxisValue120;
+            (*pl).axisRelativeDirection = onAxisRelativeDirection;
+            wl_proxy_add_listener((*app).pointer, (*st).pointerListener, st as ptr);
+        }
+    }
+}
+
+/**
+ * libwayland's non-blocking read, in the order it must happen.
+ *
+ * A connection that has failed is reported as a close: a protocol error
+ * is not recoverable — every proxy on it is void — so the honest thing
+ * to hand a frame loop is the same signal a user's close gives it,
+ * rather than a loop that spins on a dead socket.
+ */
+pub fn readAvailable(scratch : Blob, st : ptr<WlWinState>) : void {
+    unsafe {
+        let display = (*st).display;
+        if (Raw::isNil(display)) {
+            return;
+        }
+        // Another dispatch may already be queued; `prepare_read` refuses
+        // until it has run, and running it is what clears the way.
+        while (wl_display_prepare_read(display) != 0) {
+            wl_display_dispatch_pending(display);
+        }
+        wl_display_flush(display);
+
+        let fds : ptr<PollFd> = scratch.at() as ptr<PollFd>;
+        (*fds).fd = wl_display_get_fd(display);
+        (*fds).events = POLL_IN;
+        (*fds).revents = 0;
+        if (poll(scratch.at(), 1, 0) > 0) {
+            wl_display_read_events(display);
+        } else {
+            wl_display_cancel_read(display);
+        }
+        wl_display_dispatch_pending(display);
+
+        if (wl_display_get_error(display) != 0) {
+            (*st).closePending = 1;
+        }
+    }
+}
+
+/** Turn the records the callbacks wrote into events. */
+pub fn drainRing(
+    st : ptr<WlWinState>,
+    stamp : i64,
+    queue : EventQueue,
+    keys : KeyboardState,
+    mouse : MouseState
+) : void {
+    unsafe {
+        while ((*st).tail != (*st).head) {
+            let tail = (*st).tail as i64;
+            let kind = (*st).ring[tail];
+            let a = (*st).ring[tail + 1];
+            let b = (*st).ring[tail + 2];
+            (*st).tail = ((tail + WL_RING_STRIDE) % WL_RING_WORDS) as i32;
+
+            if (kind == RING_KEY) {
+                emitKey(a, b, stamp, queue, keys);
+            } else if (kind == RING_BUTTON) {
+                emitButton(a, b, stamp, queue, mouse);
+            } else if (kind == RING_MOTION) {
+                emitMotion(a, b, stamp, queue, mouse);
+            } else if (kind == RING_WHEEL) {
+                mouse.scroll(a as i32);
+                queue.push(Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: a as i32 });
+            } else if (kind == RING_ENTER) {
+                (*st).focused = 1;
+                (*st).focusPending = 1;
+            } else if (kind == RING_LEAVE) {
+                (*st).focused = 0;
+                (*st).focusPending = 1;
+            }
+        }
+    }
+}
+
+/** Push one record onto the window's ring, dropping it when full. */
+fn push(st : ptr<WlWinState>, kind : i64, a : i64, b : i64) : void {
+    unsafe {
+        let head = (*st).head as i64;
+        let next = (head + WL_RING_STRIDE) % WL_RING_WORDS;
+        // A ring that has caught up with the reader drops the newest
+        // rather than overwrite the oldest: the oldest is the one a
+        // frame is about to read, and losing it would reorder input.
+        if (next == (*st).tail as i64) {
+            return;
+        }
+        (*st).ring[head] = kind;
+        (*st).ring[head + 1] = a;
+        (*st).ring[head + 2] = b;
+        (*st).head = next as i32;
+    }
+}
+
+/** A key record: pressed or released, and the evdev code. */
+fn emitKey(state : i64, code : i64, stamp : i64, queue : EventQueue, keys : KeyboardState) : void {
+    let sc = EvdevKeymap::lookup(code as i32);
+    if (state != KEY_PRESSED) {
+        keys.release(sc);
+        queue.push(Event { kind: EventKind::KeyUp, timestamp: stamp, scancode: sc });
+        return;
+    }
+    // A compositor sends no repeats of its own, so a press of a key
+    // already down is one the ring delivered twice rather than a repeat.
+    // Reporting it as one keeps the reading the same as the other ports'.
+    let repeat = keys.isDown(sc);
+    keys.press(sc);
+    queue.push(Event { kind: EventKind::KeyDown, timestamp: stamp, scancode: sc, repeat: repeat });
+}
+
+/**
+ * A button record: pressed or released, and the evdev button code.
+ *
+ * The position is the pointer's last known one rather than the event's:
+ * a `wl_pointer.button` carries no coordinates, because the motion that
+ * put the pointer there was its own event.
+ */
+fn emitButton(state : i64, code : i64, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
+    let b = buttonOf(code);
+    let x = mouse.posX();
+    let y = mouse.posY();
+    if (state != KEY_PRESSED) {
+        mouse.release(b);
+        queue.push(
+            Event { kind: EventKind::MouseButtonUp, timestamp: stamp, button: b, x: x, y: y }
+        );
+        return;
+    }
+    mouse.press(b);
+    queue.push(
+        Event { kind: EventKind::MouseButtonDown, timestamp: stamp, button: b, x: x, y: y }
+    );
+}
+
+/** A motion record: a surface-local position in whole pixels. */
+fn emitMotion(x : i64, y : i64, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
+    let nx = x as i32;
+    let ny = y as i32;
+    mouse.moveTo(nx, ny);
+    queue.push(Event { kind: EventKind::MouseMotion, timestamp: stamp, x: nx, y: ny });
+}
+
+/** The evdev button code a `wl_pointer.button` carries. */
+fn buttonOf(code : i64) : MouseButton {
+    return match code {
+        BTN_RIGHT => MouseButton::Right,
+        BTN_MIDDLE => MouseButton::Middle,
+        _ => MouseButton::Left,
+    };
+}
+
+/** The keymap's descriptor is the client's to close, read or not. */
+fn closeKeymapFd(fd : i32) : void {
+    if (fd >= 0) {
+        closeFd(fd);
+    }
+}

@@ -1,0 +1,101 @@
+// wl_args — the block a request is marshalled from, and the two ways to
+// send one.
+//
+// `union wl_argument` is one machine word per argument, whatever the
+// argument is: an int, a uint, a string's address, an object's address,
+// a file descriptor, or the ignored slot a `new_id` occupies. So a
+// request's arguments are a block of eight-byte slots, filled left to
+// right in the order the signature names them, and this file is the one
+// place that knows it.
+//
+// **One block per sender, not one per request.** A frame sends three
+// requests and a resize sends four; a block allocated at each would be a
+// malloc and a free sixty times a second for eight words. So the thing
+// that sends — a window, a drawable, the connection — owns one and
+// refills it, which is the same reasoning `SysDrain::newScratch` states
+// for the event record on the other two ports.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::sys::wl_lib::wl_proxy_marshal_array_flags;
+use crate::sys::wl_table::{recordAt, WL_WORD_BYTES};
+
+/** Slots in an argument block — more than any request this port sends. */
+pub const WL_MAX_ARGS : i64 = 8;
+
+/**
+ * `WL_MARSHAL_FLAG_DESTROY` — this request is the object's destructor,
+ * so release the proxy with it.
+ *
+ * Load-bearing, not tidiness: the protocol request tells the compositor
+ * the object is gone, and this flag tells `libwayland` to let go of the
+ * client-side proxy that named it. Sending the request without the flag
+ * leaks one proxy per object, which for a window is four per open.
+ */
+const WL_MARSHAL_FLAG_DESTROY : i32 = 1;
+
+/** A reusable argument block. */
+pub class WlArgs : Closeable {
+    mem : Blob;
+
+    constructor() {
+        self.mem = new Blob(WL_MAX_ARGS * WL_WORD_BYTES);
+    }
+
+    /** Set slot `i` to `value`; every argument crosses as one word. */
+    fn set(mut self, i : i64, value : i64) : void {
+        unsafe {
+            let slot : ptr<i64> = recordAt(self.mem.at(), i, WL_WORD_BYTES) as ptr<i64>;
+            (*slot) = value;
+        }
+    }
+
+    /** Set slot `i` to an object's address, or to null. */
+    fn setObject(mut self, i : i64, obj : ptr) : void {
+        unsafe {
+            self.set(i, obj as i64);
+        }
+    }
+
+    /** The block's address, for a caller that marshals by hand. */
+    fn at(self) : ptr {
+        return self.mem.at();
+    }
+
+    /**
+     * Send request `opcode` on `proxy` with the slots filled so far.
+     *
+     * `iface` is the interface of the object a constructor request
+     * creates, and the answer is that object; pass a nil `iface` for a
+     * request that constructs nothing, whose answer is nil.
+     */
+    fn send(mut self, proxy : ptr, opcode : i32, iface : ptr, version : i32) : ptr {
+        return wl_proxy_marshal_array_flags(proxy, opcode, iface, version, 0, self.mem.at());
+    }
+
+    /**
+     * Send a destructor request and release the proxy with it.
+     *
+     * The one shape where the flag matters — see
+     * [`WL_MARSHAL_FLAG_DESTROY`].
+     */
+    fn sendDestroy(mut self, proxy : ptr, opcode : i32) : void {
+        unsafe {
+            if (Raw::isNil(proxy)) {
+                return;
+            }
+            wl_proxy_marshal_array_flags(
+                proxy,
+                opcode,
+                Raw::nil(),
+                0,
+                WL_MARSHAL_FLAG_DESTROY,
+                self.mem.at()
+            );
+        }
+    }
+
+    fn close(self) : void {
+        self.mem.close();
+    }
+}

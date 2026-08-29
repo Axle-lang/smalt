@@ -1,0 +1,98 @@
+// sys_app — the platform seam for the process's own handle on the OS,
+// and for the scheduler granularity a frame pacer depends on.
+//
+// THE CONTRACT:
+//
+//   instance()          an opaque token the window layer needs to create
+//                       a window; nil means the OS refused
+//   isNil(token)        whether `instance` failed
+//   prepareWindows(t)   whatever must exist once, before any window can
+//                       be created; answers whether it worked
+//   raiseTimerRes()     ask for the finest sleep granularity available;
+//                       answers whether it was granted, because the
+//                       matching lower() must run only if it was
+//   lowerTimerRes()     undo exactly one granted raise
+//   release(token)      hand the token back to the OS
+//   checkRecords()      0 when the OS records this backend addresses
+//                       match the ones the OS reads, otherwise which
+//                       check failed
+//
+// Wayland: the token is a record, not a handle. A `Display *` answers
+// every X question by itself; a `wl_display *` answers none — a client
+// must ask the registry what the compositor offers and bind each global
+// it wants before it can do anything at all. So `instance` opens the
+// connection *and* does that sweep, and the token is
+// [`crate::sys::wl_token::WlApp`], the connection plus what was bound on
+// it. A compositor with no `xdg_wm_base` fails here rather than at the
+// first window: there is no way to map a toplevel without it, so a token
+// that survived would be a promise the window layer could not keep.
+//
+// `prepareWindows` has nothing left to do — the sweep already happened,
+// and it happened in `instance` because a bound global is part of what
+// the token *is*. It answers `true` for a live token so the caller's
+// shape is the same on both ports.
+//
+// The granularity pair is a no-op that reports "not granted", as on X11:
+// `nanosleep` already resolves far below a frame. Answering `false` is
+// what makes `Platform` skip the matching lower.
+//
+// `checkRecords` measures the two records this backend and the C library
+// address from opposite sides — `wl_message` and `wl_interface`. They
+// are the tables xdg-shell is built out of, and a disagreement about
+// either would be read by `libwayland` as a protocol vocabulary rather
+// than reported, so it is checked before the first request is sent.
+
+use crate::kernel::raw::Raw;
+use crate::sys::wl_app::{connect, disconnect, WlApp};
+use crate::sys::wl_lib::{WlInterface, WlMessage, WL_INTERFACE_BYTES, WL_MESSAGE_BYTES};
+
+pub class SysApp {
+    /** Open the connection and bind what a window needs. */
+    static fn instance() : ptr {
+        return connect();
+    }
+
+    /** Whether [`SysApp::instance`] failed. */
+    static fn isNil(token : ptr) : bool {
+        return Raw::isNil(token);
+    }
+
+    /**
+     * Nothing is left to prepare: the registry sweep and the binds are
+     * what `instance` did. A live token is a prepared one.
+     */
+    static fn prepareWindows(token : ptr) : bool {
+        return !Raw::isNil(token);
+    }
+
+    /**
+     * There is no granularity to raise: `nanosleep` already resolves
+     * far below a frame. Reporting `false` is what keeps the matching
+     * lower from running.
+     */
+    static fn raiseTimerRes() : bool {
+        return false;
+    }
+
+    /** Nothing was raised, so nothing is lowered. */
+    static fn lowerTimerRes() : void {}
+
+    /**
+     * The two records the port and `libwayland` address from opposite
+     * sides. Answers which one disagrees, or 0.
+     */
+    static fn checkRecords() : i32 {
+        if (sizeof<WlMessage>() != WL_MESSAGE_BYTES) {
+            return 1;
+        }
+        if (sizeof<WlInterface>() != WL_INTERFACE_BYTES) {
+            return 2;
+        }
+        return 0;
+    }
+
+    /** Close the connection and release the record. */
+    static fn release(token : ptr) : void {
+        disconnect(token);
+    }
+}

@@ -28,3 +28,14 @@ dirs = ["win32"]
 [port.x11]
 when = { os = "linux" }
 dirs = ["x11", "posix", "alsa"]
+
+# A second Linux backend, chosen by a feature. `{ os = "linux", feature =
+# "wayland" }` is narrower than `{ os = "linux" }`, so it wins when the
+# feature is on and the X11 port answers when it is off — the invariant
+# is one active port per target, never two that overlap.
+[features]
+wayland = false
+
+[port.wayland]
+when = { os = "linux", feature = "wayland" }
+dirs = ["wayland", "posix", "alsa"]

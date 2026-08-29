@@ -1,0 +1,76 @@
+// sys_cursor — the platform seam for pinning and hiding the pointer.
+//
+// THE CONTRACT:
+//
+//   recentre(win, x, y)        put the pointer at the client-area point
+//                              (x, y) of `win`
+//   showCursor(win, visible)   show or hide the pointer over that window
+//
+// Wayland is the platform where half of this cannot be done, and saying
+// so plainly is worth more than a call that appears to work.
+//
+// **A client cannot move the pointer.** There is no warp request, by
+// design: the compositor owns the input device and a client that could
+// place the cursor could also keep it. What a mouse-look game wants
+// instead is to *lock* it — `zwp_pointer_constraints_v1` locks the
+// pointer in place and `zwp_relative_pointer_v1` then delivers motion as
+// deltas with no position at all, which is what recentring was a way of
+// faking. Both are extensions, so both need their own interface tables
+// built the way [`crate::sys::xdg_shell`] builds xdg-shell's. Until they
+// are, `recentre` does nothing and a caller that recentres every frame
+// gets a pointer that walks to the edge and stops.
+//
+// **Hiding works, and only in one direction.** A pointer's appearance is
+// a surface the client hands the compositor with `set_cursor`, so
+// handing it none is a hidden pointer — exact, and cheaper than X11's
+// invisible-cursor resource because there is no resource. Showing it
+// again needs an image to show, which means a cursor theme
+// (`libwayland-cursor` and a name like `"left_ptr"`), and this port does
+// not load one yet: `showCursor(win, true)` leaves the pointer as the
+// compositor last drew it, which is the default arrow until the first
+// hide and nothing after it, until the pointer leaves the window and
+// comes back.
+//
+// `set_cursor` is also serial-bound: it is accepted only against the
+// `wl_pointer.enter` that gave this surface the pointer, which is why
+// the window records that serial and a request before the first enter
+// is not sent at all.
+
+use crate::kernel::raw::Raw;
+use crate::sys::wl_token::WlApp;
+use crate::sys::wl_args::WlArgs;
+use crate::sys::wl_request::WL_POINTER_SET_CURSOR;
+use crate::video::wayland::wl_win_state::WlWinState;
+use crate::video::wayland::wl_window_ops::{winApp, winState};
+use crate::video::sys_window::SysWindow;
+
+class SysCursor {
+    /**
+     * Nothing: the protocol has no warp. See this file's header for what
+     * replaces it and what it costs.
+     */
+    static fn recentre(win : SysWindow, x : i32, y : i32) : void {}
+
+    /** Hide the pointer over `win`, or leave it as the compositor drew it. */
+    static fn showCursor(win : SysWindow, visible : bool) : void {
+        unsafe {
+            if (visible) {
+                return;
+            }
+            let app : ptr<WlApp> = winApp(win) as ptr<WlApp>;
+            let st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
+            if (Raw::isNil((*app).pointer) || (*st).pointerSerial == 0) {
+                return;
+            }
+            // `wl_pointer.set_cursor` — "u?oii": the enter's serial, the
+            // surface to draw (none), and a hotspot that names nothing.
+            let args = new WlArgs();
+            defer args.close();
+            args.set(0, (*st).pointerSerial as i64);
+            args.setObject(1, Raw::nil());
+            args.set(2, 0);
+            args.set(3, 0);
+            args.send((*app).pointer, WL_POINTER_SET_CURSOR, Raw::nil(), 0);
+        }
+    }
+}

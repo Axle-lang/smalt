@@ -1,12 +1,16 @@
 // blit_scale — the scratch a scaled frame is resampled into.
 //
-// X11 has no scaling blit: `XPutImage` copies pixel for pixel, so a
-// window that does not match its framebuffer is resampled here first.
-// GDI's `StretchDIBits` scales in the driver, so the Windows port owns
-// nothing like this — which is why the scratch is a port-private class
-// rather than two more methods on `SysBlit`. A name declared on one port
-// and not another is a call that compiles for one target and fails for
-// the other.
+// Neither Linux backend can scale while it blits. `XPutImage` copies
+// pixel for pixel, and a `wl_buffer` is pixels the compositor reads as
+// they were written — so a window that does not match its framebuffer is
+// resampled here first, by whichever of the two is answering.
+//
+// It sits in `posix/` for exactly that reason: both Linux ports name
+// that directory and the Windows one does not, which is the difference
+// this file is about. GDI's `StretchDIBits` scales in the driver, so the
+// Win32 backend has nothing like this and must not grow a name for it —
+// a name declared on one port and not another is a call that compiles
+// for one target and fails for the other.
 
 use crate::kernel::blob::Blob;
 

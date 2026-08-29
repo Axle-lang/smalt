@@ -1,0 +1,65 @@
+// wl_libc — the kernel and libc calls this port makes, in one place.
+//
+// A Wayland client needs three things the C library gives and the
+// protocol does not: a file whose pages two processes share, a way to
+// ask whether the connection has anything to read without waiting, and
+// the string handling an interface table is built out of. They are
+// declared together for the reason `x11_lib` declares libX11's together
+// — a reader looking for what this port calls out to should find one
+// list, not seven declarations scattered across the files that happen to
+// use them.
+//
+// `cstr` is `strdup` under its own name. What it makes is a copy that is
+// never freed, on purpose: an interface table is read by `libwayland`
+// for as long as any object of that interface lives, which is the whole
+// run, and a name that outlives the program is the honest shape of that.
+
+/** `char *strdup(const char *)` — a copy that outlives the call. */
+@link_name("strdup")
+pub extern "C" fn cstr(s : string) : ptr;
+
+/** `int strcmp(const char *, const char *)` — zero when the two agree. */
+@link_name("strcmp")
+pub extern "C" fn cstrcmp(a : ptr, b : string) : i32;
+
+/** `void *dlsym(void *handle, const char *)`; a null handle is `RTLD_DEFAULT`. */
+pub extern "C" fn dlsym(handle : ptr, symbol : string) : ptr;
+
+/** `int memfd_create(const char *, unsigned)` — an anonymous file. */
+@link_name("memfd_create")
+pub extern "C" fn memfdCreate(name : string, flags : i32) : i32;
+
+/** `int ftruncate(int, off_t)` — give the anonymous file a size. */
+pub extern "C" fn ftruncate(fd : i32, length : i64) : i32;
+
+/** `void *mmap(void *, size_t, int, int, int, off_t)`. */
+pub extern "C" fn mmap(addr : ptr, length : i64, prot : i32, flags : i32, fd : i32, offset : i64) : ptr;
+
+/** `int munmap(void *, size_t)`. */
+pub extern "C" fn munmap(addr : ptr, length : i64) : i32;
+
+/** `int close(int)`. */
+@link_name("close")
+pub extern "C" fn closeFd(fd : i32) : i32;
+
+/** `int poll(struct pollfd *, nfds_t, int timeout)`. */
+pub extern "C" fn poll(fds : ptr, nfds : i64, timeout : i32) : i32;
+
+/** `struct pollfd` — the one record this port hands the kernel. */
+pub extern "C" struct PollFd {
+    pub fd : i32;
+    pub events : i16;
+    pub revents : i16;
+}
+
+/** `POLLIN` — there is something to read. */
+pub const POLL_IN : i16 = 1;
+
+/** `MFD_CLOEXEC` — a mapping is this process's business. */
+pub const MFD_CLOEXEC : i32 = 1;
+
+/** `PROT_READ | PROT_WRITE`. */
+pub const PROT_READ_WRITE : i32 = 3;
+
+/** `MAP_SHARED` — the point of the exercise. */
+pub const MAP_SHARED : i32 = 1;

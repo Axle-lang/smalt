@@ -1,0 +1,144 @@
+// sys_blit — the platform seam for putting a framebuffer on the screen.
+//
+// THE CONTRACT:
+//
+//   present(surface, pixels, srcW, srcH, dstW, dstH)
+//       copy a `srcW` by `srcH` block of 32-bit pixels, row 0 at the
+//       TOP, onto the `dstW` by `dstH` drawable named by `surface`,
+//       scaling when the two differ. `surface` is whatever the window
+//       layer calls a drawable — this file is the only one that knows.
+//
+// The scaling is not a nicety: it is what lets a resized window keep
+// drawing at the old framebuffer resolution for the frame between the
+// resize event and the target's reallocation, instead of showing garbage.
+//
+// The seam takes a bare `i32[]` rather than a `RenderTarget` so that
+// `platform/` stays *below* `render/`. A blit that knew what a render
+// target was would be a layer reaching upward, and the port would
+// inherit that coupling for nothing.
+//
+// Wayland: `surface` is a [`WlDrawable`] — the surface, its pair of
+// shared buffers, and what a resize needs to make new ones. There is no
+// put request and no server-side drawable: the pixels are already in
+// memory both sides read, so a present is a copy into the buffer the
+// compositor is *not* reading, and then the three requests that say a
+// frame is ready.
+//
+// WHAT THIS PLATFORM DOES NOT GIVE AWAY. The copy is the port's own
+// cost, and unlike X11's it cannot be avoided by pointing the request at
+// the caller's array — a `wl_buffer` names pages the compositor may read
+// at any moment, so what it shows must be written *into* them. A frame
+// that arrives while both buffers are still out is dropped rather than
+// written over one in use: that is a frame the compositor was never
+// going to show, and drawing it would tear the one it is showing.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::platform::blit_scale::ScaleScratch;
+use crate::platform::wayland::wl_blit_header::WlBlitHeader;
+use crate::platform::wayland::wl_drawable::{
+    commitFrame, ensureBuffers, freeSlot, slotAt, WlDrawable, WL_NO_SLOT, WL_PIXEL_BYTES,
+};
+use crate::sys::wl_args::WlArgs;
+
+/** `WL_SHM_FORMAT_XRGB8888`, the format every compositor must accept. */
+const BLIT_FORMAT : i32 = 1;
+
+pub class SysBlit : Closeable {
+    /** The scratch a scaled frame is resampled into. */
+    scale : ScaleScratch;
+
+    /** The layout the current buffers have. */
+    info : Blob;
+
+    /**
+     * The block this seam's requests are marshalled from.
+     *
+     * One per blit rather than one per frame: a present sends three
+     * requests and a resize five, and a block allocated at each would be
+     * a malloc and a free sixty times a second for eight words.
+     */
+    args : WlArgs;
+
+    constructor() {
+        self.scale = new ScaleScratch();
+        self.args = new WlArgs();
+        self.info = new Blob(sizeof<WlBlitHeader>());
+        unsafe {
+            Raw::clear(self.info.at(), sizeof<WlBlitHeader>());
+            let header : ptr<WlBlitHeader> = self.info.at() as ptr<WlBlitHeader>;
+            (*header).format = BLIT_FORMAT;
+        }
+    }
+
+    /**
+     * The layout of what is being drawn into.
+     *
+     * The cast lives here and only here: the block *is* a
+     * [`WlBlitHeader`] for the whole life of this object.
+     */
+    fn header(self) : ptr<WlBlitHeader> {
+        unsafe {
+            return self.info.at() as ptr<WlBlitHeader>;
+        }
+    }
+
+    /**
+     * Record the extent the next frames will have.
+     *
+     * A `wl_buffer` carries its own, so this changes no request — it is
+     * what makes [`SysBlit::header`] answer for the same buffers
+     * `present` is about to write into.
+     */
+    fn describe(mut self, w : i32, h : i32) : void {
+        unsafe {
+            let header : ptr<WlBlitHeader> = self.info.at() as ptr<WlBlitHeader>;
+            (*header).width = w;
+            (*header).height = h;
+            (*header).stride = w * (WL_PIXEL_BYTES as i32);
+        }
+    }
+
+    /** Copy a frame into a free buffer and commit it. */
+    fn present(
+        mut self,
+        surface : ptr,
+        pixels : i32[],
+        srcW : i32,
+        srcH : i32,
+        dstW : i32,
+        dstH : i32
+    ) : void {
+        if (Raw::isNil(surface) || dstW <= 0 || dstH <= 0 || srcW <= 0 || srcH <= 0) {
+            return;
+        }
+        unsafe {
+            let target : ptr<WlDrawable> = surface as ptr<WlDrawable>;
+            if (!ensureBuffers(target, self.args, dstW, dstH)) {
+                return;
+            }
+            self.describe(dstW, dstH);
+
+            let index = freeSlot(target);
+            if (index == WL_NO_SLOT) {
+                return;
+            }
+            let into = (*slotAt(target, index)).pixels;
+            let bytes : i64 = (dstW as i64) * (dstH as i64) * WL_PIXEL_BYTES;
+            if (srcW == dstW && srcH == dstH) {
+                Raw::copy(into, pixels as ptr, bytes);
+            } else {
+                self.scale.reserve((dstW as i64) * (dstH as i64));
+                self.scale.resample(pixels, srcW, srcH, dstW, dstH);
+                Raw::copy(into, self.scale.at(), bytes);
+            }
+            commitFrame(target, self.args, index);
+        }
+    }
+
+    fn close(self) : void {
+        self.scale.close();
+        self.args.close();
+        self.info.close();
+    }
+}

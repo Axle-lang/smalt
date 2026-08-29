@@ -1,0 +1,60 @@
+// sys_drain — the Wayland half of the event pump: events into events.
+//
+// THE SEAM'S CONTRACT, which a port honours and nothing above it may
+// look behind:
+//
+//   newScratch()                       an owned block sized for exactly
+//                                      one OS event record, reused for
+//                                      the life of the queue
+//   drain(scratch, win, stamp, q, k, m)
+//                                      everything the OS has for this
+//                                      window since the last call, as
+//                                      pushes onto `q` and edges on the
+//                                      held-state objects
+//
+// Wayland has no event record to hand back: the library decodes the wire
+// itself and calls a function per event. So the scratch is the one
+// record this port *does* hand a system call — the `pollfd` that asks
+// whether the connection has anything to read — and the events arrive in
+// the callbacks, which leave them on a ring for this to read out.
+//
+// The three steps and why each is where it is are in
+// [`crate::video::wayland::wl_input`]; this file is the seam over them.
+
+use crate::core::event::EventQueue;
+use crate::core::keyboard::KeyboardState;
+use crate::core::mouse::MouseState;
+use crate::kernel::blob::Blob;
+use crate::sys::wl_token::WlApp;
+use crate::sys::wl_libc::PollFd;
+use crate::video::sys_window::SysWindow;
+use crate::video::wayland::wl_input::{bindInput, drainRing, readAvailable};
+use crate::video::wayland::wl_win_state::WlWinState;
+use crate::video::wayland::wl_window_ops::{winApp, winState};
+
+class SysDrain {
+    /** One `pollfd`, reused for the life of the queue. */
+    static fn newScratch() : Blob {
+        return new Blob(sizeof<PollFd>());
+    }
+
+    /**
+     * Read whatever the compositor has sent, then turn the ring the
+     * callbacks filled into events.
+     */
+    static fn drain(
+        scratch : Blob,
+        win : SysWindow,
+        stamp : i64,
+        queue : EventQueue,
+        keys : KeyboardState,
+        mouse : MouseState
+    ) : void {
+        unsafe {
+            let st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
+            bindInput(winApp(win) as ptr<WlApp>, st);
+            readAvailable(scratch, st);
+            drainRing(st, stamp, queue, keys, mouse);
+        }
+    }
+}

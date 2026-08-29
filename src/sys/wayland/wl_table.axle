@@ -1,0 +1,92 @@
+// wl_table — building a `wl_interface` by hand.
+//
+// The core protocol's tables are symbols an extension's are not: a
+// `wayland-scanner` run emits them per project, into C that this library
+// does not have. So [`crate::sys::xdg_shell`] and
+// [`crate::sys::xdg_decoration`] write theirs out, and this is the three
+// operations they are written with.
+//
+// Everything here is taken from libc and never given back. A table is
+// read by `libwayland` for as long as any object of its interface lives,
+// which is the whole run — an owned array would be released at the end
+// of the function that built it, leaving the library reading a block the
+// allocator has handed on.
+
+use crate::kernel::raw::Raw;
+use crate::sys::wl_lib::WlMessage;
+use crate::sys::wl_libc::cstr;
+
+/** Bytes in one `union wl_argument`, and in one `types` slot. */
+pub const WL_WORD_BYTES : i64 = 8;
+
+/** The address of record `i` in an array of `stride`-byte records. */
+pub fn recordAt(base : ptr, i : i64, stride : i64) : ptr {
+    return Raw::at(Raw::addr(base) + (i * stride));
+}
+
+/**
+ * Write one `wl_message` into slot `i` of a message array.
+ *
+ * `signature` is the wire format of the arguments, one character each
+ * (`i` int, `u` uint, `s` string, `o` object, `n` new_id, `a` array,
+ * `h` file descriptor, `?` the next one may be null), and `types` names
+ * the interface of each argument that has one.
+ */
+pub fn putMessage(base : ptr, i : i64, name : string, signature : string, types : ptr) : void {
+    unsafe {
+        let m : ptr<WlMessage> = recordAt(base, i, sizeof<WlMessage>()) as ptr<WlMessage>;
+        (*m).name = cstr(name);
+        (*m).signature = cstr(signature);
+        (*m).types = types;
+    }
+}
+
+/** Write one interface pointer into slot `i` of a `types` array. */
+pub fn putType(base : ptr, i : i64, iface : ptr) : void {
+    unsafe {
+        let slot : ptr<i64> = recordAt(base, i, WL_WORD_BYTES) as ptr<i64>;
+        (*slot) = iface as i64;
+    }
+}
+
+/**
+ * A `types` array of `n` null slots — the arguments that name no
+ * interface, and the whole array of a request this port never sends.
+ */
+pub fn nullTypes(n : i64) : ptr {
+    let base = Raw::take(n * WL_WORD_BYTES);
+    for (i of 0..n) {
+        putType(base, i, Raw::nil());
+    }
+    return base;
+}
+
+/** A `types` array holding exactly the interfaces given, in order. */
+pub fn typesOf1(a : ptr) : ptr {
+    let base = Raw::take(WL_WORD_BYTES);
+    putType(base, 0, a);
+    return base;
+}
+
+/** Two interfaces, for a request naming a new object and an existing one. */
+pub fn typesOf2(a : ptr, b : ptr) : ptr {
+    let base = Raw::take(2 * WL_WORD_BYTES);
+    putType(base, 0, a);
+    putType(base, 1, b);
+    return base;
+}
+
+/**
+ * One interface followed by `trailing` slots that name none.
+ *
+ * The shape of every request whose first argument is an object and whose
+ * rest are numbers — `move`, `resize`, `show_window_menu`.
+ */
+pub fn typesOfObjectThen(a : ptr, trailing : i64) : ptr {
+    let base = Raw::take((1 + trailing) * WL_WORD_BYTES);
+    putType(base, 0, a);
+    for (i of 0..trailing) {
+        putType(base, 1 + i, Raw::nil());
+    }
+    return base;
+}

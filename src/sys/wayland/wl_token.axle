@@ -1,0 +1,104 @@
+// wl_token — the record a connection is, once it is open.
+//
+// Its own module because two files need it and each needs the other:
+// `wl_globals`'s callbacks write into it, and `wl_app` installs those
+// callbacks. A record that both import and neither owns breaks that
+// circle, and it is the right shape anyway — this is data, and the two
+// files around it are behaviour.
+
+/** `struct wl_registry_listener`. */
+pub extern "C" struct RegistryListener {
+    pub global : extern "C" (ptr, ptr, u32, ptr, u32) => void;
+    pub globalRemove : extern "C" (ptr, ptr, u32) => void;
+}
+
+/**
+ * `struct wl_output_listener`.
+ *
+ * Six slots for a version-1 binding that can only receive two. The
+ * library dispatches by opcode into this struct, and a compositor that
+ * sent an event the binding did not ask for would otherwise read past
+ * its end — so the slots later versions added are present and do
+ * nothing, which costs four words and removes the question.
+ */
+pub extern "C" struct OutputListener {
+    pub geometry : extern "C" (ptr, ptr, i32, i32, i32, i32, i32, ptr, ptr, i32) => void;
+    pub mode : extern "C" (ptr, ptr, u32, i32, i32, i32) => void;
+    pub done : extern "C" (ptr, ptr) => void;
+    pub scale : extern "C" (ptr, ptr, i32) => void;
+    pub name : extern "C" (ptr, ptr, ptr) => void;
+    pub description : extern "C" (ptr, ptr, ptr) => void;
+}
+
+/** `struct wl_seat_listener` — capabilities, plus the name a v2 adds. */
+pub extern "C" struct SeatListener {
+    pub capabilities : extern "C" (ptr, ptr, u32) => void;
+    pub name : extern "C" (ptr, ptr, ptr) => void;
+}
+
+/**
+ * The connection's three subscriptions, in one block.
+ *
+ * `libwayland` keeps the address it was handed for the life of the
+ * proxy, so a listener must outlive the connection and no longer. One
+ * block held by the token is exactly that lifetime, and one release at
+ * the end rather than three.
+ */
+pub extern "C" struct WlAppListeners {
+    pub registry : RegistryListener;
+    pub output : OutputListener;
+    pub seat : SeatListener;
+}
+
+/**
+ * The platform token: one connection and what was bound on it.
+ *
+ * An `extern "C" struct` because two sides address it — the Axle code
+ * that reads a field by name, and the C library that hands its address
+ * back to a listener as an opaque `void *`.
+ *
+ * The four blocks it points at are made once by `wl_app::connect` and
+ * released once by `wl_app::disconnect`. They are pointers rather than
+ * fields because a listener's address is what `libwayland` holds and a
+ * table's is what it marshals against — both have to be stable, and a
+ * record only ever reached through this pointer gives them that.
+ */
+pub extern "C" struct WlApp {
+    pub display : ptr;
+    pub registry : ptr;
+    pub compositor : ptr;
+    pub shm : ptr;
+    pub wmBase : ptr;
+    pub seat : ptr;
+    pub pointer : ptr;
+    pub keyboard : ptr;
+    pub output : ptr;
+    pub decorationManager : ptr;
+
+    /** Registry names, found by the sweep and consumed by the binds. */
+    pub compositorName : u32;
+    pub shmName : u32;
+    pub wmBaseName : u32;
+    pub seatName : u32;
+    pub outputName : u32;
+    pub decorationName : u32;
+
+    /** What the seat reports having: bit 0 a pointer, bit 1 a keyboard. */
+    pub seatCaps : u32;
+
+    /** The primary output's mode, or zero when it never reported one. */
+    pub screenW : i32;
+    pub screenH : i32;
+
+    /** `WlCore` — the core protocol's tables. */
+    pub core : ptr;
+
+    /** `XdgTables` — xdg-shell's three. */
+    pub xdg : ptr;
+
+    /** `XdgDecorationTables` — xdg-decoration's two. */
+    pub decor : ptr;
+
+    /** [`WlAppListeners`] — the subscriptions this connection installed. */
+    pub listeners : ptr;
+}

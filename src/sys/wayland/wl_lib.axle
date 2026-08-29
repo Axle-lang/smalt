@@ -1,0 +1,124 @@
+// wl_lib — the `libwayland-client` imports, and the two records its
+// tables are made of.
+//
+// Declarations only. The block names the library, so the link line
+// learns of `-lwayland-client` from the declaration that needs it.
+//
+// Two things about this library shape everything above it.
+//
+// **There are no per-request functions.** `wl_surface_commit` and its
+// hundreds of siblings are `static inline` in the generated headers, not
+// symbols: every one of them is one call to `wl_proxy_marshal_flags`
+// with an opcode. That call is variadic, so this port uses its array
+// twin, [`wl_proxy_marshal_array_flags`] — the arguments arrive as a
+// block of eight-byte slots, which is what `union wl_argument` is.
+//
+// **The interface tables are data.** A `wl_interface` says what each
+// request and event of one object looks like, and the library reads it
+// to encode and decode. The core protocol's tables are exported symbols;
+// an extension's are generated per project and exist in no library at
+// all. So the core ones arrive through `dlsym` ([`crate::sys::wl_core`])
+// and xdg-shell's are built here ([`crate::sys::xdg_shell`]).
+
+extern "C" from "wayland-client" {
+    /** `struct wl_display *wl_display_connect(const char *)` — NULL reads `$WAYLAND_DISPLAY`. */
+    fn wl_display_connect(name : ptr) : ptr;
+
+    /** `void wl_display_disconnect(struct wl_display *)`. */
+    fn wl_display_disconnect(display : ptr) : void;
+
+    /** `int wl_display_roundtrip(struct wl_display *)` — block until the server has answered everything sent. */
+    fn wl_display_roundtrip(display : ptr) : i32;
+
+    /** `int wl_display_dispatch_pending(struct wl_display *)` — run the callbacks for what is already read, never blocking. */
+    fn wl_display_dispatch_pending(display : ptr) : i32;
+
+    /** `int wl_display_flush(struct wl_display *)` — push the outgoing buffer. */
+    fn wl_display_flush(display : ptr) : i32;
+
+    /** `int wl_display_get_fd(struct wl_display *)` — the connection, for `poll`. */
+    fn wl_display_get_fd(display : ptr) : i32;
+
+    /** `int wl_display_prepare_read(struct wl_display *)` — 0 when this thread may read. */
+    fn wl_display_prepare_read(display : ptr) : i32;
+
+    /** `int wl_display_read_events(struct wl_display *)`. */
+    fn wl_display_read_events(display : ptr) : i32;
+
+    /** `void wl_display_cancel_read(struct wl_display *)`. */
+    fn wl_display_cancel_read(display : ptr) : void;
+
+    /** `int wl_display_get_error(struct wl_display *)` — non-zero once the connection is unusable. */
+    fn wl_display_get_error(display : ptr) : i32;
+
+    /**
+     * `struct wl_proxy *wl_proxy_marshal_array_flags(struct wl_proxy *, uint32_t opcode,
+     *  const struct wl_interface *, uint32_t version, uint32_t flags, union wl_argument *)`
+     *
+     * The one way a request leaves this port. `iface` is the interface of
+     * the object a constructor request creates, and null for a request
+     * that creates nothing; `args` is one eight-byte slot per argument,
+     * including the ignored slot a `new_id` occupies.
+     */
+    fn wl_proxy_marshal_array_flags(
+        proxy : ptr,
+        opcode : i32,
+        iface : ptr,
+        version : i32,
+        flags : i32,
+        args : ptr
+    ) : ptr;
+
+    /** `int wl_proxy_add_listener(struct wl_proxy *, void (**)(void), void *data)`. */
+    fn wl_proxy_add_listener(proxy : ptr, listener : ptr, data : ptr) : i32;
+
+    /** `uint32_t wl_proxy_get_version(struct wl_proxy *)`. */
+    fn wl_proxy_get_version(proxy : ptr) : i32;
+
+    /** `void wl_proxy_destroy(struct wl_proxy *)` — client-side only; a protocol destructor is a request. */
+    fn wl_proxy_destroy(proxy : ptr) : void;
+}
+
+/**
+ * `struct wl_message` — one request or one event.
+ *
+ * `signature` is the wire format of its arguments, one character each
+ * (`i` int, `u` uint, `s` string, `o` object, `n` new_id, `a` array,
+ * `h` file descriptor, `?` the next one may be null). `types` is one
+ * interface pointer per argument, null for those that name none.
+ */
+pub extern "C" struct WlMessage {
+    pub name : ptr;
+    pub signature : ptr;
+    pub types : ptr;
+}
+
+/**
+ * `struct wl_interface` — one protocol object's whole vocabulary.
+ *
+ * The counts are load-bearing in opposite directions. `methodCount`
+ * bounds the opcodes this side may send, so a short table only costs
+ * requests that cannot be sent. `eventCount` bounds what the library
+ * will *dispatch*: it indexes the listener with the incoming event's
+ * opcode, so a table shorter than the version bound reads past the end
+ * of the listener struct.
+ */
+pub extern "C" struct WlInterface {
+    pub name : ptr;
+    pub version : i32;
+    pub methodCount : i32;
+    pub methods : ptr;
+    pub eventCount : i32;
+    pub events : ptr;
+}
+
+/**
+ * Bytes in a `struct wl_message` on every target this port builds for.
+ *
+ * Stated rather than measured, so that measuring it can disagree —
+ * which is what `SysApp::checkRecords` is for.
+ */
+pub const WL_MESSAGE_BYTES : i64 = 24;
+
+/** Bytes in a `struct wl_interface`, for the same reason. */
+pub const WL_INTERFACE_BYTES : i64 = 40;

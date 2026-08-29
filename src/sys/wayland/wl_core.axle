@@ -1,0 +1,68 @@
+// wl_core — the core protocol's interface tables.
+//
+// A `wl_interface` is data, and `libwayland-client` exports the core
+// protocol's twenty-four of them as symbols. Axle imports functions, so
+// the addresses come from `dlsym(NULL, …)` — the same lookup a C program
+// gets for free by naming `wl_compositor_interface` in a source file.
+// `RTLD_DEFAULT` is a null handle on glibc, and the library is linked
+// into this program, so its symbols are in the global scope by the time
+// anything here runs.
+//
+// Fetched once and held together, because a miss is one failure: a
+// `libwayland-client` that answered for some of these and not others
+// would not be a version difference, it would be a broken link. So
+// [`loadCore`] answers with one test for the caller.
+
+use crate::kernel::raw::Raw;
+use crate::sys::wl_libc::dlsym;
+
+/** The core tables, looked up once and read for the run. */
+pub extern "C" struct WlCore {
+    pub registry : ptr;
+    pub compositor : ptr;
+    pub shm : ptr;
+    pub shmPool : ptr;
+    pub buffer : ptr;
+    pub surface : ptr;
+    pub seat : ptr;
+    pub keyboard : ptr;
+    pub pointer : ptr;
+    pub output : ptr;
+    pub callback : ptr;
+}
+
+/** Fill `core` from the loaded library; `false` when a symbol is missing. */
+pub fn loadCore(core : ptr<WlCore>) : bool {
+    unsafe {
+        let nil = Raw::nil();
+        (*core).registry = dlsym(nil, "wl_registry_interface");
+        (*core).compositor = dlsym(nil, "wl_compositor_interface");
+        (*core).shm = dlsym(nil, "wl_shm_interface");
+        (*core).shmPool = dlsym(nil, "wl_shm_pool_interface");
+        (*core).buffer = dlsym(nil, "wl_buffer_interface");
+        (*core).surface = dlsym(nil, "wl_surface_interface");
+        (*core).seat = dlsym(nil, "wl_seat_interface");
+        (*core).keyboard = dlsym(nil, "wl_keyboard_interface");
+        (*core).pointer = dlsym(nil, "wl_pointer_interface");
+        (*core).output = dlsym(nil, "wl_output_interface");
+        (*core).callback = dlsym(nil, "wl_callback_interface");
+        return complete(core);
+    }
+}
+
+/** Every table this port will marshal against, present. */
+fn complete(core : ptr<WlCore>) : bool {
+    unsafe {
+        return !Raw::isNil((*core).registry)
+            && !Raw::isNil((*core).compositor)
+            && !Raw::isNil((*core).shm)
+            && !Raw::isNil((*core).shmPool)
+            && !Raw::isNil((*core).buffer)
+            && !Raw::isNil((*core).surface)
+            && !Raw::isNil((*core).seat)
+            && !Raw::isNil((*core).keyboard)
+            && !Raw::isNil((*core).pointer)
+            && !Raw::isNil((*core).output)
+            && !Raw::isNil((*core).callback);
+    }
+}

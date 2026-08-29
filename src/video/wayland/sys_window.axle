@@ -1,0 +1,336 @@
+// sys_window — the platform seam for a window and its drawing surface.
+//
+// THE CONTRACT, which a port honours and nothing above it may look
+// behind. A `SysWindow` that exists is a window that opened: creation
+// raises `PlatformError` rather than yielding a half-object, so no
+// method below has to test for one.
+//
+//   surface()             the token `SysBlit::present` blits onto
+//   handle()              the window's identity, for the pump and the
+//                         cursor
+//   width() / height()    the client area, as of the last adopted resize
+//   alive()               whether the OS still has this window
+//   show() / hide() / setTitle(t)
+//   takeClose()           the user asked to close, clearing the request
+//   takeResize()          a resize is waiting; adopts it into
+//                         width()/height() and answers whether the size
+//                         actually changed
+//   takeFocusEdge()       focused()    — an edge, then the state
+//   takeMinimiseEdge()    minimised()  — an edge, then the state
+//   selfCheck(w, h)       0 when the platform's event path works, else
+//                         which step of it did not
+//
+// Every `take*` is a latch the reader clears, so an event that arrives
+// twice between two frames is reported once and a frame that runs long
+// loses nothing. The latches live in [`WlWinState`] rather than on this
+// class, because the compositor writes them through a C callback that is
+// handed one `void *`; the objects and the order they are made in are
+// `wl_window_ops`'s.
+//
+// **What this port cannot do**, said once, here: a Wayland client cannot
+// place its own window, read its position, or inject an event into its
+// own stream. The first two are the protocol's design and no extension
+// changes them; the third is why [`SysWindow::selfCheck`] proves what a
+// client *can* provoke and claims nothing about the rest.
+
+use crate::core::error::PlatformError;
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::platform::wayland::wl_drawable::{
+    commitFrame, detachFrame, dropDrawable, ensureBuffers, freeSlot, initDrawable, releaseBuffers,
+    WlDrawable, WL_NO_SLOT,
+};
+use crate::sys::wl_token::WlApp;
+use crate::sys::wl_args::WlArgs;
+use crate::sys::wl_core::WlCore;
+use crate::sys::wl_lib::{wl_display_roundtrip, wl_proxy_add_listener};
+use crate::sys::wl_libc::cstr;
+use crate::sys::wl_request::{WL_DISPLAY_SYNC, WL_SURFACE_COMMIT};
+use crate::sys::xdg_shell::XDG_TOPLEVEL_SET_TITLE;
+use crate::video::wayland::wl_win_events::onSyncDone;
+use crate::video::wayland::wl_win_state::{WlCallbackListener, WlWinState};
+use crate::video::wayland::wl_window_ops::{createWindow, destroyWindow, initState};
+
+pub class SysWindow : Closeable {
+    /** The state block both sides address. */
+    mem : Blob;
+
+    /** The drawable handed to the blit. */
+    token : Blob;
+
+    /** The connection's record, for the proxies a request needs. */
+    app : ptr;
+
+    /** This window's own argument block — see [`WlArgs`]. */
+    args : WlArgs;
+
+    constructor(
+        app : ptr,
+        title : string,
+        w : i32,
+        h : i32,
+        resizable : bool,
+        borderless : bool,
+        hidden : bool
+    ) ! PlatformError {
+        unsafe {
+            self.app = app;
+            self.args = new WlArgs();
+            self.mem = new Blob(sizeof<WlWinState>());
+            self.token = new Blob(sizeof<WlDrawable>());
+            Raw::clear(self.mem.at(), sizeof<WlWinState>());
+            Raw::clear(self.token.at(), sizeof<WlDrawable>());
+
+            let a : ptr<WlApp> = app as ptr<WlApp>;
+            let core : ptr<WlCore> = (*a).core as ptr<WlCore>;
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            (*st).display = (*a).display;
+            (*st).wmBase = (*a).wmBase;
+            (*st).w = w;
+            (*st).h = h;
+            (*st).focused = 1;
+            initState(st);
+
+            createWindow(st, a, self.args, title, w, h, resizable)?;
+
+            let target : ptr<WlDrawable> = self.token.at() as ptr<WlDrawable>;
+            (*target).display = (*a).display;
+            (*target).surface = (*st).surface;
+            (*target).shm = (*a).shm;
+            (*target).shmPoolIface = (*core).shmPool;
+            (*target).bufferIface = (*core).buffer;
+            initDrawable(target);
+            if (!ensureBuffers(target, self.args, w, h)) {
+                throw PlatformError("the compositor refused a shared-memory buffer");
+            }
+            if (!hidden) {
+                commitFrame(target, self.args, freeSlot(target));
+            }
+        }
+    }
+
+    /** The drawable `SysBlit::present` writes onto. */
+    fn surface(self) : ptr {
+        return self.token.at();
+    }
+
+    /**
+     * The window's identity.
+     *
+     * The `wl_surface` proxy: what the pointer's `set_cursor` names and
+     * what an event's surface argument is compared against.
+     */
+    fn handle(self) : ptr {
+        unsafe {
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            return (*st).surface;
+        }
+    }
+
+    /** Client-area width, in pixels. */
+    fn width(self) : i32 {
+        unsafe {
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            return (*st).w;
+        }
+    }
+
+    /** Client-area height, in pixels. */
+    fn height(self) : i32 {
+        unsafe {
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            return (*st).h;
+        }
+    }
+
+    /**
+     * Whether the compositor still has this window.
+     *
+     * A close is a *request*: the callback records it and does not obey,
+     * so the window stays valid until `close()` — which is what lets a
+     * game prompt, save, or refuse. A connection that has failed is the
+     * other way out, and `SysDrain` is what notices it.
+     */
+    fn alive(self) : bool {
+        unsafe {
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            return (*st).destroyed == 0;
+        }
+    }
+
+    /** Put a buffer back on the surface. */
+    fn show(mut self) : void {
+        unsafe {
+            let target : ptr<WlDrawable> = self.token.at() as ptr<WlDrawable>;
+            let index = freeSlot(target);
+            if (index != WL_NO_SLOT) {
+                commitFrame(target, self.args, index);
+            }
+        }
+    }
+
+    /**
+     * Take the buffer off.
+     *
+     * Wayland has no hide call: a surface with no buffer is a surface
+     * with nothing to show, and that is what a hidden window is.
+     */
+    fn hide(mut self) : void {
+        unsafe {
+            let target : ptr<WlDrawable> = self.token.at() as ptr<WlDrawable>;
+            detachFrame(target, self.args);
+        }
+    }
+
+    /** Replace the title bar text. */
+    fn setTitle(mut self, title : string) : void {
+        unsafe {
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            self.args.set(0, cstr(title) as i64);
+            self.args.send((*st).toplevel, XDG_TOPLEVEL_SET_TITLE, Raw::nil(), 0);
+        }
+    }
+
+    /** Whether a close was requested, clearing the request. */
+    fn takeClose(mut self) : bool {
+        unsafe {
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let pending = (*st).closePending != 0;
+            (*st).closePending = 0;
+            return pending;
+        }
+    }
+
+    /**
+     * Adopt a waiting resize, answering whether the client size changed.
+     *
+     * A zero extent is refused and so is a repeat: a compositor
+     * configures a surface for reasons other than a resize, and adopting
+     * one of those would rebuild the framebuffer for nothing.
+     */
+    fn takeResize(mut self) : bool {
+        unsafe {
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            if ((*st).sizePending == 0) {
+                return false;
+            }
+            (*st).sizePending = 0;
+            if ((*st).pendingW <= 0 || (*st).pendingH <= 0) {
+                return false;
+            }
+            if ((*st).pendingW == (*st).w && (*st).pendingH == (*st).h) {
+                return false;
+            }
+            (*st).w = (*st).pendingW;
+            (*st).h = (*st).pendingH;
+            return true;
+        }
+    }
+
+    /** Whether a focus edge is waiting, clearing it. */
+    fn takeFocusEdge(mut self) : bool {
+        unsafe {
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let pending = (*st).focusPending != 0;
+            (*st).focusPending = 0;
+            return pending;
+        }
+    }
+
+    /** Whether the window holds input focus. */
+    fn focused(self) : bool {
+        unsafe {
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            return (*st).focused != 0;
+        }
+    }
+
+    /** Whether a minimise / restore edge is waiting, clearing it. */
+    fn takeMinimiseEdge(mut self) : bool {
+        unsafe {
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let pending = (*st).minimisePending != 0;
+            (*st).minimisePending = 0;
+            return pending;
+        }
+    }
+
+    /**
+     * Whether the window is minimised.
+     *
+     * Always `false`: `xdg_toplevel.set_minimized` is a request a client
+     * may send and there is no state that comes back, so a compositor
+     * that minimised a window tells the client by not sending frame
+     * callbacks — which is a rate, not a fact. Reporting `false` is the
+     * honest answer to a question this protocol does not answer.
+     */
+    fn minimised(self) : bool {
+        return false;
+    }
+
+    /**
+     * Run the platform's event path against this window — 0 when it
+     * worked, otherwise which step did not.
+     *
+     * Two steps, and between them they are the whole decode path.
+     *
+     *   1. A `wl_display.sync` with a listener of ours on the callback
+     *      it creates. The compositor **must** answer a sync, so this is
+     *      the one event a client can provoke — and a `done` that
+     *      reaches our function has crossed the wire, been matched
+     *      against an interface table and been dispatched into a
+     *      listener this port installed.
+     *   2. The surface has been configured. That one came back through
+     *      the table built in [`crate::sys::xdg_shell`], so it is the
+     *      hand-built half of the vocabulary answering rather than
+     *      `libwayland`'s own.
+     *
+     * A bare commit would prove neither: a compositor configures a
+     * surface when its state changes and answers a redundant commit with
+     * silence, which is a working event path reporting nothing.
+     *
+     * The other three steps the Win32 and X11 paths check are not
+     * provokable here — a focus edge and a close are the compositor's to
+     * send, and it sends them when a person acts. So this claims nothing
+     * about them. It leaves one resize pending, as the other two paths
+     * do, so the caller's next pump has a `WindowResized` to deliver.
+     */
+    fn selfCheck(mut self, width : i32, height : i32) : i32 {
+        unsafe {
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let a : ptr<WlApp> = self.app as ptr<WlApp>;
+            let core : ptr<WlCore> = (*a).core as ptr<WlCore>;
+
+            if (!syncRoundTrip(st, core, self.args)) {
+                return 1;
+            }
+            if ((*st).configured == 0) {
+                return 2;
+            }
+            // The pending resize is a difference, never a flag: a size
+            // the pump reads back as unchanged is one it refuses, so the
+            // notice is armed against the size in force.
+            (*st).pendingW = width;
+            (*st).pendingH = height;
+            (*st).sizePending = 1;
+            return 0;
+        }
+    }
+
+    /** Destroy the buffers, then the objects, then the blocks. */
+    fn close(self) : void {
+        unsafe {
+            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            if ((*st).destroyed != 0) {
+                return;
+            }
+            let target : ptr<WlDrawable> = self.token.at() as ptr<WlDrawable>;
+            releaseBuffers(target, self.args);
+            dropDrawable(target);
+            destroyWindow(st, self.args);
+            self.args.close();
+            self.token.close();
+            self.mem.close();
+        }
+    }
+}

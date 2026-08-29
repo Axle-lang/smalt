@@ -1,0 +1,113 @@
+// wl_win_state — the block both sides of a window address.
+//
+// The compositor's notices arrive as C callbacks handed one `void *` and
+// nothing else, so what they write has to be a record with an address —
+// not fields on a class. Same shape as the Win32 backend's
+// `WinProcState`, for the same reason; on X11 the latches are the
+// window class's own fields, because there the notices arrive on the
+// connection the drain is already reading.
+//
+// `i32` rather than `bool` throughout: this record is addressed from two
+// sides and a one-byte field would leave the neighbours' offsets
+// depending on how each side rounds.
+//
+// The listener blocks hang off it one pointer each. `libwayland` keeps
+// the address it was given for the life of the proxy, so each has to
+// outlive the window and no longer, which is what a block this record
+// owns and `wl_window_ops::destroyWindow` releases gives them.
+
+/** Words in the input ring — four per record. */
+pub const WL_RING_WORDS : i64 = 512;
+
+/** Words per record: a kind, then two payloads and a spare. */
+pub const WL_RING_STRIDE : i64 = 4;
+
+/** The latches, the proxies, and the input the callbacks leave behind. */
+pub extern "C" struct WlWinState {
+    // ── What the frame loop reads and clears ──────────────────────
+    pub closePending : i32;
+    pub destroyed : i32;
+    pub sizePending : i32;
+    pub pendingW : i32;
+    pub pendingH : i32;
+    pub w : i32;
+    pub h : i32;
+    pub focused : i32;
+    pub focusPending : i32;
+    pub minimised : i32;
+    pub minimisePending : i32;
+
+    /** Set by the first `xdg_surface.configure`; a window is not one until. */
+    pub configured : i32;
+
+    /** Set by a `wl_callback.done` this window asked for. */
+    pub syncDone : i32;
+
+    /** Whether the seat's devices have been pointed at this window yet. */
+    pub inputBound : i32;
+
+    /**
+     * The mode the compositor answered the decoration request with:
+     * 1 client-side, 2 server-side, 0 when it was never asked.
+     *
+     * Recorded rather than acted on. A client that drew its own frame
+     * would read this to know whether to; this library does not, so the
+     * value is what a reader consults when a window has no title bar.
+     */
+    pub decorationMode : i32;
+
+    /**
+     * The serial of the last `wl_pointer.enter`.
+     *
+     * `set_cursor` is accepted only against the enter that gave this
+     * surface the pointer — a client may not restyle a cursor that is
+     * somewhere else. Zero means the pointer has never been over this
+     * window, and no cursor request may be sent.
+     */
+    pub pointerSerial : u32;
+
+    // ── The proxies a callback answers on ─────────────────────────
+    pub display : ptr;
+    pub wmBase : ptr;
+    pub surface : ptr;
+    pub xdgSurface : ptr;
+    pub toplevel : ptr;
+    pub decoration : ptr;
+
+    /** Eight words the configure acknowledgement is marshalled from. */
+    pub ackArgs : ptr;
+
+    // ── The subscriptions, one block each ─────────────────────────
+    pub surfaceListener : ptr;
+    pub toplevelListener : ptr;
+    pub decorationListener : ptr;
+    pub syncListener : ptr;
+    pub keyboardListener : ptr;
+    pub pointerListener : ptr;
+
+    // ── What the seat's callbacks leave for the drain ─────────────
+    pub head : i32;
+    pub tail : i32;
+    pub ring : i64[512];
+}
+
+/** `struct xdg_surface_listener`. */
+pub extern "C" struct XdgSurfaceListener {
+    pub configure : extern "C" (ptr, ptr, u32) => void;
+}
+
+/** `struct xdg_toplevel_listener` at version 1 — configure, then close. */
+pub extern "C" struct XdgToplevelListener {
+    pub configure : extern "C" (ptr, ptr, i32, i32, ptr) => void;
+    pub close : extern "C" (ptr, ptr) => void;
+}
+
+/** `struct zxdg_toplevel_decoration_v1_listener` — one event. */
+pub extern "C" struct XdgDecorationListener {
+    pub configure : extern "C" (ptr, ptr, u32) => void;
+}
+
+/** `struct wl_callback_listener` — one event, and it fires once. */
+pub extern "C" struct WlCallbackListener {
+    pub done : extern "C" (ptr, ptr, u32) => void;
+}

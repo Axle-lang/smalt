@@ -1,0 +1,115 @@
+// wl_win_events — what the compositor says about one window.
+//
+// Five callbacks, and between them the whole of a window's protocol
+// life: the state handshake, the size the compositor would like, the
+// close a person asked for, the decoration mode it settled on, and the
+// answer to a sync.
+//
+// Free functions because what is handed to the C library is a named
+// function's own address. None of them may throw — the unwind would
+// cross a `libwayland` frame with no landing pad for one, which the
+// compiler refuses at the boundary (E0748) — so each writes through the
+// `data` pointer its subscription carried and decides nothing.
+//
+// None of them allocates either. A callback runs inside
+// `wl_display_dispatch_pending`, which a frame loop calls every frame,
+// and the one request made from here — the configure acknowledgement —
+// is marshalled from a block the window allocated once and left on the
+// state record for exactly this.
+
+use crate::kernel::raw::Raw;
+use crate::sys::wl_lib::wl_proxy_marshal_array_flags;
+use crate::sys::wl_table::{recordAt, WL_WORD_BYTES};
+use crate::sys::xdg_shell::XDG_SURFACE_ACK_CONFIGURE;
+use crate::video::wayland::wl_win_state::WlWinState;
+
+/**
+ * `xdg_surface.configure` — the compositor has settled this surface's
+ * state, and nothing may be drawn until it is acknowledged.
+ *
+ * The acknowledgement is sent from here rather than left to the frame
+ * loop, because it is the compositor's half of a handshake and not an
+ * event: a surface with an unacknowledged configure shows nothing,
+ * however many buffers are committed to it.
+ */
+pub fn onSurfaceConfigure(data : ptr, xdgSurface : ptr, serial : u32) : void {
+    unsafe {
+        let st : ptr<WlWinState> = data as ptr<WlWinState>;
+        let slot : ptr<i64> = recordAt((*st).ackArgs, 0, WL_WORD_BYTES) as ptr<i64>;
+        (*slot) = serial as i64;
+        wl_proxy_marshal_array_flags(
+            xdgSurface,
+            XDG_SURFACE_ACK_CONFIGURE,
+            Raw::nil(),
+            0,
+            0,
+            (*st).ackArgs
+        );
+        (*st).configured = 1;
+    }
+}
+
+/**
+ * `xdg_toplevel.configure` — a size the compositor would like, and the
+ * states it is in.
+ *
+ * A zero extent means "choose for yourself", which is what an
+ * unconstrained toplevel is told at startup and is not a resize. A
+ * repeat of the size already pending is not one either: a compositor
+ * configures a surface for reasons other than a size change, and
+ * adopting one of those would rebuild the framebuffer for nothing.
+ */
+pub fn onToplevelConfigure(
+    data : ptr,
+    toplevel : ptr,
+    width : i32,
+    height : i32,
+    states : ptr
+) : void {
+    unsafe {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        let st : ptr<WlWinState> = data as ptr<WlWinState>;
+        if (width == (*st).pendingW && height == (*st).pendingH) {
+            return;
+        }
+        (*st).pendingW = width;
+        (*st).pendingH = height;
+        (*st).sizePending = 1;
+    }
+}
+
+/** `xdg_toplevel.close` — the user asked; the client decides. */
+pub fn onToplevelClose(data : ptr, toplevel : ptr) : void {
+    unsafe {
+        let st : ptr<WlWinState> = data as ptr<WlWinState>;
+        (*st).closePending = 1;
+    }
+}
+
+/**
+ * `zxdg_toplevel_decoration_v1.configure` — the mode the compositor will
+ * actually use, which is its answer and not the client's request.
+ */
+pub fn onDecorationConfigure(data : ptr, decoration : ptr, mode : u32) : void {
+    unsafe {
+        let st : ptr<WlWinState> = data as ptr<WlWinState>;
+        (*st).decorationMode = mode as i32;
+    }
+}
+
+/**
+ * `wl_callback.done` — the answer to a `wl_display.sync`.
+ *
+ * A compositor must send it, which is what makes a sync the one event a
+ * client can provoke: a `done` that arrives here has crossed the wire,
+ * been matched against an interface table, and been dispatched into a
+ * listener of ours.
+ */
+pub fn onSyncDone(data : ptr, callback : ptr, serial : u32) : void {
+    unsafe {
+        let st : ptr<WlWinState> = data as ptr<WlWinState>;
+        (*st).syncDone = 1;
+    }
+}

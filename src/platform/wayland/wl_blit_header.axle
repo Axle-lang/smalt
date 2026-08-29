@@ -1,0 +1,19 @@
+// wl_blit_header — the layout the pixels handed to the blit are read as.
+//
+// Each port has one of these and each is that platform's own record: a
+// `BITMAPINFO` for GDI, an `XImage` for X11, both declared away from the
+// seam because a seam file declares the seam and nothing else — a type
+// named in one port's `sys_blit` and not another's is a name the port
+// check reads as a shape a portable file could see two of.
+//
+// Wayland's put request carries no description at all: the extent and
+// the format were fixed when the buffer was created, so this is the
+// description rather than an argument.
+
+/** The current buffer's extent and format. */
+pub extern "C" struct WlBlitHeader {
+    pub width : i32;
+    pub height : i32;
+    pub stride : i32;
+    pub format : i32;
+}

@@ -1,0 +1,32 @@
+// wl_screen_probe — one connection, one question, one close.
+//
+// Away from the seam because a seam file declares the seam and nothing
+// else: the port check reads every name in `sys_screen.axle` as part of
+// the shape a portable file sees, and a helper one port has is a name
+// the others would have to grow for no reason.
+
+use crate::kernel::raw::Raw;
+use crate::sys::wl_app::{connect, disconnect, WlApp};
+
+/**
+ * The first output's current mode, as a width or a height.
+ *
+ * A game asks in order to *choose* a window size, which is before it has
+ * a connection to borrow — so this opens one of its own and closes it.
+ */
+pub fn measure(wantWidth : bool) : i32 {
+    unsafe {
+        let token = connect();
+        if (Raw::isNil(token)) {
+            return 0;
+        }
+        let app : ptr<WlApp> = token as ptr<WlApp>;
+        let w = (*app).screenW;
+        let h = (*app).screenH;
+        disconnect(token);
+        if (wantWidth) {
+            return w;
+        }
+        return h;
+    }
+}

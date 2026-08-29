@@ -1,0 +1,137 @@
+// wl_globals — what the compositor offers, and how one is taken up.
+//
+// A Wayland connection answers nothing by itself. A client asks the
+// registry what globals exist, is told each one's *name* — a number for
+// this connection only — and binds the ones it wants. This file is that
+// conversation: the callbacks that hear the offers, and the request that
+// accepts one.
+//
+// The callbacks are free functions because what is handed to the C
+// library is a named function's own address. They may not throw — the
+// unwind would cross a `libwayland` frame with no landing pad for one,
+// which the compiler refuses at the boundary (E0748) — so each writes
+// through the `data` pointer its subscription carried and decides
+// nothing. Deciding is [`crate::sys::wl_app::connect`]'s job, once the
+// sweep has finished.
+
+use crate::sys::wl_args::WlArgs;
+use crate::sys::wl_libc::{cstr, cstrcmp};
+use crate::sys::wl_token::WlApp;
+use crate::sys::wl_request::{WL_BIND_VERSION, WL_REGISTRY_BIND};
+
+/** `wl_output.mode`'s `current` bit: the mode the monitor is actually in. */
+const WL_OUTPUT_MODE_CURRENT : i32 = 1;
+
+/** One global the compositor offers; the name is what a bind quotes. */
+pub fn onGlobal(data : ptr, registry : ptr, name : u32, iface : ptr, version : u32) : void {
+    unsafe {
+        let app : ptr<WlApp> = data as ptr<WlApp>;
+        if (cstrcmp(iface, "wl_compositor") == 0) {
+            (*app).compositorName = name;
+        }
+        if (cstrcmp(iface, "wl_shm") == 0) {
+            (*app).shmName = name;
+        }
+        if (cstrcmp(iface, "xdg_wm_base") == 0) {
+            (*app).wmBaseName = name;
+        }
+        if (cstrcmp(iface, "wl_seat") == 0) {
+            (*app).seatName = name;
+        }
+        if (cstrcmp(iface, "wl_output") == 0) {
+            (*app).outputName = name;
+        }
+        if (cstrcmp(iface, "zxdg_decoration_manager_v1") == 0) {
+            (*app).decorationName = name;
+        }
+    }
+}
+
+/**
+ * A global went away.
+ *
+ * Nothing to do: this port binds its globals once at startup and holds
+ * them for the run, and a compositor that withdraws `wl_compositor`
+ * mid-session has ended the session by other means.
+ */
+pub fn onGlobalRemove(data : ptr, registry : ptr, name : u32) : void {
+}
+
+/** The monitor's physical placement — not what a window size wants. */
+pub fn onOutputGeometry(
+    data : ptr,
+    output : ptr,
+    x : i32,
+    y : i32,
+    physW : i32,
+    physH : i32,
+    subpixel : i32,
+    make : ptr,
+    model : ptr,
+    transform : i32
+) : void {
+}
+
+/** One of the monitor's modes; only the current one is the screen size. */
+pub fn onOutputMode(
+    data : ptr,
+    output : ptr,
+    flags : u32,
+    width : i32,
+    height : i32,
+    refresh : i32
+) : void {
+    unsafe {
+        if (((flags % 2) as i32) != WL_OUTPUT_MODE_CURRENT) {
+            return;
+        }
+        let app : ptr<WlApp> = data as ptr<WlApp>;
+        (*app).screenW = width;
+        (*app).screenH = height;
+    }
+}
+
+pub fn onOutputDone(data : ptr, output : ptr) : void {}
+pub fn onOutputScale(data : ptr, output : ptr, factor : i32) : void {}
+pub fn onOutputName(data : ptr, output : ptr, name : ptr) : void {}
+pub fn onOutputDescription(data : ptr, output : ptr, description : ptr) : void {}
+
+/**
+ * Which input devices the seat has.
+ *
+ * Load-bearing, not informational: asking a seat for a keyboard it does
+ * not report is a protocol error, so this answer is what decides whether
+ * the request is made at all.
+ */
+pub fn onSeatCapabilities(data : ptr, seat : ptr, caps : u32) : void {
+    unsafe {
+        let app : ptr<WlApp> = data as ptr<WlApp>;
+        (*app).seatCaps = caps;
+    }
+}
+
+pub fn onSeatName(data : ptr, seat : ptr, name : ptr) : void {}
+
+/**
+ * `wl_registry.bind` — signature "usun": the global's name, the
+ * interface being asked for, its version, and the new object.
+ *
+ * The interface name travels as a string *and* as a table, because the
+ * compositor matches on the string while `libwayland` marshals the rest
+ * of this object's life against the table.
+ */
+pub fn bindGlobal(
+    args : WlArgs,
+    registry : ptr,
+    name : u32,
+    iface : ptr,
+    ifaceName : string
+) : ptr {
+    unsafe {
+        args.set(0, name as i64);
+        args.set(1, cstr(ifaceName) as i64);
+        args.set(2, WL_BIND_VERSION as i64);
+        args.set(3, 0);
+        return args.send(registry, WL_REGISTRY_BIND, iface, WL_BIND_VERSION);
+    }
+}

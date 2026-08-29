@@ -1,0 +1,349 @@
+// wl_drawable — what a window hands the blit, and the shared memory
+// behind it.
+//
+// The Wayland twin of `platform::x_surface`, and it holds more because
+// there is less. On X11 the drawable is a server-side resource and a
+// blit is a request carrying pixels; Wayland has no server-side drawable
+// at all. A client maps a file, tells the compositor "this region of
+// that file is a buffer", and from then on both sides read the same
+// pages — so the drawable *is* the mapping, and presenting is three
+// requests with the pixels already in place.
+//
+// # Two buffers, not one
+//
+// A committed `wl_buffer` belongs to the compositor until it says
+// otherwise: it may read those pages at any moment up to the frame being
+// finished with. Writing the next frame into the same pages is therefore
+// a race whose visible form is tearing and whose invisible form is a
+// compositor scanning out half of one frame and half of another.
+//
+// So there are two, one pool, and `wl_buffer.release` is the compositor
+// saying it has let go of one. A frame is written into whichever is
+// free; when neither is, the frame is dropped rather than drawn over a
+// buffer in use — the same choice a `wl_surface.frame` throttle would
+// make one step earlier.
+//
+// The pair is remade when the size changes and not otherwise. That is
+// the whole of the resize path: a `wl_buffer` names an extent, so a
+// window that grew needs new ones, and the pool goes back with them.
+
+use crate::kernel::raw::Raw;
+use crate::sys::wl_args::WlArgs;
+use crate::sys::wl_lib::wl_proxy_add_listener;
+use crate::sys::wl_libc::{
+    closeFd, ftruncate, memfdCreate, mmap, munmap, MAP_SHARED, MFD_CLOEXEC, PROT_READ_WRITE,
+};
+use crate::sys::wl_request::{
+    WL_BUFFER_DESTROY, WL_SHM_CREATE_POOL, WL_SHM_FORMAT_XRGB8888, WL_SHM_POOL_CREATE_BUFFER,
+    WL_SHM_POOL_DESTROY, WL_SURFACE_ATTACH, WL_SURFACE_COMMIT, WL_SURFACE_DAMAGE,
+};
+
+/** Bytes per pixel, `XRGB8888`. */
+pub const WL_PIXEL_BYTES : i64 = 4;
+
+/** Buffers in the rotation. Two is what "not the one in use" needs. */
+pub const WL_BUFFER_COUNT : i64 = 2;
+
+/** No buffer is free — the answer [`freeSlot`] gives when both are out. */
+pub const WL_NO_SLOT : i64 = -1;
+
+/** `struct wl_buffer_listener` — one event, and it means "yours again". */
+pub extern "C" struct BufferListener {
+    pub release : extern "C" (ptr, ptr) => void;
+}
+
+/**
+ * One of the pair: a proxy, the pages behind it, and whether the
+ * compositor still has it.
+ *
+ * Its own block rather than a field of the drawable, because its address
+ * is what the subscription carries: the release callback is handed this
+ * record and writes one field, so which buffer was released is the
+ * subscription's to remember rather than the callback's to work out.
+ */
+pub extern "C" struct WlSlot {
+    pub proxy : ptr;
+    pub pixels : ptr;
+
+    /** Non-zero while the compositor may still be reading these pages. */
+    pub busy : i32;
+    pub reserved : i32;
+}
+
+/**
+ * What a window hands `SysBlit::present`.
+ *
+ * Every field the blit needs and nothing it does not: the surface to
+ * commit on, the slots to write into, and what a resize needs to make
+ * new ones with.
+ */
+pub extern "C" struct WlDrawable {
+    pub display : ptr;
+    pub surface : ptr;
+    pub shm : ptr;
+    pub pool : ptr;
+    pub shmPoolIface : ptr;
+    pub bufferIface : ptr;
+
+    /** `WL_BUFFER_COUNT` [`WlSlot`] records, and the listener they share. */
+    pub slots : ptr;
+    pub listener : ptr;
+
+    /** The base of the mapping, which slot 0 starts at. */
+    pub mapping : ptr;
+
+    pub fd : i32;
+    pub width : i32;
+    pub height : i32;
+    pub reserved : i32;
+    pub mapBytes : i64;
+}
+
+/**
+ * `wl_buffer.release` — the compositor has finished with these pages.
+ *
+ * The `data` pointer is the slot's own record, so this writes one field
+ * and reads nothing.
+ */
+pub fn onBufferRelease(data : ptr, buffer : ptr) : void {
+    unsafe {
+        let slot : ptr<WlSlot> = data as ptr<WlSlot>;
+        (*slot).busy = 0;
+    }
+}
+
+/**
+ * Give a freshly-cleared drawable the blocks it addresses for the rest
+ * of its life.
+ *
+ * Separate from the buffers: these two outlive any number of resizes,
+ * and the listener's address in particular is held by `libwayland` for
+ * as long as a buffer subscribed with it exists.
+ */
+pub fn initDrawable(target : ptr<WlDrawable>) : void {
+    unsafe {
+        (*target).slots = Raw::take(WL_BUFFER_COUNT * sizeof<WlSlot>());
+        Raw::clear((*target).slots, WL_BUFFER_COUNT * sizeof<WlSlot>());
+        (*target).listener = Raw::take(sizeof<BufferListener>());
+        let listener : ptr<BufferListener> = (*target).listener as ptr<BufferListener>;
+        (*listener).release = onBufferRelease;
+        (*target).fd = -1;
+    }
+}
+
+/** Release the blocks [`initDrawable`] made. */
+pub fn dropDrawable(target : ptr<WlDrawable>) : void {
+    unsafe {
+        Raw::release((*target).listener);
+        Raw::release((*target).slots);
+        (*target).listener = Raw::nil();
+        (*target).slots = Raw::nil();
+    }
+}
+
+/** Slot `index`'s record. */
+pub fn slotAt(target : ptr<WlDrawable>, index : i64) : ptr<WlSlot> {
+    unsafe {
+        return Raw::at(Raw::addr((*target).slots) + (index * sizeof<WlSlot>())) as ptr<WlSlot>;
+    }
+}
+
+/**
+ * Make the drawable's buffers `w` by `h`, replacing what it had.
+ *
+ * Answers `false` when the kernel or the compositor refused, which the
+ * caller reports as a window that could not be created — or, on a
+ * resize, as a frame that is not drawn.
+ */
+pub fn ensureBuffers(target : ptr<WlDrawable>, args : WlArgs, w : i32, h : i32) : bool {
+    unsafe {
+        if (w <= 0 || h <= 0) {
+            return false;
+        }
+        if ((*target).width == w && (*target).height == h && !Raw::isNil((*target).pool)) {
+            return true;
+        }
+        releaseBuffers(target, args);
+
+        let stride : i64 = (w as i64) * WL_PIXEL_BYTES;
+        let frameBytes : i64 = stride * (h as i64);
+        let bytes : i64 = frameBytes * WL_BUFFER_COUNT;
+        if (!mapPool(target, args, bytes)) {
+            return false;
+        }
+        (*target).width = w;
+        (*target).height = h;
+
+        for (i of 0..WL_BUFFER_COUNT) {
+            if (!makeBuffer(target, args, i, i * frameBytes, stride)) {
+                releaseBuffers(target, args);
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+/**
+ * The index of a buffer the compositor is not reading, or
+ * [`WL_NO_SLOT`].
+ *
+ * No free buffer is a frame that will not be drawn, and that is the
+ * honest answer: the alternative is writing into pages the compositor
+ * may be scanning out, which is the tear the pair exists to prevent.
+ */
+pub fn freeSlot(target : ptr<WlDrawable>) : i64 {
+    unsafe {
+        for (i of 0..WL_BUFFER_COUNT) {
+            if ((*slotAt(target, i)).busy == 0) {
+                return i;
+            }
+        }
+        return WL_NO_SLOT;
+    }
+}
+
+/**
+ * Attach slot `index`, mark the whole surface damaged, and commit — the
+ * three requests that put what was written on screen.
+ *
+ * The buffer is the compositor's from here until its `release`, which is
+ * what [`WlSlot::busy`] records.
+ */
+pub fn commitFrame(target : ptr<WlDrawable>, args : WlArgs, index : i64) : void {
+    unsafe {
+        if (index < 0) {
+            return;
+        }
+        let slot : ptr<WlSlot> = slotAt(target, index);
+        if (Raw::isNil((*slot).proxy)) {
+            return;
+        }
+        (*slot).busy = 1;
+
+        // `wl_surface.attach` — "?oii".
+        args.setObject(0, (*slot).proxy);
+        args.set(1, 0);
+        args.set(2, 0);
+        args.send((*target).surface, WL_SURFACE_ATTACH, Raw::nil(), 0);
+
+        // `wl_surface.damage` — "iiii".
+        args.set(0, 0);
+        args.set(1, 0);
+        args.set(2, (*target).width as i64);
+        args.set(3, (*target).height as i64);
+        args.send((*target).surface, WL_SURFACE_DAMAGE, Raw::nil(), 0);
+
+        args.send((*target).surface, WL_SURFACE_COMMIT, Raw::nil(), 0);
+    }
+}
+
+/** Take the buffer off the surface: a surface with none shows nothing. */
+pub fn detachFrame(target : ptr<WlDrawable>, args : WlArgs) : void {
+    unsafe {
+        args.setObject(0, Raw::nil());
+        args.set(1, 0);
+        args.set(2, 0);
+        args.send((*target).surface, WL_SURFACE_ATTACH, Raw::nil(), 0);
+        args.send((*target).surface, WL_SURFACE_COMMIT, Raw::nil(), 0);
+    }
+}
+
+/** Give the buffers, the pool, the mapping and the descriptor back. */
+pub fn releaseBuffers(target : ptr<WlDrawable>, args : WlArgs) : void {
+    unsafe {
+        for (i of 0..WL_BUFFER_COUNT) {
+            let slot : ptr<WlSlot> = slotAt(target, i);
+            args.sendDestroy((*slot).proxy, WL_BUFFER_DESTROY);
+            (*slot).proxy = Raw::nil();
+            (*slot).pixels = Raw::nil();
+            (*slot).busy = 0;
+        }
+        if (!Raw::isNil((*target).pool)) {
+            args.sendDestroy((*target).pool, WL_SHM_POOL_DESTROY);
+            (*target).pool = Raw::nil();
+        }
+        if (!Raw::isNil((*target).mapping)) {
+            // The compositor keeps its own reference to the file, so
+            // unmapping releases this process's view and nothing else.
+            munmap((*target).mapping, (*target).mapBytes);
+            (*target).mapping = Raw::nil();
+            (*target).mapBytes = 0;
+        }
+        if ((*target).fd >= 0) {
+            closeFd((*target).fd);
+            (*target).fd = -1;
+        }
+        (*target).width = 0;
+        (*target).height = 0;
+    }
+}
+
+/** An anonymous file of `bytes`, mapped here and handed to the compositor. */
+fn mapPool(target : ptr<WlDrawable>, args : WlArgs, bytes : i64) : bool {
+    unsafe {
+        let fd = memfdCreate("smalt-wl", MFD_CLOEXEC);
+        if (fd < 0) {
+            return false;
+        }
+        if (ftruncate(fd, bytes) != 0) {
+            closeFd(fd);
+            return false;
+        }
+        let mapping = mmap(Raw::nil(), bytes, PROT_READ_WRITE, MAP_SHARED, fd, 0);
+        if (Raw::isNil(mapping)) {
+            closeFd(fd);
+            return false;
+        }
+
+        // `wl_shm.create_pool` — "nhi": the new pool, the descriptor,
+        // the size. The descriptor crosses out-of-band, which is why a
+        // pool is the only way a client gives the compositor memory —
+        // and why one pool holds both frames rather than two holding one.
+        args.set(0, 0);
+        args.set(1, fd as i64);
+        args.set(2, bytes);
+        let pool = args.send((*target).shm, WL_SHM_CREATE_POOL, (*target).shmPoolIface, 1);
+        if (Raw::isNil(pool)) {
+            munmap(mapping, bytes);
+            closeFd(fd);
+            return false;
+        }
+
+        (*target).pool = pool;
+        (*target).fd = fd;
+        (*target).mapping = mapping;
+        (*target).mapBytes = bytes;
+        return true;
+    }
+}
+
+/** One buffer of the pair, at `offset` into the pool. */
+fn makeBuffer(
+    target : ptr<WlDrawable>,
+    args : WlArgs,
+    index : i64,
+    offset : i64,
+    stride : i64
+) : bool {
+    unsafe {
+        // `wl_shm_pool.create_buffer` — "niiiiu": offset, width,
+        // height, stride, format.
+        args.set(0, 0);
+        args.set(1, offset);
+        args.set(2, (*target).width as i64);
+        args.set(3, (*target).height as i64);
+        args.set(4, stride);
+        args.set(5, WL_SHM_FORMAT_XRGB8888);
+        let proxy = args.send((*target).pool, WL_SHM_POOL_CREATE_BUFFER, (*target).bufferIface, 1);
+        if (Raw::isNil(proxy)) {
+            return false;
+        }
+        let slot : ptr<WlSlot> = slotAt(target, index);
+        (*slot).proxy = proxy;
+        (*slot).pixels = Raw::at(Raw::addr((*target).mapping) + offset);
+        (*slot).busy = 0;
+        wl_proxy_add_listener(proxy, (*target).listener, slot as ptr);
+        return true;
+    }
+}

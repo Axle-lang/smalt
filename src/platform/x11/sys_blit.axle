@@ -45,7 +45,7 @@
 // shared segment cannot exist.
 
 use crate::kernel::blob::Blob;
-use crate::platform::x11::blit_scale::ScaleScratch;
+use crate::platform::blit_scale::ScaleScratch;
 use crate::kernel::raw::Raw;
 use crate::platform::x_surface::XSurface;
 use crate::sys::x11_lib::{XFlush, XInitImage, XPutImage};

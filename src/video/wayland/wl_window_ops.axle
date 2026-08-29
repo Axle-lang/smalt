@@ -1,0 +1,265 @@
+// wl_window_ops — making a window, taking it down, and the two things
+// this port's cursor and drain need out of one.
+//
+// Free functions rather than methods, because a seam's surface is the
+// same on every port: a method here would be a name `video::sys_window`
+// declares under Wayland and not under Win32 or X11, which is a call
+// that compiles for one target and fails for the others. The port check
+// rejects exactly that, and it is right to — a portable file must see
+// one shape whichever port answers it.
+//
+// # Three objects, in one order
+//
+// A `wl_surface` is a rectangle of pixels with no meaning; `xdg_surface`
+// gives it a role's protocol; `xdg_toplevel` is the role. Each is a
+// separate proxy and the order is fixed: a surface with no role cannot
+// be committed, and a role added after a buffer is a protocol error.
+// Then the decoration, which is a fourth object about the third.
+
+use crate::core::error::PlatformError;
+use crate::kernel::raw::Raw;
+use crate::sys::wl_token::WlApp;
+use crate::sys::wl_args::WlArgs;
+use crate::sys::wl_core::WlCore;
+use crate::sys::wl_lib::{wl_display_roundtrip, wl_proxy_add_listener};
+use crate::sys::wl_libc::cstr;
+use crate::sys::wl_request::{
+    WL_COMPOSITOR_CREATE_SURFACE, WL_DISPLAY_SYNC, WL_SURFACE_COMMIT, WL_SURFACE_DESTROY,
+};
+use crate::sys::wl_table::{WL_WORD_BYTES};
+use crate::sys::xdg_decoration::{
+    XdgDecorationTables, ZXDG_DECORATION_GET_TOPLEVEL, ZXDG_DECORATION_MODE_SERVER_SIDE,
+    ZXDG_TOPLEVEL_DECORATION_DESTROY, ZXDG_TOPLEVEL_DECORATION_SET_MODE,
+};
+use crate::sys::xdg_shell::{
+    XdgTables, XDG_SURFACE_DESTROY, XDG_SURFACE_GET_TOPLEVEL, XDG_TOPLEVEL_DESTROY,
+    XDG_TOPLEVEL_SET_APP_ID, XDG_TOPLEVEL_SET_MAX_SIZE, XDG_TOPLEVEL_SET_MIN_SIZE,
+    XDG_TOPLEVEL_SET_TITLE, XDG_WM_BASE_GET_XDG_SURFACE,
+};
+use crate::video::sys_window::SysWindow;
+use crate::video::wayland::wl_win_events::{
+    onDecorationConfigure, onSurfaceConfigure, onSyncDone, onToplevelClose, onToplevelConfigure,
+};
+use crate::video::wayland::wl_win_state::{
+    WlCallbackListener, WlWinState, XdgDecorationListener, XdgSurfaceListener, XdgToplevelListener,
+};
+
+/** Slots in the acknowledgement block — the same shape as [`WlArgs`]. */
+const ACK_ARGS_WORDS : i64 = 8;
+
+/** The block the compositor's callbacks write and the frame loop reads. */
+pub fn winState(win : SysWindow) : ptr {
+    return win.mem.at();
+}
+
+/** The connection record this window was created on. */
+pub fn winApp(win : SysWindow) : ptr {
+    return win.app;
+}
+
+/**
+ * Give a freshly-cleared state block the blocks it addresses for life.
+ *
+ * The listeners are separate allocations rather than fields because
+ * `libwayland` holds the address it was handed for the life of the
+ * proxy: each must be stable, and each must go when the window does.
+ */
+pub fn initState(st : ptr<WlWinState>) : void {
+    unsafe {
+        (*st).ackArgs = Raw::take(ACK_ARGS_WORDS * WL_WORD_BYTES);
+        (*st).surfaceListener = Raw::take(sizeof<XdgSurfaceListener>());
+        (*st).toplevelListener = Raw::take(sizeof<XdgToplevelListener>());
+        (*st).decorationListener = Raw::take(sizeof<XdgDecorationListener>());
+    }
+}
+
+/**
+ * Create the surface, its role and its decoration, and wait for the
+ * handshake that makes it a window.
+ *
+ * Raises rather than yielding a half-window: every method on the seam is
+ * written against a window that opened.
+ */
+pub fn createWindow(
+    st : ptr<WlWinState>,
+    app : ptr<WlApp>,
+    args : WlArgs,
+    title : string,
+    w : i32,
+    h : i32,
+    resizable : bool
+) : void ! PlatformError {
+    unsafe {
+        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        let xdg : ptr<XdgTables> = (*app).xdg as ptr<XdgTables>;
+
+        args.set(0, 0);
+        let surface = args.send((*app).compositor, WL_COMPOSITOR_CREATE_SURFACE, (*core).surface, 1);
+        if (Raw::isNil(surface)) {
+            throw PlatformError("wl_compositor.create_surface produced no surface");
+        }
+        (*st).surface = surface;
+
+        args.set(0, 0);
+        args.setObject(1, surface);
+        let xdgSurface = args.send((*app).wmBase, XDG_WM_BASE_GET_XDG_SURFACE, (*xdg).surface, 1);
+        if (Raw::isNil(xdgSurface)) {
+            throw PlatformError("xdg_wm_base.get_xdg_surface produced no surface");
+        }
+        (*st).xdgSurface = xdgSurface;
+        let surfaceListener : ptr<XdgSurfaceListener> =
+            (*st).surfaceListener as ptr<XdgSurfaceListener>;
+        (*surfaceListener).configure = onSurfaceConfigure;
+        wl_proxy_add_listener(xdgSurface, (*st).surfaceListener, st as ptr);
+
+        args.set(0, 0);
+        let toplevel = args.send(xdgSurface, XDG_SURFACE_GET_TOPLEVEL, (*xdg).toplevel, 1);
+        if (Raw::isNil(toplevel)) {
+            throw PlatformError("xdg_surface.get_toplevel produced no toplevel");
+        }
+        (*st).toplevel = toplevel;
+        let toplevelListener : ptr<XdgToplevelListener> =
+            (*st).toplevelListener as ptr<XdgToplevelListener>;
+        (*toplevelListener).configure = onToplevelConfigure;
+        (*toplevelListener).close = onToplevelClose;
+        wl_proxy_add_listener(toplevel, (*st).toplevelListener, st as ptr);
+
+        requestDecoration(st, app, args);
+        nameWindow(st, args, title);
+        if (!resizable) {
+            pinSize(st, args, w, h);
+        }
+
+        // The asking commit: no buffer, so the compositor answers with a
+        // configure rather than showing anything. Until that answer is
+        // acknowledged a surface shows nothing, which is why the caller
+        // may not return before it has arrived.
+        args.send(surface, WL_SURFACE_COMMIT, Raw::nil(), 0);
+        wl_display_roundtrip((*app).display);
+        if ((*st).configured == 0) {
+            throw PlatformError("the compositor never configured the surface");
+        }
+    }
+}
+
+/**
+ * Take the window down, innermost object first, and release the blocks
+ * the state record owns.
+ *
+ * Every destroy carries the flag that releases the client-side proxy
+ * with it: the request tells the compositor the object is gone, and the
+ * flag is what stops `libwayland` from holding the name for a window
+ * that has closed.
+ */
+pub fn destroyWindow(st : ptr<WlWinState>, args : WlArgs) : void {
+    unsafe {
+        args.sendDestroy((*st).decoration, ZXDG_TOPLEVEL_DECORATION_DESTROY);
+        (*st).decoration = Raw::nil();
+        args.sendDestroy((*st).toplevel, XDG_TOPLEVEL_DESTROY);
+        (*st).toplevel = Raw::nil();
+        args.sendDestroy((*st).xdgSurface, XDG_SURFACE_DESTROY);
+        (*st).xdgSurface = Raw::nil();
+        args.sendDestroy((*st).surface, WL_SURFACE_DESTROY);
+        (*st).surface = Raw::nil();
+
+        // After the proxies, never before: a listener block is what the
+        // library would dispatch an in-flight event into.
+        Raw::release((*st).pointerListener);
+        Raw::release((*st).keyboardListener);
+        Raw::release((*st).syncListener);
+        Raw::release((*st).decorationListener);
+        Raw::release((*st).toplevelListener);
+        Raw::release((*st).surfaceListener);
+        Raw::release((*st).ackArgs);
+        (*st).destroyed = 1;
+    }
+}
+
+/**
+ * Ask the compositor to draw the frame.
+ *
+ * Wayland has none by default — a toplevel is the client's pixels and
+ * nothing more — so a title bar exists only where this extension does
+ * and the compositor answers `SERVER_SIDE`. Where it does not, the
+ * window has no frame, and that is the desktop's answer rather than a
+ * failure of this call.
+ */
+fn requestDecoration(st : ptr<WlWinState>, app : ptr<WlApp>, args : WlArgs) : void {
+    unsafe {
+        if (Raw::isNil((*app).decorationManager)) {
+            return;
+        }
+        let decor : ptr<XdgDecorationTables> = (*app).decor as ptr<XdgDecorationTables>;
+        args.set(0, 0);
+        args.setObject(1, (*st).toplevel);
+        let decoration = args.send(
+            (*app).decorationManager, ZXDG_DECORATION_GET_TOPLEVEL, (*decor).decoration, 1
+        );
+        if (Raw::isNil(decoration)) {
+            return;
+        }
+        (*st).decoration = decoration;
+        let listener : ptr<XdgDecorationListener> =
+            (*st).decorationListener as ptr<XdgDecorationListener>;
+        (*listener).configure = onDecorationConfigure;
+        wl_proxy_add_listener(decoration, (*st).decorationListener, st as ptr);
+        args.set(0, ZXDG_DECORATION_MODE_SERVER_SIDE);
+        args.send(decoration, ZXDG_TOPLEVEL_DECORATION_SET_MODE, Raw::nil(), 0);
+    }
+}
+
+/** The title bar's text, and the identity a desktop groups windows by. */
+fn nameWindow(st : ptr<WlWinState>, args : WlArgs, title : string) : void {
+    unsafe {
+        args.set(0, cstr(title) as i64);
+        args.send((*st).toplevel, XDG_TOPLEVEL_SET_TITLE, Raw::nil(), 0);
+        args.set(0, cstr("smalt") as i64);
+        args.send((*st).toplevel, XDG_TOPLEVEL_SET_APP_ID, Raw::nil(), 0);
+    }
+}
+
+/**
+ * A fixed-size window is one whose bounds agree.
+ *
+ * A request, not a call: the compositor is free to ignore both, and what
+ * the player then gets is a window they can resize — not a failure.
+ */
+fn pinSize(st : ptr<WlWinState>, args : WlArgs, w : i32, h : i32) : void {
+    unsafe {
+        args.set(0, w as i64);
+        args.set(1, h as i64);
+        args.send((*st).toplevel, XDG_TOPLEVEL_SET_MAX_SIZE, Raw::nil(), 0);
+        args.set(0, w as i64);
+        args.set(1, h as i64);
+        args.send((*st).toplevel, XDG_TOPLEVEL_SET_MIN_SIZE, Raw::nil(), 0);
+    }
+}
+
+/**
+ * Ask the compositor for a sync and wait for our own callback to answer.
+ *
+ * The one event a client can provoke, and the whole decode path in one
+ * round trip: the request creates a `wl_callback`, the compositor must
+ * send its `done`, and the answer arrives by being matched against an
+ * interface table and dispatched into a listener installed here.
+ */
+pub fn syncRoundTrip(st : ptr<WlWinState>, core : ptr<WlCore>, args : WlArgs) : bool {
+    unsafe {
+        (*st).syncDone = 0;
+        args.set(0, 0);
+        let callback = args.send((*st).display, WL_DISPLAY_SYNC, (*core).callback, 1);
+        if (Raw::isNil(callback)) {
+            return false;
+        }
+        if (Raw::isNil((*st).syncListener)) {
+            (*st).syncListener = Raw::take(sizeof<WlCallbackListener>());
+        }
+        let listener : ptr<WlCallbackListener> = (*st).syncListener as ptr<WlCallbackListener>;
+        (*listener).done = onSyncDone;
+        wl_proxy_add_listener(callback, (*st).syncListener, st as ptr);
+        if (wl_display_roundtrip((*st).display) < 0) {
+            return false;
+        }
+        return (*st).syncDone != 0;
+    }
+}
