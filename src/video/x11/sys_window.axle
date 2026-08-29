@@ -317,6 +317,12 @@ pub class SysWindow : Closeable {
         let scratch = new Blob(X_EVENT_BYTES);
         defer scratch.close();
 
+        // The size on entry, kept for the re-arm at the end: what makes a
+        // notice pending here is that it *differs* from what is adopted,
+        // so the last step needs a size to differ from.
+        let entryW = self.w;
+        let entryH = self.h;
+
         if (!roundTrip(self, scratch, X_CONFIGURE_NOTIFY, width, height)) {
             return 1;
         }
@@ -355,8 +361,26 @@ pub class SysWindow : Closeable {
         // reads its latch by clearing it — which is the point of a latch
         // — and a caller that then found the queue empty would be
         // watching this function's bookkeeping rather than the event path.
-        roundTrip(self, scratch, X_CONFIGURE_NOTIFY, width, height);
-        self.sizePending = true;
+        //
+        // Here a pending resize is not a flag, it is a **difference**:
+        // `noteResize` drops a notice that repeats the pending pair and
+        // `takeResize` refuses one that matches the size already adopted,
+        // because X11 sends a `ConfigureNotify` for a move as readily as
+        // for a resize and a game must not rebuild its framebuffer when
+        // its window is dragged. Re-sending the size this check just
+        // adopted therefore arms nothing, and setting the flag by hand
+        // arms a latch the next `takeResize` throws away. So the adopted
+        // size goes back to the one found on entry and the notice below is
+        // a real change again — the caller's pump then adopts
+        // `width` × `height`, which is where the Win32 path leaves its own
+        // window, so a program sees one contract on both ports.
+        self.w = entryW;
+        self.h = entryH;
+        self.pendingW = entryW;
+        self.pendingH = entryH;
+        if (!roundTrip(self, scratch, X_CONFIGURE_NOTIFY, width, height)) {
+            return 7;
+        }
         return 0;
     }
 
