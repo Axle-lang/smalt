@@ -314,13 +314,22 @@ X11-only session. So the X11 build is the one that runs everywhere, and
 the Wayland one is what to build when a session has no Xwayland, or when
 X11's own limits are the problem.
 
-Switching is `wayland = true` under `[features]` in **smalt's** own
-`axle.toml`. A crate selects its port from its *own* features — a
-dependent never learns them — so a game cannot ask for the Wayland smalt
-from its manifest, and the compiler has no `--features` flag to ask with
-either. Both are gaps on the Axle side rather than design here, and
-closing them is what would make the choice a build flag instead of a
-one-line edit.
+Switching is a flag or a line, whichever fits:
+
+```bash
+axle build --features wayland          # the root crate
+```
+
+```toml
+# a game asking the library it uses
+smalt = { path = "../smalt", features = ["wayland"] }
+```
+
+The flag reaches the root crate; the manifest line is how a dependent
+asks, because a feature is declared in one manifest and the edge that
+names the crate is the only place that knows which one is meant. Both
+only ever *enable* — nothing takes a feature away from a crate that
+turned it on.
 
 Choosing at *run time* is a larger question. It would mean both backends
 in one binary behind a dispatch — the `RenderDevice` shape applied to the
