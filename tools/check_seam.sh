@@ -1,25 +1,32 @@
 #!/usr/bin/env bash
 # check_seam.sh — the library's one architectural invariant, enforced.
 #
-# smalt is portable because the operating system is confined to platform
-# overlay directories: `src/<area>/<os>/`. Everything else compiles for
-# every target. That sentence is worth nothing as prose — a single
-# `extern "C" from "user32"` in a file above the seam makes the Linux
-# build fail at the linker, a hundred files away from the cause, and
-# nothing before this script would have said so.
+# smalt is portable because the operating system is confined to the port
+# directories `axle.toml` declares: `src/<area>/<port-dir>/`. Everything
+# else compiles for every target. That sentence is worth nothing as prose
+# — a single `extern "C" from "user32"` in a file above the seam makes
+# the Linux build fail at the linker, a hundred files away from the
+# cause, and nothing before this script would have said so.
 #
-# Three rules, each of which has a way of being violated by accident:
+# Two rules, each of which has a way of being violated by accident:
 #
-#   1. No OS import outside an overlay. A `native fn` / `@link_name` /
-#      `extern "C" from` is a symbol some libc, DLL or shared object has
-#      to provide, so the file that writes one belongs to a platform.
-#   2. No `use` path names an operating system. The overlay is chosen by
-#      `--target`, so a path that spells `windows` is a file that
-#      compiles for one platform wherever it happens to sit.
-#   3. Every seam is implemented for every platform. A `sys_*.axle`
-#      present in one overlay and missing from another is a port with a
-#      hole, and the compiler only says so when someone builds for the
-#      platform that is missing it.
+#   1. No OS import outside a port directory. A `native fn` /
+#      `@link_name` / `extern "C" from` is a symbol some libc, DLL or
+#      shared object has to provide, so the file that writes one belongs
+#      to a port.
+#   2. No `use` path crosses into a port that is not the file's own.
+#      The port is chosen by the target and the features, so a portable
+#      file that spells `win32` compiles for one platform, and a
+#      backend that names another backend's module is the same mistake
+#      pointing the other way. A port naming its own module is how a
+#      port is written.
+#
+# The third rule this script used to carry — every seam implemented for
+# every platform — is the compiler's now, and better held there: a port
+# is *several* directories, so "every directory has every seam" was never
+# the right shape (`posix/` holds the clock both Linux ports share and no
+# window at all). `axle ports` prints the table with a tick per seam per
+# port, and a build refuses an incomplete one.
 #
 # `--selftest` plants each violation in a scratch copy and fails if the
 # check passes on it: a gate nobody has watched reject something is a
@@ -30,74 +37,59 @@
 
 set -uo pipefail
 
-# The directory names that make a directory a platform overlay. The same
-# list the compiler resolves against; there is no third place holding it.
-OVERLAY_DIRS='windows|linux|macos'
+# The directory names that make a directory a port's. Read out of
+# `axle.toml`, which is where the compiler reads them: a list kept here
+# as well would be a second place to forget, and the failure would be
+# this script silently checking nothing.
+port_dirs() {
+    local root=$1
+    sed -n 's/^dirs *= *\[\(.*\)\]/\1/p' "$root/axle.toml" \
+        | tr -d ' "' | tr ',' '\n' | grep -v '^$' | sort -u | paste -sd'|'
+}
 
 note() { printf '%s\n' "$*" >&2; }
+# Every `.axle` under `src/` that is NOT inside a port directory — the
+# portable half of the library, which is what both rules are about.
 
-# Every `.axle` under `src/` that is NOT inside an overlay directory —
-# the portable half of the library, which is what all three rules are
-# about.
 portable_files() {
     local root=$1
     find "$root/src" -name '*.axle' \
-        | grep -Ev "/($OVERLAY_DIRS)/" \
+        | grep -Ev "/($(port_dirs "$root"))/" \
         | sort
 }
 
-# Rule 1 — an OS import outside an overlay.
+# Rule 1 — an OS import outside a port directory.
 check_no_os_import() {
     local root=$1 hits
     hits=$(portable_files "$root" | xargs grep -nE 'extern[[:space:]]+"C"[[:space:]]+from|@link_name|native[[:space:]]+fn' 2>/dev/null)
     if [ -n "$hits" ]; then
-        note "FAIL: an OS import outside a platform overlay:"
+        note "FAIL: an OS import outside a port directory:"
         note "$hits"
         return 1
     fi
     return 0
 }
 
-# Rule 2 — a `use` path that names an operating system. Checked over the
-# whole tree, overlays included: a backend that reaches into another
-# backend's directory is the same mistake pointing the other way.
+# Rule 2 — a `use` path that crosses into a port that is not the
+# file's own. Checked over the whole tree, ports included: a backend
+# reaching into another backend is the same mistake pointing the other way.
 check_no_platform_in_use() {
-    local root=$1 hits
-    hits=$(find "$root/src" -name '*.axle' -print0 \
-        | xargs -0 grep -nE "^use .*::($OVERLAY_DIRS)::" 2>/dev/null)
-    if [ -n "$hits" ]; then
-        note "FAIL: a use path names an operating system:"
-        note "$hits"
-        return 1
-    fi
-    return 0
-}
-
-# Rule 3 — a seam file present in one overlay and missing from another.
-# Only `sys_*.axle` is compared: those are the seam, and a backend's own
-# private modules are deliberately not symmetric.
-check_seams_are_complete() {
-    local root=$1 rc=0
-    local parent overlays base
-    # Each directory that holds at least one overlay.
-    for parent in $(find "$root/src" -type d -regextype posix-extended -regex ".*/($OVERLAY_DIRS)" \
-                    | xargs -r -n1 dirname | sort -u); do
-        overlays=$(find "$parent" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
-                   -regex ".*/($OVERLAY_DIRS)" | sort)
-        # The union of every seam name any platform implements here.
-        local names
-        names=$(for d in $overlays; do
-                    find "$d" -maxdepth 1 -name 'sys_*.axle' -exec basename {} \;
-                done | sort -u)
-        for d in $overlays; do
-            for base in $names; do
-                if [ ! -f "$d/$base" ]; then
-                    note "FAIL: $d/$base is missing — the seam is implemented for the other platforms here"
-                    rc=1
-                fi
-            done
-        done
-    done
+    local root=$1 rc=0 dirs file own hits
+    dirs=$(port_dirs "$root")
+    while IFS= read -r file; do
+        # The port directory this file itself lives in, if any. A backend
+        # naming its *own* private module is how a port is written; what
+        # this rule is about is a path that crosses — a portable file
+        # reaching into a port, or one port reaching into another.
+        own=$(printf '%s' "$file" | grep -oE "/($dirs)/" | head -1 | tr -d '/')
+        hits=$(grep -nE "^use .*::($dirs)::" "$file" 2>/dev/null \
+               | { if [ -n "$own" ]; then grep -vE "::$own::"; else cat; fi; })
+        if [ -n "$hits" ]; then
+            note "FAIL: $file names a port directory that is not its own:"
+            note "$hits"
+            rc=1
+        fi
+    done < <(find "$root/src" -name '*.axle' | sort)
     return $rc
 }
 
@@ -105,7 +97,6 @@ run_checks() {
     local root=$1 rc=0
     check_no_os_import "$root"       || rc=1
     check_no_platform_in_use "$root" || rc=1
-    check_seams_are_complete "$root" || rc=1
     return $rc
 }
 
@@ -129,6 +120,7 @@ selftest() {
 
     # It must accept the tree as it stands.
     cp -r "$root/src" "$tmp/src"
+    cp "$root/axle.toml" "$tmp/axle.toml"
     if ! run_checks "$tmp" >/dev/null 2>&1; then
         note "SELFTEST FAIL: the unmodified tree must pass"
         rc=1
@@ -143,20 +135,25 @@ selftest() {
     fi
     rm -rf "$tmp/src"; cp -r "$root/src" "$tmp/src"
 
-    # Rule 2: a use path naming a platform.
-    printf '\nuse crate::platform::windows::sys_app::SysApp;\n' >> "$tmp/src/core/timer.axle"
+    # Rule 2: a portable file naming a port directory.
+    printf '\nuse crate::platform::win32::sys_app::SysApp;\n' >> "$tmp/src/core/timer.axle"
     if run_checks "$tmp" >/dev/null 2>&1; then
         note "SELFTEST FAIL: rule 2 accepted a use path naming a platform"
         rc=1
     fi
     rm -rf "$tmp/src"; cp -r "$root/src" "$tmp/src"
 
-    # Rule 3: a seam implemented for one platform only.
-    rm -f "$tmp"/src/platform/linux/sys_clock.axle
+    # Rule 2, the other direction: one port reaching into another. The
+    # half a rule that only tested portable files would have missed, and
+    # the half that is easiest to write by accident when a second
+    # backend is being written beside a first.
+    printf '\nuse crate::video::x11::x_keymap::XKeymap;\n' \
+        >> "$tmp/src/video/wayland/wl_input.axle"
     if run_checks "$tmp" >/dev/null 2>&1; then
-        note "SELFTEST FAIL: rule 3 accepted a seam missing from a platform"
+        note "SELFTEST FAIL: rule 2 accepted one port reaching into another"
         rc=1
     fi
+    rm -rf "$tmp/src"; cp -r "$root/src" "$tmp/src"
 
     if [ $rc -eq 0 ]; then
         echo "check_seam selftest OK — every rule rejects what it is for"
@@ -171,7 +168,7 @@ main() {
     fi
     local root="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
     if run_checks "$root"; then
-        echo "check_seam OK — the OS is confined to the platform overlays"
+        echo "check_seam OK — the OS is confined to the port directories"
         exit 0
     fi
     exit 1

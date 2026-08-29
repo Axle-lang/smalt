@@ -4,7 +4,7 @@
 
 ### A window, an event queue, a clock, 3D maths and a complete software renderer — written entirely in [**Axle**](https://axle-lang.dev)
 
-**Not a binding.** There is no `SDL2.dll` to copy, no vcpkg prefix to find, no `[link]` section to fill in. smalt calls Win32 directly and rasterises every triangle on the CPU.
+**Not a binding.** There is no `SDL2.dll` to copy, no vcpkg prefix to find, no `[link]` section to fill in. smalt speaks Win32, X11 and Wayland itself, and rasterises every triangle on the CPU.
 
 <p align="center">
   <a href="https://axle-lang.dev"><img alt="Powered by Axle" src="https://img.shields.io/badge/powered%20by-Axle-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
@@ -13,7 +13,7 @@
 <p align="center">
   <img alt="Rendering: 100% CPU" src="https://img.shields.io/badge/rendering-100%25%20CPU-FF7A45?style=flat-square&labelColor=1b1b2b">
   <img alt="Dependencies: none" src="https://img.shields.io/badge/dependencies-none-2E7D32?style=flat-square&labelColor=1b1b2b">
-  <img alt="Backend: Win32" src="https://img.shields.io/badge/backend-Win32-1D6FB8?style=flat-square&labelColor=1b1b2b">
+  <img alt="Backends: Win32, X11, Wayland" src="https://img.shields.io/badge/backends-Win32%20%C2%B7%20X11%20%C2%B7%20Wayland-1D6FB8?style=flat-square&labelColor=1b1b2b">
   <img alt="Unsafe: at the OS edge only" src="https://img.shields.io/badge/unsafe-OS%20edge%20only-9C27B0?style=flat-square&labelColor=1b1b2b">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-555555?style=flat-square&labelColor=1b1b2b">
 </p>
@@ -50,24 +50,25 @@
 | | |
 |---|---|
 | **Language** | 100% [Axle](https://axle-lang.dev) — no C, no bindings, no vendored library |
-| **Platforms** | Windows (Win32: `kernel32`, `user32`, `gdi32`, `winmm`) and Linux (X11 + ALSA: `X11`, `asound`, `c`) — one source tree, the target picks the backend |
+| **Platforms** | Windows (Win32: `kernel32`, `user32`, `gdi32`, `winmm`) and Linux, on X11 (`X11`, `asound`, `c`) or Wayland (`wayland-client`, `asound`, `c`) — one source tree, the target picks the backend and a feature picks between the two Linux ones |
 | **Scope** | What a 3D game needs — roughly SDL3 minus gamepads, plus the maths and the renderer SDL leaves to you |
 | **Rendering** | Software rasteriser on the CPU — near-plane clipping, back-face culling, depth buffer, perspective-correct interpolation, Blinn-Phong |
 | **Failure** | A subsystem that cannot start raises `PlatformError` **from its constructor** — there is no half-built object to test |
 | **Teardown** | Every handle-holding class is `Closeable`, so dropping one without `close()` is a compile error (**E0511**), not a leak found later |
-| **Portability** | The OS lives under `src/*/<os>/` and nowhere else. Not one `use` in the portable half names a platform, and `tools/check_seam.sh` is that sentence enforced. |
+| **Portability** | The OS lives under the port directories `axle.toml` declares and nowhere else. Not one `use` in the portable half names a port; `tools/check_seam.sh` holds that, and `axle ports` holds the other half — every seam implemented for every port. |
 | **`unsafe`** | Only where an OS record is laid out through a typed pointer — `kernel/raw` (the accessors every other site goes through), the platform backends, and `io/bmp`. Nothing above them contains one. |
 
 ## ✨ Highlights
 
-- 🪟 **A real window, not a canvas** — `RegisterClassExW` with our own window procedure on Windows, `XCreateSimpleWindow` with `WM_DELETE_WINDOW` on X11. Either way a close is a *request* the game may refuse, not an obituary.
-- 🧩 **Two backends, one API** — a module path resolves to `platform/<os>/sys_clock.axle`, so a portable file writes `use crate::platform::sys_clock::SysClock;` and never learns which OS it got. Building for the other target is `--target`, not a flag day.
+- 🪟 **A real window, not a canvas** — `RegisterClassExW` with our own window procedure on Windows, `XCreateSimpleWindow` with `WM_DELETE_WINDOW` on X11, a `wl_surface` given a role by `xdg_toplevel` on Wayland. All three ways a close is a *request* the game may refuse, not an obituary.
+- 🧩 **Three backends, one API** — a module path resolves to `platform/<port>/sys_clock.axle`, so a portable file writes `use crate::platform::sys_clock::SysClock;` and never learns which OS it got. Building for another target is `--target`, not a flag day; choosing Wayland over X11 is a feature, because both answer `os = "linux"` and exactly one port may be active.
+- 🔌 **A protocol with no library to call it** — `libwayland-client` exports interface *tables* and no request functions: every request is one `wl_proxy_marshal_flags` with an opcode, and an extension's tables are generated per project into C that a pure-Axle library does not have. So smalt builds xdg-shell's three and xdg-decoration's two itself, at startup, out of the same fields the generator emits.
 - 🎮 **SDL's event model, kept** — the queue is decoupled from the OS message pump, every event carries the same `kind` / `timestamp` prefix, and scancodes are physical positions, so `Scancode::W` is the key above `Scancode::S` on AZERTY too.
 - 📐 **The maths SDL never shipped** — `Vec2` `Vec3` `Vec4` `Mat4` `Quat` `Aabb` `Plane` `Frustum`, all value structs, all tested by a headless example.
 - 🎨 **A complete software 3D pipeline** — clip, project, cull, half-space fill with a reciprocal depth buffer, perspective-correct attributes, one directional light. No GPU touched, nothing to install.
 - 🔊 **Sound with no callback** — every low-latency audio API wants to call *you*, and Axle cannot hand out a function address. `waveOut` opened with `CALLBACK_NULL` reports a finished block as a flag you poll; ALSA's `snd_pcm_avail_update` answers the same question. One three-call cycle, both platforms.
 - 🧯 **Failure and teardown are the compiler's business** — constructors raise, `Closeable` is enforced, and `defer` covers the six ways out of `Bmp::read`.
-- 🪶 **Nothing to ship** — the produced binary runs on a stock Windows box, or against the `libX11` and `libasound` any Linux desktop already has. No runtime DLL, no redistributable, no vendored library.
+- 🪶 **Nothing to ship** — the produced binary runs on a stock Windows box, or against the `libX11` / `libwayland-client` and `libasound` any Linux desktop already has. No runtime DLL, no redistributable, no vendored library.
 
 ## 🚀 Quick start
 
@@ -143,7 +144,12 @@ axle --version      # must print 0.10.0 or higher
 <br>
 
 - **Windows** — install the x64 `.msi` from the `v0.10.0` (or newer) release; it puts `axle.exe` in `C:\Program Files (x86)\Axle\` and on your `PATH`.
-- **Other platforms** — see [axle-lang.dev](https://axle-lang.dev). smalt itself is Windows-only (see [Not covered](#-not-covered)).
+- **Other platforms** — see [axle-lang.dev](https://axle-lang.dev).
+
+On Linux, the X11 port needs `libx11-dev` and `libasound2-dev`; the
+Wayland one needs `libwayland-dev` in their place. Both are the `-dev`
+package only for the linker's sake — the produced binary runs against
+the shared library the desktop already has.
 
 </details>
 
@@ -226,43 +232,101 @@ Layers, bottom to top. **A module never reaches upward.**
    ├─────────────────────────────────────────────────────────────────────┤
    │  video/    window · display · scancode_set1                          │
    │            SEAM  sys_window · sys_drain · sys_cursor                 │
-   │            windows/ class · window · proc · keymap · const           │
-   │            linux/   x_keymap                                         │
+   │            win32/   class · window · proc · keymap · const           │
+   │            x11/     x_window_ops · x_decode · x_keymap               │
+   │            wayland/ wl_window_ops · wl_win_state · wl_win_events     │
+   │                     wl_input                                         │
+   │            posix/   evdev_keymap  ← both Linux ports                 │
    ├─────────────────────────────────────────────────────────────────────┤
    │  core/     init · error · timer · event · keyboard · mouse · pump    │
    ├─────────────────────────────────────────────────────────────────────┤
    │  platform/ audio_format                                              │
    │            SEAM  sys_app · sys_clock · sys_screen · sys_blit         │
    │                  sys_audio                                           │
+   │            wayland/ wl_drawable · wl_blit_header · wl_screen_probe   │
+   │            posix/   sys_clock · blit_scale  ← both Linux ports       │
    ├─────────────────────────────────────────────────────────────────────┤
    │  sys/      dib (the BMP / DIB records — a data format, portable)     │
-   │            windows/ win32_types · win32_const · win32_kernel         │
+   │            win32/   win32_types · win32_const · win32_kernel         │
    │                     win32_user · win32_gdi · win32_mm · wide         │
    │                     win32_layout_check                               │
-   │            linux/   x11_types · x11_const · x11_lib · alsa_lib       │
-   │                     posix_time · x11_layout_check                    │
+   │            x11/     x11_types · x11_const · x11_lib                  │
+   │                     x11_layout_check                                 │
+   │            wayland/ wl_lib · wl_libc · wl_request · wl_core          │
+   │                     wl_table · wl_args · wl_token · wl_globals       │
+   │                     wl_app · xdg_shell · xdg_decoration              │
+   │            alsa/    alsa_lib          posix/  posix_time             │
    ├─────────────────────────────────────────────────────────────────────┤
    │  kernel/   raw ← the pointer accessors · blob                        │
    └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**How one tree builds for two platforms.** There is no `#[cfg]` in Axle,
-and there is not one here either. A module path resolves to
-`<path>.axle` when a capability has one implementation and to
-`<dir>/<os>/<name>.axle` when it has one per target, so a portable file
-writes
+**How one tree builds for three backends.** There is no `#[cfg]` in Axle,
+and there is not one here either. A crate declares its **ports** in
+`axle.toml` — one condition, and the directories that carry it:
+
+```toml
+[features]
+wayland = false
+
+[port.win32]   when = { os = "windows" }                       dirs = ["win32"]
+[port.x11]     when = { os = "linux" }                         dirs = ["x11", "posix", "alsa"]
+[port.wayland] when = { os = "linux", feature = "wayland" }    dirs = ["wayland", "posix", "alsa"]
+```
+
+A module path then resolves to `<path>.axle` when a capability has one
+implementation, and to a file in one of the *active* port's directories
+when it has one per backend — so a portable file writes
 
 ```axle
 use crate::platform::sys_clock::SysClock;   // core/timer.axle
 ```
 
-and gets `platform/windows/sys_clock.axle` or `platform/linux/sys_clock.axle`
-depending on the build's `--target` — the other file is not compiled at
-all, which is why a Win32 `extern "C" from "gdi32"` never reaches a Linux
-link line. Two shapes are refused rather than guessed: a path satisfied
-by *both* a portable file and an overlay, and a path whose target has no
-implementation while a sibling platform does — the second names the file
-to write.
+and gets `platform/win32/`, `platform/x11/` or `platform/wayland/`
+depending on the build. The other files are not compiled at all, which is
+why a Win32 `extern "C" from "gdi32"` never reaches a Linux link line.
+
+**Exactly one port is active for any target**, which is what keeps the
+resolution a lookup rather than a search. `{ os = "linux", feature =
+"wayland" }` is *narrower* than `{ os = "linux" }`, so it wins when the
+feature is on and X11 answers when it is off; two conditions that
+overlapped with neither narrower would be refused rather than settled by
+declaration order. Three more shapes are refused rather than guessed: a
+path satisfied by *both* a portable file and the active port, two
+directories of one port answering the same path, and a seam one port
+implements while another does not — the last names the file to write, and
+`axle ports` prints the whole table with a tick per seam per port.
+
+One directory can belong to several ports, and `posix/` does: both Linux
+ports name it, the Windows one does not, so it is exactly where the two
+of them keep what they share.
+
+**X11 or Wayland is chosen when you build, not when you run.** There is
+no probe of `$WAYLAND_DISPLAY` at startup and no fallback: the port
+system compiles *one* backend, and the other's files are not in the
+binary at all. That is the same decision as the seam being a file
+boundary rather than a vtable — stated once here because it is the first
+thing a Linux user asks.
+
+The default is X11, and deliberately: Xwayland means an X11 binary runs
+on every Wayland desktop, while a Wayland binary does not run on an
+X11-only session. So the X11 build is the one that runs everywhere, and
+the Wayland one is what to build when a session has no Xwayland, or when
+X11's own limits are the problem.
+
+Switching is `wayland = true` under `[features]` in **smalt's** own
+`axle.toml`. A crate selects its port from its *own* features — a
+dependent never learns them — so a game cannot ask for the Wayland smalt
+from its manifest, and the compiler has no `--features` flag to ask with
+either. Both are gaps on the Axle side rather than design here, and
+closing them is what would make the choice a build flag instead of a
+one-line edit.
+
+Choosing at *run time* is a larger question. It would mean both backends
+in one binary behind a dispatch — the `RenderDevice` shape applied to the
+platform seam — which is what the file boundary was chosen against, and
+which only earns its keep if the X11 build's reach through Xwayland ever
+stops being enough.
 
 The invariant that makes it hold is one sentence: **the operating system
 lives under `src/*/<os>/` and nowhere else, and not one `use` in the
@@ -274,31 +338,37 @@ violation it is for and fails if the check passes on it.
 code it serves would be reachable from it, and the first shortcut past it
 would go unnoticed; from underneath it can only be called down into. That
 is also why `sys_blit` takes a bare `i32[]` rather than a `RenderTarget`,
-and why `x_surface` — the `(Display *, Window, GC)` triple X11 needs
-where Win32 has a single `HDC` — lives under `platform/` and not beside
-the window that fills it.
+and why the drawable a window hands the blit lives under `platform/` and
+not beside the window that fills it — `x_surface`, the
+`(Display *, Window, GC)` triple X11 needs where Win32 has a single
+`HDC`, and `wl_drawable`, which holds more than either because Wayland
+has no server-side drawable at all.
 
-**The eight seams, and what each costs on either side.**
+**The eight seams, and what each costs on each side.**
 
-| Seam | Windows | Linux |
-|---|---|---|
-| `sys_app` | `GetModuleHandleW`, `RegisterClassExW`, `timeBeginPeriod` | `XOpenDisplay` / `XCloseDisplay`, detectable auto-repeat; no granularity to raise |
-| `sys_clock` | `QueryPerformanceCounter`, `Sleep` | `clock_gettime(CLOCK_MONOTONIC)`, `nanosleep` — the frequency is a constant |
-| `sys_screen` | `GetSystemMetrics` | `XDisplayWidth` / `XDisplayHeight` on a connection of its own |
-| `sys_blit` | `StretchDIBits` — the driver scales | `XPutImage` — **X11 has no scaling blit**, so the backend owns a 16.16 nearest-neighbour resample |
-| `sys_audio` | `waveOut` + `CALLBACK_NULL`, four blocks polled for `WHDR_DONE` | `snd_pcm_writei` + `snd_pcm_avail_update`, two staging blocks, `snd_pcm_recover` on an underrun |
-| `sys_window` | `HWND` + `HDC`; the latches are written by our window procedure | `Window` + `GC`; the latches are written by the drain, out of `ConfigureNotify` / `FocusIn` / `ClientMessage` |
-| `sys_drain` | `PeekMessageW` over the thread queue | `XPending` / `XNextEvent` over the connection — one stream for input *and* window notices |
-| `sys_cursor` | `ClientToScreen` + `SetCursorPos`; `ShowCursor`'s balanced counter | `XWarpPointer` (window-relative, no conversion); hiding is a cursor with no pixels, so it is a resource with a lifetime |
+| Seam | Win32 | X11 | Wayland |
+|---|---|---|---|
+| `sys_app` | `GetModuleHandleW`, `RegisterClassExW`, `timeBeginPeriod` | `XOpenDisplay` / `XCloseDisplay`, detectable auto-repeat | the token is a *record*: a connection answers nothing until the registry is swept and each global bound |
+| `sys_clock` | `QueryPerformanceCounter`, `Sleep` | `clock_gettime(CLOCK_MONOTONIC)`, `nanosleep` — shared with Wayland, in `posix/` | ⟵ the same file |
+| `sys_screen` | `GetSystemMetrics` | `XDisplayWidth` / `XDisplayHeight` on a connection of its own | the first `wl_output`'s current mode — one monitor, not the bounding box of all of them |
+| `sys_blit` | `StretchDIBits` — the driver scales | `XPutImage` — **no scaling blit**, so a 16.16 nearest-neighbour resample, shared with Wayland in `posix/` | a copy into whichever of **two** shared buffers the compositor is not reading, then attach / damage / commit |
+| `sys_audio` | `waveOut` + `CALLBACK_NULL`, four blocks polled for `WHDR_DONE` | `snd_pcm_writei` + `snd_pcm_avail_update`, two staging blocks, `snd_pcm_recover` on an underrun | ⟵ the same ALSA file |
+| `sys_window` | `HWND` + `HDC`; the latches are written by our window procedure | `Window` + `GC`; the latches are written by the drain | three objects — `wl_surface`, `xdg_surface`, `xdg_toplevel` — and a handshake: the first commit carries no buffer, it *asks* |
+| `sys_drain` | `PeekMessageW` over the thread queue | `XPending` / `XNextEvent` — one stream for input *and* window notices | `poll` on the connection, then `dispatch_pending`; the events arrive as C callbacks that leave records on a ring |
+| `sys_cursor` | `ClientToScreen` + `SetCursorPos`; `ShowCursor`'s balanced counter | `XWarpPointer` (window-relative); hiding is a cursor with no pixels | hiding is `set_cursor` with no surface; **there is no warp at all** — see below |
 
 What is deliberately **not** duplicated: the PS/2 set-1 code block
 (`video/scancode_set1`), which Windows reads out of `lParam` bits 16..23
-and evdev numbered identically for its first eighty-eight keys; the DIB
-records (`sys/dib`), which are a published data format both a `.bmp` file
-and `StretchDIBits` carry; and the PCM format (`platform/audio_format`),
-which is the seam's contract — a backend that kept its own copy could
-open a device at 48 kHz while the mixer still wrote 44.1, and nothing
-would fail.
+and evdev numbered identically for its first eighty-eight keys; the
+evdev-to-`Scancode` table above that block (`video/posix/evdev_keymap`),
+which X11 reaches by taking its protocol's eight-keycode offset off and
+Wayland reaches directly; the nearest-neighbour resample
+(`platform/posix/blit_scale`), which neither Linux backend can do while
+it blits and Windows never needs; the DIB records (`sys/dib`), a
+published data format both a `.bmp` file and `StretchDIBits` carry; and
+the PCM format (`platform/audio_format`), which is the seam's contract —
+a backend that kept its own copy could open a device at 48 kHz while the
+mixer still wrote 44.1, and nothing would fail.
 
 **Objects vs values.** What has identity and a lifetime is a class: `Platform`, `Window`, `Events`, `Clock`, `SoftDevice`, `Mesh`, `Texture`, `Camera`, `RenderTarget`, `Blob`. What is data is a value struct: `Vec3`, `Mat4`, `Quat`, `Color`, `Vertex`, `Material`, `Event`, `Rect`, `Aabb`. Free functions appear only in the raw kernel, where the carrier is context rather than subject.
 
@@ -310,7 +380,7 @@ would fail.
 
 `RegisterClassExW` will not accept a class without an `lpfnWndProc`, and what that field wants is a *C-callable address*. An Axle function value is the fat `{ code, env }` pair — which is what lets a capturing lambda and a bare function share one call shape — and that is not an address `user32` can invoke.
 
-`extern "C" (…) => R` is a thin function pointer: one machine word holding the function's own address, and a named `fn` degrades to it at the boundary. So `video/windows/win_proc.axle` holds a real window procedure, and the messages Windows *sends* arrive as messages:
+`extern "C" (…) => R` is a thin function pointer: one machine word holding the function's own address, and a named `fn` degrades to it at the boundary. So `video/win32/win_proc.axle` holds a real window procedure, and the messages Windows *sends* arrive as messages:
 
 | what | how |
 |---|---|
@@ -329,6 +399,59 @@ Input still comes from the queue, which `PeekMessageW` drains every frame: `WM_K
 
 **Proving it without a user.** `examples/proc_check` calls `Window.selfCheckProc`, which delivers the four sent messages with `SendMessageW` — synchronous, bypassing the queue — and checks what came back. It runs headless, in under a second, and it exercises the whole chain: the class carries our address, the block is reachable from the callback, the procedure writes through the raw pointer, and the event path turns the record into events.
 
+### The Wayland backend
+
+Wayland gives a client less than X11 does, and most of the port is that
+sentence made concrete.
+
+**There are no request functions.** `libwayland-client` exports the core
+protocol's twenty-four `wl_interface` tables and the proxy machinery, and
+nothing else: `wl_surface_commit` and its hundreds of siblings are
+`static inline` in the generated headers, each one call to
+`wl_proxy_marshal_flags` with an opcode. That call is variadic, so this
+port uses its array twin and fills a block of eight-byte slots — which is
+what a `union wl_argument` is.
+
+**An extension's tables exist in no library.** They are generated per
+project by `wayland-scanner`, into C. So `sys/wayland/xdg_shell` and
+`sys/wayland/xdg_decoration` build theirs at startup out of the same
+three fields the generator emits — a name, a signature, and the
+interfaces each argument names — and the core ones arrive through
+`dlsym`, because they are *data* and Axle imports functions. Version 1 on
+purpose: the library dispatches an incoming event by using its opcode as
+an index into the listener, so an event table shorter than what the
+compositor may send reads past the end of a struct.
+
+**A window is three objects and a handshake.** A `wl_surface` is a
+rectangle of pixels with no meaning; `xdg_surface` gives it a role's
+protocol; `xdg_toplevel` is the role. The first commit carries *no*
+buffer — it asks — and the compositor answers with a `configure` the
+client must acknowledge before anything it draws is shown.
+
+**Two buffers, because one is a race.** A committed `wl_buffer` belongs
+to the compositor until its `release` event says otherwise, so writing
+the next frame into the same pages is a tear. `wl_drawable` holds a pair
+in one `memfd` pool and writes into whichever is free; a frame that
+arrives when neither is gets dropped, which is a frame the compositor was
+never going to show.
+
+**A callback cannot reach the queue.** It is C calling us with one
+`void *`, and an `EventQueue` is an Axle object with no address to pass.
+So the seat's callbacks write records into a ring on the window's state
+block, and the drain — Axle code, holding the queue — reads them out.
+The same shape the Win32 window procedure needs, reached the other way
+round.
+
+**What the protocol refuses, and what smalt does about it.**
+
+| | |
+|---|---|
+| **No pointer warping** | By design: the compositor owns the input device. A mouse-look game wants `zwp_pointer_constraints_v1` + `zwp_relative_pointer_v1`, which are further extensions with further tables to build. `SysCursor::recentre` does nothing and says so. |
+| **No decorations** | A toplevel is the client's pixels, full stop. `xdg-decoration` is asked for where the compositor offers it, and where it does not the window has no frame — that is the desktop's answer, not a failed call. |
+| **No window placement, no window position** | Neither can be asked for nor read. |
+| **No event injection** | There is no `XSendEvent` here, so `selfCheck` proves the two things a client *can* provoke — a `wl_display.sync` answered into a listener of ours, and the `xdg_surface.configure` that came back through the hand-built table — and claims nothing about the focus edges and the close, which only a person can cause. |
+| **No key repeat, no text yet** | A compositor sends no repeats: `repeat_info` asks the *client* to make them. And the character a key produces needs the keymap the compositor sends, which needs `xkbcommon`. Both are additions, not fixes; X11 gets the first from the server and the second from `XLookupString`. |
+
 ### The rendering pipeline
 
 `render/soft/` is a complete rasteriser: near-plane clipping, perspective divide, viewport transform, back-face culling, half-space triangle fill with a depth buffer, perspective-correct attribute interpolation, and Blinn-Phong shading with one directional light. Three details carry it:
@@ -341,9 +464,14 @@ The depth buffer stores **reciprocal** depth and the test is *greater wins*, bec
 
 ## 🚧 Not covered
 
-Gamepads, touch, clipboard, dialogs, IME, threads — and Linux and macOS. Also, deliberately, **any GPU backend**.
+Gamepads, touch, clipboard, dialogs, IME, threads — and macOS. Also, deliberately, **any GPU backend**.
 
-That last one is a limit of the language rather than a choice. Modern OpenGL, Direct3D 11 and 12, and Vulkan all require calling a function address obtained at run time — `wglGetProcAddress` for GL above 1.1, a COM vtable slot for D3D — and Axle cannot call an address it did not link. **OpenGL 1.1 remains open**: its entry points are real named exports of `opengl32.dll`, so a `GlDevice` could be written against the existing `RenderDevice` trait with the FFI Axle has today.
+On Wayland specifically: pointer warping, key repeat, text input, cursor
+restoration after a hide, and fractional scaling. Each is an addition
+rather than a fix, and the [Wayland backend](#the-wayland-backend)
+section says which extension or library each one needs.
+
+The GPU one is a limit of the language rather than a choice. Modern OpenGL, Direct3D 11 and 12, and Vulkan all require calling a function address obtained at run time — `wglGetProcAddress` for GL above 1.1, a COM vtable slot for D3D — and Axle cannot call an address it did not link. **OpenGL 1.1 remains open**: its entry points are real named exports of `opengl32.dll`, so a `GlDevice` could be written against the existing `RenderDevice` trait with the FFI Axle has today.
 
 Threads are blocked the same way: `CreateThread` needs a callback, and unlike `WNDCLASSEXW.lpfnWndProc` there is no OS-provided function that does the right thing. The library is single-threaded, which is what SDL requires for video and events anyway.
 
