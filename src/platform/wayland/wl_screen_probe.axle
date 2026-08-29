@@ -14,7 +14,7 @@ use crate::sys::wl_app::{connect, disconnect, WlApp};
  * A game asks in order to *choose* a window size, which is before it has
  * a connection to borrow — so this opens one of its own and closes it.
  */
-pub fn measure(wantWidth : bool) : i32 {
+pub(crate) fn measure(wantWidth : bool) : i32 {
     unsafe {
         let token = connect();
         if (Raw::isNil(token)) {

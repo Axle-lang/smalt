@@ -110,31 +110,31 @@ pub extern "C" struct PointerListener {
  * produces under the user's layout — text input, which this port does
  * not yet report and which is where the descriptor would be needed.
  */
-pub fn onKeymap(data : ptr, keyboard : ptr, format : u32, fd : i32, size : u32) : void {
+pub(crate) fn onKeymap(data : ptr, keyboard : ptr, format : u32, fd : i32, size : u32) : void {
     unsafe {
         closeKeymapFd(fd);
     }
 }
 
-pub fn onKeyEnter(data : ptr, keyboard : ptr, serial : u32, surface : ptr, keys : ptr) : void {
+pub(crate) fn onKeyEnter(data : ptr, keyboard : ptr, serial : u32, surface : ptr, keys : ptr) : void {
     unsafe {
         push(data as ptr<WlWinState>, RING_ENTER, 0, 0);
     }
 }
 
-pub fn onKeyLeave(data : ptr, keyboard : ptr, serial : u32, surface : ptr) : void {
+pub(crate) fn onKeyLeave(data : ptr, keyboard : ptr, serial : u32, surface : ptr) : void {
     unsafe {
         push(data as ptr<WlWinState>, RING_LEAVE, 0, 0);
     }
 }
 
-pub fn onKey(data : ptr, keyboard : ptr, serial : u32, time : u32, key : u32, state : u32) : void {
+pub(crate) fn onKey(data : ptr, keyboard : ptr, serial : u32, time : u32, key : u32, state : u32) : void {
     unsafe {
         push(data as ptr<WlWinState>, RING_KEY, state as i64, key as i64);
     }
 }
 
-pub fn onModifiers(
+pub(crate) fn onModifiers(
     data : ptr,
     keyboard : ptr,
     serial : u32,
@@ -154,10 +154,10 @@ pub fn onModifiers(
  * answers for. The X11 backend gets repeats from the server instead, so
  * the two ports differ here and the difference is the protocol's.
  */
-pub fn onRepeatInfo(data : ptr, keyboard : ptr, rate : i32, delay : i32) : void {
+pub(crate) fn onRepeatInfo(data : ptr, keyboard : ptr, rate : i32, delay : i32) : void {
 }
 
-pub fn onPointerEnter(
+pub(crate) fn onPointerEnter(
     data : ptr,
     pointer : ptr,
     serial : u32,
@@ -172,10 +172,10 @@ pub fn onPointerEnter(
     }
 }
 
-pub fn onPointerLeave(data : ptr, pointer : ptr, serial : u32, surface : ptr) : void {
+pub(crate) fn onPointerLeave(data : ptr, pointer : ptr, serial : u32, surface : ptr) : void {
 }
 
-pub fn onPointerMotion(data : ptr, pointer : ptr, time : u32, x : i32, y : i32) : void {
+pub(crate) fn onPointerMotion(data : ptr, pointer : ptr, time : u32, x : i32, y : i32) : void {
     unsafe {
         push(
             data as ptr<WlWinState>,
@@ -186,7 +186,7 @@ pub fn onPointerMotion(data : ptr, pointer : ptr, time : u32, x : i32, y : i32) 
     }
 }
 
-pub fn onPointerButton(
+pub(crate) fn onPointerButton(
     data : ptr,
     pointer : ptr,
     serial : u32,
@@ -206,7 +206,7 @@ pub fn onPointerButton(
  * move down — the opposite sign from the notch count the rest of the
  * library uses, where a positive notch is a wheel turned away.
  */
-pub fn onPointerAxis(data : ptr, pointer : ptr, time : u32, axis : u32, value : i32) : void {
+pub(crate) fn onPointerAxis(data : ptr, pointer : ptr, time : u32, axis : u32, value : i32) : void {
     unsafe {
         if ((axis as i64) != AXIS_VERTICAL || value == 0) {
             return;
@@ -219,12 +219,12 @@ pub fn onPointerAxis(data : ptr, pointer : ptr, time : u32, axis : u32, value : 
     }
 }
 
-pub fn onPointerFrame(data : ptr, pointer : ptr) : void {}
-pub fn onAxisSource(data : ptr, pointer : ptr, source : u32) : void {}
-pub fn onAxisStop(data : ptr, pointer : ptr, time : u32, axis : u32) : void {}
-pub fn onAxisDiscrete(data : ptr, pointer : ptr, axis : u32, discrete : i32) : void {}
-pub fn onAxisValue120(data : ptr, pointer : ptr, axis : u32, value : i32) : void {}
-pub fn onAxisRelativeDirection(data : ptr, pointer : ptr, axis : u32, direction : u32) : void {}
+pub(crate) fn onPointerFrame(data : ptr, pointer : ptr) : void {}
+pub(crate) fn onAxisSource(data : ptr, pointer : ptr, source : u32) : void {}
+pub(crate) fn onAxisStop(data : ptr, pointer : ptr, time : u32, axis : u32) : void {}
+pub(crate) fn onAxisDiscrete(data : ptr, pointer : ptr, axis : u32, discrete : i32) : void {}
+pub(crate) fn onAxisValue120(data : ptr, pointer : ptr, axis : u32, value : i32) : void {}
+pub(crate) fn onAxisRelativeDirection(data : ptr, pointer : ptr, axis : u32, direction : u32) : void {}
 
 // ── What the drain does with it ─────────────────────────────────────
 
@@ -236,7 +236,7 @@ pub fn onAxisRelativeDirection(data : ptr, pointer : ptr, axis : u32, direction 
  * error, so this runs on the first drain — by which time the sweep's
  * round trip has delivered the answer — and not at connection time.
  */
-pub fn bindInput(app : ptr<WlApp>, st : ptr<WlWinState>) : void {
+pub(crate) fn bindInput(app : ptr<WlApp>, st : ptr<WlWinState>) : void {
     unsafe {
         if ((*st).inputBound != 0) {
             return;
@@ -280,7 +280,7 @@ pub fn bindInput(app : ptr<WlApp>, st : ptr<WlWinState>) : void {
  * to hand a frame loop is the same signal a user's close gives it,
  * rather than a loop that spins on a dead socket.
  */
-pub fn readAvailable(scratch : Blob, st : ptr<WlWinState>) : void {
+pub(crate) fn readAvailable(scratch : Blob, st : ptr<WlWinState>) : void {
     unsafe {
         let display = (*st).display;
         if (Raw::isNil(display)) {
@@ -311,7 +311,7 @@ pub fn readAvailable(scratch : Blob, st : ptr<WlWinState>) : void {
 }
 
 /** Turn the records the callbacks wrote into events. */
-pub fn drainRing(
+pub(crate) fn drainRing(
     st : ptr<WlWinState>,
     stamp : i64,
     queue : EventQueue,

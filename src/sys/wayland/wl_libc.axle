@@ -53,13 +53,13 @@ pub extern "C" struct PollFd {
 }
 
 /** `POLLIN` — there is something to read. */
-pub const POLL_IN : i16 = 1;
+pub(crate) const POLL_IN : i16 = 1;
 
 /** `MFD_CLOEXEC` — a mapping is this process's business. */
-pub const MFD_CLOEXEC : i32 = 1;
+pub(crate) const MFD_CLOEXEC : i32 = 1;
 
 /** `PROT_READ | PROT_WRITE`. */
-pub const PROT_READ_WRITE : i32 = 3;
+pub(crate) const PROT_READ_WRITE : i32 = 3;
 
 /** `MAP_SHARED` — the point of the exercise. */
-pub const MAP_SHARED : i32 = 1;
+pub(crate) const MAP_SHARED : i32 = 1;

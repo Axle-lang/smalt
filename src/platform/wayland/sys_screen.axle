@@ -28,7 +28,7 @@
 
 use crate::platform::wayland::wl_screen_probe::measure;
 
-pub class SysScreen {
+pub(crate) class SysScreen {
     /** The first output's current mode width, or 0. */
     static fn width() : i32 {
         return measure(true);

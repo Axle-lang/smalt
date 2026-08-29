@@ -39,13 +39,13 @@ use crate::sys::wl_request::{
 };
 
 /** Bytes per pixel, `XRGB8888`. */
-pub const WL_PIXEL_BYTES : i64 = 4;
+pub(crate) const WL_PIXEL_BYTES : i64 = 4;
 
 /** Buffers in the rotation. Two is what "not the one in use" needs. */
-pub const WL_BUFFER_COUNT : i64 = 2;
+pub(crate) const WL_BUFFER_COUNT : i64 = 2;
 
 /** No buffer is free — the answer [`freeSlot`] gives when both are out. */
-pub const WL_NO_SLOT : i64 = -1;
+pub(crate) const WL_NO_SLOT : i64 = -1;
 
 /** `struct wl_buffer_listener` — one event, and it means "yours again". */
 pub extern "C" struct BufferListener {
@@ -105,7 +105,7 @@ pub extern "C" struct WlDrawable {
  * The `data` pointer is the slot's own record, so this writes one field
  * and reads nothing.
  */
-pub fn onBufferRelease(data : ptr, buffer : ptr) : void {
+pub(crate) fn onBufferRelease(data : ptr, buffer : ptr) : void {
     unsafe {
         let slot : ptr<WlSlot> = data as ptr<WlSlot>;
         (*slot).busy = 0;
@@ -120,7 +120,7 @@ pub fn onBufferRelease(data : ptr, buffer : ptr) : void {
  * and the listener's address in particular is held by `libwayland` for
  * as long as a buffer subscribed with it exists.
  */
-pub fn initDrawable(target : ptr<WlDrawable>) : void {
+pub(crate) fn initDrawable(target : ptr<WlDrawable>) : void {
     unsafe {
         (*target).slots = Raw::take(WL_BUFFER_COUNT * sizeof<WlSlot>());
         Raw::clear((*target).slots, WL_BUFFER_COUNT * sizeof<WlSlot>());
@@ -132,7 +132,7 @@ pub fn initDrawable(target : ptr<WlDrawable>) : void {
 }
 
 /** Release the blocks [`initDrawable`] made. */
-pub fn dropDrawable(target : ptr<WlDrawable>) : void {
+pub(crate) fn dropDrawable(target : ptr<WlDrawable>) : void {
     unsafe {
         Raw::release((*target).listener);
         Raw::release((*target).slots);
@@ -142,7 +142,7 @@ pub fn dropDrawable(target : ptr<WlDrawable>) : void {
 }
 
 /** Slot `index`'s record. */
-pub fn slotAt(target : ptr<WlDrawable>, index : i64) : ptr<WlSlot> {
+pub(crate) fn slotAt(target : ptr<WlDrawable>, index : i64) : ptr<WlSlot> {
     unsafe {
         return Raw::at(Raw::addr((*target).slots) + (index * sizeof<WlSlot>())) as ptr<WlSlot>;
     }
@@ -155,7 +155,7 @@ pub fn slotAt(target : ptr<WlDrawable>, index : i64) : ptr<WlSlot> {
  * caller reports as a window that could not be created — or, on a
  * resize, as a frame that is not drawn.
  */
-pub fn ensureBuffers(target : ptr<WlDrawable>, args : WlArgs, w : i32, h : i32) : bool {
+pub(crate) fn ensureBuffers(target : ptr<WlDrawable>, args : WlArgs, w : i32, h : i32) : bool {
     unsafe {
         if (w <= 0 || h <= 0) {
             return false;
@@ -192,7 +192,7 @@ pub fn ensureBuffers(target : ptr<WlDrawable>, args : WlArgs, w : i32, h : i32) 
  * honest answer: the alternative is writing into pages the compositor
  * may be scanning out, which is the tear the pair exists to prevent.
  */
-pub fn freeSlot(target : ptr<WlDrawable>) : i64 {
+pub(crate) fn freeSlot(target : ptr<WlDrawable>) : i64 {
     unsafe {
         for (i of 0..WL_BUFFER_COUNT) {
             if ((*slotAt(target, i)).busy == 0) {
@@ -210,7 +210,7 @@ pub fn freeSlot(target : ptr<WlDrawable>) : i64 {
  * The buffer is the compositor's from here until its `release`, which is
  * what [`WlSlot::busy`] records.
  */
-pub fn commitFrame(target : ptr<WlDrawable>, args : WlArgs, index : i64) : void {
+pub(crate) fn commitFrame(target : ptr<WlDrawable>, args : WlArgs, index : i64) : void {
     unsafe {
         if (index < 0) {
             return;
@@ -239,7 +239,7 @@ pub fn commitFrame(target : ptr<WlDrawable>, args : WlArgs, index : i64) : void 
 }
 
 /** Take the buffer off the surface: a surface with none shows nothing. */
-pub fn detachFrame(target : ptr<WlDrawable>, args : WlArgs) : void {
+pub(crate) fn detachFrame(target : ptr<WlDrawable>, args : WlArgs) : void {
     unsafe {
         args.setObject(0, Raw::nil());
         args.set(1, 0);
@@ -250,7 +250,7 @@ pub fn detachFrame(target : ptr<WlDrawable>, args : WlArgs) : void {
 }
 
 /** Give the buffers, the pool, the mapping and the descriptor back. */
-pub fn releaseBuffers(target : ptr<WlDrawable>, args : WlArgs) : void {
+pub(crate) fn releaseBuffers(target : ptr<WlDrawable>, args : WlArgs) : void {
     unsafe {
         for (i of 0..WL_BUFFER_COUNT) {
             let slot : ptr<WlSlot> = slotAt(target, i);

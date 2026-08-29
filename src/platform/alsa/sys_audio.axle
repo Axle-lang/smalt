@@ -72,7 +72,7 @@ const AUDIO_RECOVER_SILENT : i32 = 1;
  * `isOpen` reports it and every other call becomes a no-op, so a caller
  * never branches.
  */
-pub class SysAudio : Closeable {
+pub(crate) class SysAudio : Closeable {
     handle  : Blob; // the snd_pcm_t* slot the open call writes through
     samples : Blob; // AUDIO_BLOCKS * block bytes, contiguous
     opened  : bool;

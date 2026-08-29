@@ -44,7 +44,7 @@ use crate::sys::wl_args::WlArgs;
 /** `WL_SHM_FORMAT_XRGB8888`, the format every compositor must accept. */
 const BLIT_FORMAT : i32 = 1;
 
-pub class SysBlit : Closeable {
+pub(crate) class SysBlit : Closeable {
     /** The scratch a scaled frame is resampled into. */
     scale : ScaleScratch;
 

@@ -29,40 +29,40 @@ use crate::sys::wl_table::{
 };
 
 /** `xdg_wm_base.destroy`. */
-pub const XDG_WM_BASE_DESTROY : i32 = 0;
+pub(crate) const XDG_WM_BASE_DESTROY : i32 = 0;
 
 /** `xdg_wm_base.get_xdg_surface`. */
-pub const XDG_WM_BASE_GET_XDG_SURFACE : i32 = 2;
+pub(crate) const XDG_WM_BASE_GET_XDG_SURFACE : i32 = 2;
 
 /** `xdg_wm_base.pong`. */
-pub const XDG_WM_BASE_PONG : i32 = 3;
+pub(crate) const XDG_WM_BASE_PONG : i32 = 3;
 
 /** `xdg_surface.destroy`. */
-pub const XDG_SURFACE_DESTROY : i32 = 0;
+pub(crate) const XDG_SURFACE_DESTROY : i32 = 0;
 
 /** `xdg_surface.get_toplevel`. */
-pub const XDG_SURFACE_GET_TOPLEVEL : i32 = 1;
+pub(crate) const XDG_SURFACE_GET_TOPLEVEL : i32 = 1;
 
 /** `xdg_surface.ack_configure`. */
-pub const XDG_SURFACE_ACK_CONFIGURE : i32 = 4;
+pub(crate) const XDG_SURFACE_ACK_CONFIGURE : i32 = 4;
 
 /** `xdg_toplevel.destroy`. */
-pub const XDG_TOPLEVEL_DESTROY : i32 = 0;
+pub(crate) const XDG_TOPLEVEL_DESTROY : i32 = 0;
 
 /** `xdg_toplevel.set_title`. */
-pub const XDG_TOPLEVEL_SET_TITLE : i32 = 2;
+pub(crate) const XDG_TOPLEVEL_SET_TITLE : i32 = 2;
 
 /** `xdg_toplevel.set_app_id`. */
-pub const XDG_TOPLEVEL_SET_APP_ID : i32 = 3;
+pub(crate) const XDG_TOPLEVEL_SET_APP_ID : i32 = 3;
 
 /** `xdg_toplevel.set_max_size`. */
-pub const XDG_TOPLEVEL_SET_MAX_SIZE : i32 = 7;
+pub(crate) const XDG_TOPLEVEL_SET_MAX_SIZE : i32 = 7;
 
 /** `xdg_toplevel.set_min_size`. */
-pub const XDG_TOPLEVEL_SET_MIN_SIZE : i32 = 8;
+pub(crate) const XDG_TOPLEVEL_SET_MIN_SIZE : i32 = 8;
 
 /** `xdg_toplevel.set_minimized`. */
-pub const XDG_TOPLEVEL_SET_MINIMIZED : i32 = 13;
+pub(crate) const XDG_TOPLEVEL_SET_MINIMIZED : i32 = 13;
 
 /** Requests in `xdg_wm_base`, `xdg_surface` and `xdg_toplevel` at v1. */
 const XDG_WM_BASE_REQUESTS : i64 = 4;
@@ -84,7 +84,7 @@ pub extern "C" struct XdgTables {
  * `show_window_menu` names a `wl_seat`, a `set_fullscreen` names a
  * `wl_output`. They come from [`crate::sys::wl_core`].
  */
-pub fn buildXdgTables(out : ptr<XdgTables>, wlSurface : ptr, wlSeat : ptr, wlOutput : ptr) : void {
+pub(crate) fn buildXdgTables(out : ptr<XdgTables>, wlSurface : ptr, wlSeat : ptr, wlOutput : ptr) : void {
     unsafe {
         let block = Raw::take(3 * sizeof<WlInterface>());
         let wmBase : ptr<WlInterface> = recordAt(block, 0, sizeof<WlInterface>()) as ptr<WlInterface>;

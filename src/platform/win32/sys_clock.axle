@@ -31,7 +31,7 @@ use crate::sys::win32_kernel::{QueryPerformanceCounter, QueryPerformanceFrequenc
  * Owns the out-parameter slot the counter calls write through, so a
  * reading allocates nothing.
  */
-pub class SysClock : Closeable {
+pub(crate) class SysClock : Closeable {
     slot : Blob;
 
     /** A clock with its own reading slot. */

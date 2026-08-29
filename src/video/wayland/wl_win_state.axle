@@ -17,10 +17,10 @@
 // owns and `wl_window_ops::destroyWindow` releases gives them.
 
 /** Words in the input ring — four per record. */
-pub const WL_RING_WORDS : i64 = 512;
+pub(crate) const WL_RING_WORDS : i64 = 512;
 
 /** Words per record: a kind, then two payloads and a spare. */
-pub const WL_RING_STRIDE : i64 = 4;
+pub(crate) const WL_RING_STRIDE : i64 = 4;
 
 /** The latches, the proxies, and the input the callbacks leave behind. */
 pub extern "C" struct WlWinState {

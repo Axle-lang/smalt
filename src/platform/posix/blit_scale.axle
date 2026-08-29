@@ -21,7 +21,7 @@ const SCALE_PIXEL_BYTES : i32 = 4;
 const SCALE_FRACTION_BITS : i32 = 16;
 
 /** The scratch, grown on demand and never shrunk. */
-pub class ScaleScratch : Closeable {
+pub(crate) class ScaleScratch : Closeable {
     pixels   : Blob;
     capacity : i64;
 

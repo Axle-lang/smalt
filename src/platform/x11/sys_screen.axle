@@ -33,7 +33,7 @@ use crate::sys::x11_lib::{XCloseDisplay, XDefaultScreen, XDisplayHeight, XDispla
 const SCREEN_UNKNOWN : i32 = 0;
 
 /** What the primary display measures. */
-pub class SysScreen {
+pub(crate) class SysScreen {
     /** The primary display's width, in pixels. */
     static fn width() : i32 {
         let display = XOpenDisplay(Raw::nil());

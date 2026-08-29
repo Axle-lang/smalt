@@ -23,7 +23,7 @@ use crate::sys::wl_request::{WL_BIND_VERSION, WL_REGISTRY_BIND};
 const WL_OUTPUT_MODE_CURRENT : i32 = 1;
 
 /** One global the compositor offers; the name is what a bind quotes. */
-pub fn onGlobal(data : ptr, registry : ptr, name : u32, iface : ptr, version : u32) : void {
+pub(crate) fn onGlobal(data : ptr, registry : ptr, name : u32, iface : ptr, version : u32) : void {
     unsafe {
         let app : ptr<WlApp> = data as ptr<WlApp>;
         if (cstrcmp(iface, "wl_compositor") == 0) {
@@ -54,11 +54,11 @@ pub fn onGlobal(data : ptr, registry : ptr, name : u32, iface : ptr, version : u
  * them for the run, and a compositor that withdraws `wl_compositor`
  * mid-session has ended the session by other means.
  */
-pub fn onGlobalRemove(data : ptr, registry : ptr, name : u32) : void {
+pub(crate) fn onGlobalRemove(data : ptr, registry : ptr, name : u32) : void {
 }
 
 /** The monitor's physical placement — not what a window size wants. */
-pub fn onOutputGeometry(
+pub(crate) fn onOutputGeometry(
     data : ptr,
     output : ptr,
     x : i32,
@@ -73,7 +73,7 @@ pub fn onOutputGeometry(
 }
 
 /** One of the monitor's modes; only the current one is the screen size. */
-pub fn onOutputMode(
+pub(crate) fn onOutputMode(
     data : ptr,
     output : ptr,
     flags : u32,
@@ -91,10 +91,10 @@ pub fn onOutputMode(
     }
 }
 
-pub fn onOutputDone(data : ptr, output : ptr) : void {}
-pub fn onOutputScale(data : ptr, output : ptr, factor : i32) : void {}
-pub fn onOutputName(data : ptr, output : ptr, name : ptr) : void {}
-pub fn onOutputDescription(data : ptr, output : ptr, description : ptr) : void {}
+pub(crate) fn onOutputDone(data : ptr, output : ptr) : void {}
+pub(crate) fn onOutputScale(data : ptr, output : ptr, factor : i32) : void {}
+pub(crate) fn onOutputName(data : ptr, output : ptr, name : ptr) : void {}
+pub(crate) fn onOutputDescription(data : ptr, output : ptr, description : ptr) : void {}
 
 /**
  * Which input devices the seat has.
@@ -103,14 +103,14 @@ pub fn onOutputDescription(data : ptr, output : ptr, description : ptr) : void {
  * not report is a protocol error, so this answer is what decides whether
  * the request is made at all.
  */
-pub fn onSeatCapabilities(data : ptr, seat : ptr, caps : u32) : void {
+pub(crate) fn onSeatCapabilities(data : ptr, seat : ptr, caps : u32) : void {
     unsafe {
         let app : ptr<WlApp> = data as ptr<WlApp>;
         (*app).seatCaps = caps;
     }
 }
 
-pub fn onSeatName(data : ptr, seat : ptr, name : ptr) : void {}
+pub(crate) fn onSeatName(data : ptr, seat : ptr, name : ptr) : void {}
 
 /**
  * `wl_registry.bind` — signature "usun": the global's name, the
@@ -120,7 +120,7 @@ pub fn onSeatName(data : ptr, seat : ptr, name : ptr) : void {}
  * compositor matches on the string while `libwayland` marshals the rest
  * of this object's life against the table.
  */
-pub fn bindGlobal(
+pub(crate) fn bindGlobal(
     args : WlArgs,
     registry : ptr,
     name : u32,

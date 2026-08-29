@@ -42,7 +42,7 @@ use crate::video::win_proc::{selfCheck, WinProcBlock};
 use crate::video::win_window::WinWindow;
 
 /** An on-screen window and its drawing surface, on Win32. */
-pub class SysWindow : Closeable {
+pub(crate) class SysWindow : Closeable {
     hwnd : ptr;
     hdc  : ptr;
     w    : i32;

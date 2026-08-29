@@ -34,7 +34,7 @@ const CURSOR_HOTSPOT : i32 = 0;
  * source *and* mask is a cursor with no pixels — which is exactly
  * "no pointer" and not "a black square".
  */
-pub fn blankCursor(win : SysWindow) : i64 {
+pub(crate) fn blankCursor(win : SysWindow) : i64 {
     let existing = cachedBlankCursor(win);
     if (existing != X_NONE) {
         return existing;

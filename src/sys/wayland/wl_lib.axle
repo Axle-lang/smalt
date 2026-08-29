@@ -118,7 +118,7 @@ pub extern "C" struct WlInterface {
  * Stated rather than measured, so that measuring it can disagree —
  * which is what `SysApp::checkRecords` is for.
  */
-pub const WL_MESSAGE_BYTES : i64 = 24;
+pub(crate) const WL_MESSAGE_BYTES : i64 = 24;
 
 /** Bytes in a `struct wl_interface`, for the same reason. */
-pub const WL_INTERFACE_BYTES : i64 = 40;
+pub(crate) const WL_INTERFACE_BYTES : i64 = 40;

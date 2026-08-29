@@ -20,7 +20,7 @@ use crate::sys::dib::{BITMAPINFO, BITMAPINFOHEADER};
 use crate::sys::win32_types::{MSG, POINT, RECT, WNDCLASSEXW};
 
 /** Sizes and offsets of the Win32 records, checked against the SDK. */
-pub class Win32Layout {
+pub(crate) class Win32Layout {
     /**
      * 0 when every record matches the SDK, otherwise the number of the
      * first check that failed.

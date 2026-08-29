@@ -26,7 +26,7 @@ const WORD_SIGN_BOUND : i64 = 32768;
 const WORD_MODULUS : i64 = 65536;
 
 /** A 16-bit field read as signed — a coordinate may be off-screen. */
-pub fn signedWord(v : i64) : i32 {
+pub(crate) fn signedWord(v : i64) : i32 {
     let low : i64 = v & 0xFFFF;
     if (low >= WORD_SIGN_BOUND) {
         return (low - WORD_MODULUS) as i32;
@@ -35,22 +35,22 @@ pub fn signedWord(v : i64) : i32 {
 }
 
 /** The x coordinate packed in the low half of a mouse `lParam`. */
-pub fn mouseX(lp : i64) : i32 {
+pub(crate) fn mouseX(lp : i64) : i32 {
     return signedWord(lp);
 }
 
 /** The y coordinate packed in the high half of a mouse `lParam`. */
-pub fn mouseY(lp : i64) : i32 {
+pub(crate) fn mouseY(lp : i64) : i32 {
     return signedWord(lp >>> 16);
 }
 
 /** The hardware scancode, `lParam` bits 16..23. */
-pub fn scanOf(lp : i64) : i32 {
+pub(crate) fn scanOf(lp : i64) : i32 {
     return ((lp >>> 16) & 0xFF) as i32;
 }
 
 /** The extended-key prefix, `lParam` bit 24. */
-pub fn extendedOf(lp : i64) : bool {
+pub(crate) fn extendedOf(lp : i64) : bool {
     return ((lp >>> 24) & 1) != 0;
 }
 
@@ -61,17 +61,17 @@ pub fn extendedOf(lp : i64) : bool {
  * auto-repeat, which a game must ignore for a jump but honour for a
  * text cursor.
  */
-pub fn repeatOf(lp : i64) : bool {
+pub(crate) fn repeatOf(lp : i64) : bool {
     return ((lp >>> 30) & 1) != 0;
 }
 
 /** The scancode a key message names. */
-pub fn keyOf(lp : i64) : Scancode {
+pub(crate) fn keyOf(lp : i64) : Scancode {
     return WinKeymap::lookup(scanOf(lp), extendedOf(lp));
 }
 
 /** Wheel notches, from the signed high half of `wParam`. */
-pub fn wheelOf(wp : i64) : i32 {
+pub(crate) fn wheelOf(wp : i64) : i32 {
     return signedWord(wp >>> 16) / WHEEL_DELTA;
 }
 
@@ -81,7 +81,7 @@ pub fn wheelOf(wp : i64) : i32 {
  * Split out of the drain loop so the loop stays a loop: this is the
  * whole translation table, and it reads as one.
  */
-pub fn handle(
+pub(crate) fn handle(
     message : i32,
     wp : i64,
     lp : i64,
@@ -173,7 +173,7 @@ pub fn handle(
 }
 
 /** The button a message names, or `Left` for a message that names none. */
-pub fn buttonOf(message : i32) : MouseButton {
+pub(crate) fn buttonOf(message : i32) : MouseButton {
     return match message {
         WM_RBUTTONDOWN => MouseButton::Right,
         WM_RBUTTONUP => MouseButton::Right,

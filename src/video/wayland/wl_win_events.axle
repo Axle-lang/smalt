@@ -32,7 +32,7 @@ use crate::video::wayland::wl_win_state::WlWinState;
  * event: a surface with an unacknowledged configure shows nothing,
  * however many buffers are committed to it.
  */
-pub fn onSurfaceConfigure(data : ptr, xdgSurface : ptr, serial : u32) : void {
+pub(crate) fn onSurfaceConfigure(data : ptr, xdgSurface : ptr, serial : u32) : void {
     unsafe {
         let st : ptr<WlWinState> = data as ptr<WlWinState>;
         let slot : ptr<i64> = recordAt((*st).ackArgs, 0, WL_WORD_BYTES) as ptr<i64>;
@@ -59,7 +59,7 @@ pub fn onSurfaceConfigure(data : ptr, xdgSurface : ptr, serial : u32) : void {
  * configures a surface for reasons other than a size change, and
  * adopting one of those would rebuild the framebuffer for nothing.
  */
-pub fn onToplevelConfigure(
+pub(crate) fn onToplevelConfigure(
     data : ptr,
     toplevel : ptr,
     width : i32,
@@ -81,7 +81,7 @@ pub fn onToplevelConfigure(
 }
 
 /** `xdg_toplevel.close` — the user asked; the client decides. */
-pub fn onToplevelClose(data : ptr, toplevel : ptr) : void {
+pub(crate) fn onToplevelClose(data : ptr, toplevel : ptr) : void {
     unsafe {
         let st : ptr<WlWinState> = data as ptr<WlWinState>;
         (*st).closePending = 1;
@@ -92,7 +92,7 @@ pub fn onToplevelClose(data : ptr, toplevel : ptr) : void {
  * `zxdg_toplevel_decoration_v1.configure` — the mode the compositor will
  * actually use, which is its answer and not the client's request.
  */
-pub fn onDecorationConfigure(data : ptr, decoration : ptr, mode : u32) : void {
+pub(crate) fn onDecorationConfigure(data : ptr, decoration : ptr, mode : u32) : void {
     unsafe {
         let st : ptr<WlWinState> = data as ptr<WlWinState>;
         (*st).decorationMode = mode as i32;
@@ -107,7 +107,7 @@ pub fn onDecorationConfigure(data : ptr, decoration : ptr, mode : u32) : void {
  * been matched against an interface table, and been dispatched into a
  * listener of ours.
  */
-pub fn onSyncDone(data : ptr, callback : ptr, serial : u32) : void {
+pub(crate) fn onSyncDone(data : ptr, callback : ptr, serial : u32) : void {
     unsafe {
         let st : ptr<WlWinState> = data as ptr<WlWinState>;
         (*st).syncDone = 1;

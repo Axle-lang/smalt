@@ -12,7 +12,7 @@ use crate::kernel::raw::Raw;
 use crate::sys::win32_types::WAVEHDR;
 
 /** Header `i` of a contiguous `WAVEHDR` block, read as the record it is. */
-pub fn headerAt(headers : Blob, i : i32) : ptr<WAVEHDR> {
+pub(crate) fn headerAt(headers : Blob, i : i32) : ptr<WAVEHDR> {
     unsafe {
         let base : i64 = Raw::addr(headers.at()) + (i as i64) * (sizeof<WAVEHDR>() as i64);
         return Raw::at(base) as ptr<WAVEHDR>;
@@ -20,7 +20,7 @@ pub fn headerAt(headers : Blob, i : i32) : ptr<WAVEHDR> {
 }
 
 /** The opaque device handle the open call wrote into its slot. */
-pub fn deviceHandle(device : Blob) : ptr {
+pub(crate) fn deviceHandle(device : Blob) : ptr {
     unsafe {
         return Raw::at(*(device.at() as ptr<i64>));
     }

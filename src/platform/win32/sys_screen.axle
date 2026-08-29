@@ -20,7 +20,7 @@ use crate::sys::win32_user::GetSystemMetrics;
 use crate::sys::win32_const::{SM_CXSCREEN, SM_CYSCREEN};
 
 /** What the primary display measures. */
-pub class SysScreen {
+pub(crate) class SysScreen {
     /** The primary display's width, in pixels. */
     static fn width() : i32 {
         return GetSystemMetrics(SM_CXSCREEN);

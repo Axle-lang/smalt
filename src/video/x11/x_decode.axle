@@ -33,7 +33,7 @@ const X_TEXT_DEL : i32 = 127;
 const X_WHEEL_NOTCH : i32 = 1;
 
 /** Whether a button number is a wheel notch rather than a button. */
-pub fn isWheel(button : i32) : bool {
+pub(crate) fn isWheel(button : i32) : bool {
     return button == X_BUTTON_WHEEL_UP || button == X_BUTTON_WHEEL_DOWN;
 }
 
@@ -49,7 +49,7 @@ pub fn isWheel(button : i32) : bool {
  * `text` is the caller's scratch: this runs per key press, and a
  * malloc per keystroke to hold one byte is a cost with no purpose.
  */
-pub fn textOf(event : ptr, text : Blob, keysym : Blob) : i32 {
+pub(crate) fn textOf(event : ptr, text : Blob, keysym : Blob) : i32 {
     unsafe {
         let written = XLookupString(
             event,
@@ -78,7 +78,7 @@ pub fn textOf(event : ptr, text : Blob, keysym : Blob) : i32 {
  *
  * Split out of the drain loop so the loop stays a loop.
  */
-pub fn handleKey(
+pub(crate) fn handleKey(
     event : ptr,
     press : bool,
     stamp : i64,
@@ -112,7 +112,7 @@ pub fn handleKey(
 }
 
 /** Turn one button event into state changes and queued events. */
-pub fn handleButton(
+pub(crate) fn handleButton(
     event : ptr,
     press : bool,
     stamp : i64,
@@ -167,7 +167,7 @@ pub fn handleButton(
 }
 
 /** Turn one motion event into a position and a delta. */
-pub fn handleMotion(event : ptr, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
+pub(crate) fn handleMotion(event : ptr, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
     unsafe {
         let motion : ptr<XMotionEvent> = event as ptr<XMotionEvent>;
         let nx = (*motion).x;
@@ -189,7 +189,7 @@ pub fn handleMotion(event : ptr, stamp : i64, queue : EventQueue, mouse : MouseS
 }
 
 /** The mouse button an X button number names. */
-pub fn buttonOf(button : i32) : MouseButton {
+pub(crate) fn buttonOf(button : i32) : MouseButton {
     return match button {
         X_BUTTON_RIGHT => MouseButton::Right,
         X_BUTTON_MIDDLE => MouseButton::Middle,

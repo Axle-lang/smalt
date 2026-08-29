@@ -31,19 +31,19 @@ use crate::sys::wl_libc::cstr;
 use crate::sys::wl_table::{nullTypes, putMessage, recordAt, typesOf2};
 
 /** `zxdg_decoration_manager_v1.destroy`. */
-pub const ZXDG_DECORATION_MANAGER_DESTROY : i32 = 0;
+pub(crate) const ZXDG_DECORATION_MANAGER_DESTROY : i32 = 0;
 
 /** `zxdg_decoration_manager_v1.get_toplevel_decoration`. */
-pub const ZXDG_DECORATION_GET_TOPLEVEL : i32 = 1;
+pub(crate) const ZXDG_DECORATION_GET_TOPLEVEL : i32 = 1;
 
 /** `zxdg_toplevel_decoration_v1.destroy`. */
-pub const ZXDG_TOPLEVEL_DECORATION_DESTROY : i32 = 0;
+pub(crate) const ZXDG_TOPLEVEL_DECORATION_DESTROY : i32 = 0;
 
 /** `zxdg_toplevel_decoration_v1.set_mode`. */
-pub const ZXDG_TOPLEVEL_DECORATION_SET_MODE : i32 = 1;
+pub(crate) const ZXDG_TOPLEVEL_DECORATION_SET_MODE : i32 = 1;
 
 /** The mode where the compositor draws the frame. */
-pub const ZXDG_DECORATION_MODE_SERVER_SIDE : i64 = 2;
+pub(crate) const ZXDG_DECORATION_MODE_SERVER_SIDE : i64 = 2;
 
 /** Requests in the manager and in one toplevel's decoration. */
 const MANAGER_REQUESTS : i64 = 2;
@@ -61,7 +61,7 @@ pub extern "C" struct XdgDecorationTables {
  * `xdgToplevel` is xdg-shell's own table, which
  * `get_toplevel_decoration` names as its second argument.
  */
-pub fn buildDecorationTables(out : ptr<XdgDecorationTables>, xdgToplevel : ptr) : void {
+pub(crate) fn buildDecorationTables(out : ptr<XdgDecorationTables>, xdgToplevel : ptr) : void {
     unsafe {
         let block = Raw::take(2 * sizeof<WlInterface>());
         let manager : ptr<WlInterface> = recordAt(block, 0, sizeof<WlInterface>()) as ptr<WlInterface>;

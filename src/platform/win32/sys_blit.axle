@@ -50,7 +50,7 @@ const BLIT_PLANES : i32 = 1;
  * when the framebuffer's size changes — describing it per frame would be
  * three stores and a branch for a value that changes on resize.
  */
-pub class SysBlit : Closeable {
+pub(crate) class SysBlit : Closeable {
     info       : Blob;
     describedW : i32;
     describedH : i32;

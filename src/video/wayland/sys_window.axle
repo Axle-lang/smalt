@@ -51,7 +51,7 @@ use crate::video::wayland::wl_win_events::onSyncDone;
 use crate::video::wayland::wl_win_state::{WlCallbackListener, WlWinState};
 use crate::video::wayland::wl_window_ops::{createWindow, destroyWindow, initState};
 
-pub class SysWindow : Closeable {
+pub(crate) class SysWindow : Closeable {
     /** The state block both sides address. */
     mem : Blob;
 

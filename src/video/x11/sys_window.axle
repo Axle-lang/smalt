@@ -77,7 +77,7 @@ const WM_PROTOCOL_COUNT : i32 = 1;
 const WINDOW_BORDER_WIDTH : i32 = 0;
 
 /** An on-screen window and its drawing surface, on X11. */
-pub class SysWindow : Closeable {
+pub(crate) class SysWindow : Closeable {
     display : ptr;
     window : i64;
     gc : ptr;

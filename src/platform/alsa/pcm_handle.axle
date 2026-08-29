@@ -27,18 +27,18 @@ const PCM_RING_BLOCKS : i64 = 2;
 const PCM_RECOVER_SILENT : i32 = 1;
 
 /** The opaque device handle the open call wrote into its slot. */
-pub fn pcm(handle : Blob) : ptr {
+pub(crate) fn pcm(handle : Blob) : ptr {
     unsafe {
         return Raw::at(*(handle.at() as ptr<i64>));
     }
 }
 
 /** Clear an underrun or a suspend. */
-pub fn recover(handle : Blob, err : i64) : void {
+pub(crate) fn recover(handle : Blob, err : i64) : void {
     snd_pcm_recover(pcm(handle), err as i32, PCM_RECOVER_SILENT);
 }
 
 /** The device's queue depth, in microseconds. */
-pub fn latencyUs() : i32 {
+pub(crate) fn latencyUs() : i32 {
     return (((AUDIO_BLOCK_FRAMES as i64) * PCM_RING_BLOCKS * PCM_MICROS_PER_SEC) / (AUDIO_RATE as i64)) as i32;
 }

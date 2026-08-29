@@ -27,7 +27,7 @@
 use crate::sys::x11_types::{MotifWmHints, XAnyEvent, XButtonEvent, XClientMessageEvent, XConfigureEvent, XFocusChangeEvent, XImage, XKeyEvent, XMotionEvent, XSizeHints};
 
 /** Sizes and offsets of the Xlib records, checked against `Xlib.h`. */
-pub class X11Layout {
+pub(crate) class X11Layout {
     /**
      * 0 when every record matches the header, otherwise the number of
      * the first check that failed.

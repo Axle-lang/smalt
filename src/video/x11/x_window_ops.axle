@@ -23,7 +23,7 @@ use crate::video::sys_window::SysWindow;
  * out when its connection breaks — which is a close the game cannot
  * prompt on, save on, or refuse.
  */
-pub fn registerCloseProtocol(win : SysWindow) : i64 {
+pub(crate) fn registerCloseProtocol(win : SysWindow) : i64 {
     let atom = XInternAtom(win.display, WM_DELETE_ATOM, X_FALSE);
     let slot = new Blob(8);
     defer slot.close();
@@ -36,7 +36,7 @@ pub fn registerCloseProtocol(win : SysWindow) : i64 {
 }
 
 /** Tell the manager this window's size is not negotiable. */
-pub fn pinSize(win : SysWindow, w : i32, h : i32) : void {
+pub(crate) fn pinSize(win : SysWindow, w : i32, h : i32) : void {
     let block = new Blob(sizeof<XSizeHints>());
     defer block.close();
     unsafe {
@@ -57,7 +57,7 @@ pub fn pinSize(win : SysWindow, w : i32, h : i32) : void {
  * only thing every manager in use understands here — the X protocol
  * itself has no borderless window.
  */
-pub fn removeDecorations(win : SysWindow) : void {
+pub(crate) fn removeDecorations(win : SysWindow) : void {
     let atom = XInternAtom(win.display, MOTIF_HINTS_ATOM, X_FALSE);
     if (atom == 0) {
         return;
@@ -84,17 +84,17 @@ pub fn removeDecorations(win : SysWindow) : void {
 }
 
 /** The window id, for the X calls that take one. */
-pub fn id(win : SysWindow) : i64 {
+pub(crate) fn id(win : SysWindow) : i64 {
     return win.window;
 }
 
 /** The connection this window lives on. */
-pub fn connection(win : SysWindow) : ptr {
+pub(crate) fn connection(win : SysWindow) : ptr {
     return win.display;
 }
 
 /** The cursor that draws nothing, or `None` if none was ever made. */
-pub fn cachedBlankCursor(win : SysWindow) : i64 {
+pub(crate) fn cachedBlankCursor(win : SysWindow) : i64 {
     return win.blank;
 }
 
@@ -105,7 +105,7 @@ pub fn cachedBlankCursor(win : SysWindow) : i64 {
  * window keeps it, because that is what it is defined on and what
  * outlives the call that made it.
  */
-pub fn adoptBlankCursor(win : SysWindow, cursor : i64) : void {
+pub(crate) fn adoptBlankCursor(win : SysWindow, cursor : i64) : void {
     win.blank = cursor;
 }
 
@@ -118,7 +118,7 @@ pub fn adoptBlankCursor(win : SysWindow, cursor : i64) : void {
  * self-check below can run it without a queue, a keyboard and a
  * mouse to hand.
  */
-pub fn absorb(win : SysWindow, event : ptr) : bool {
+pub(crate) fn absorb(win : SysWindow, event : ptr) : bool {
     unsafe {
         let any : ptr<XAnyEvent> = event as ptr<XAnyEvent>;
         let kind : i32 = (*any).type_;
@@ -168,7 +168,7 @@ pub fn absorb(win : SysWindow, event : ptr) : bool {
  * dragging a window across the desktop would reallocate the
  * framebuffer once per motion event.
  */
-pub fn noteResize(win : SysWindow, w : i32, h : i32) : void {
+pub(crate) fn noteResize(win : SysWindow, w : i32, h : i32) : void {
     if (w <= 0 || h <= 0) {
         return;
     }
@@ -181,7 +181,7 @@ pub fn noteResize(win : SysWindow, w : i32, h : i32) : void {
 }
 
 /** Record a focus edge, if it is one. */
-pub fn noteFocus(win : SysWindow, focused : bool) : void {
+pub(crate) fn noteFocus(win : SysWindow, focused : bool) : void {
     if (focused == win.focusedNow) {
         return;
     }
@@ -190,7 +190,7 @@ pub fn noteFocus(win : SysWindow, focused : bool) : void {
 }
 
 /** Record a minimise / restore edge, if it is one. */
-pub fn noteMinimised(win : SysWindow, minimised : bool) : void {
+pub(crate) fn noteMinimised(win : SysWindow, minimised : bool) : void {
     if (minimised == win.minimisedNow) {
         return;
     }
@@ -206,7 +206,7 @@ pub fn noteMinimised(win : SysWindow, minimised : bool) : void {
  * event to this window and to nothing else — a propagated synthetic
  * event would climb to the root and be somebody else's problem.
  */
-pub fn roundTrip(win : SysWindow, scratch : Blob, kind : i32, w : i32, h : i32) : bool {
+pub(crate) fn roundTrip(win : SysWindow, scratch : Blob, kind : i32, w : i32, h : i32) : bool {
     unsafe {
         Raw::clear(scratch.at(), X_EVENT_BYTES);
         let any : ptr<XAnyEvent> = scratch.at() as ptr<XAnyEvent>;

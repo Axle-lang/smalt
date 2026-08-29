@@ -28,7 +28,7 @@ use crate::video::scancode_set1::ScancodeSet1;
 const EVDEV_SHARED_MAX : i32 = 88;
 
 /** The kernel's key codes, as positions on the keyboard. */
-pub class EvdevKeymap {
+pub(crate) class EvdevKeymap {
     /**
      * The codes above the shared block.
      *

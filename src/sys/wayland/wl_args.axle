@@ -21,7 +21,7 @@ use crate::sys::wl_lib::wl_proxy_marshal_array_flags;
 use crate::sys::wl_table::{recordAt, WL_WORD_BYTES};
 
 /** Slots in an argument block — more than any request this port sends. */
-pub const WL_MAX_ARGS : i64 = 8;
+pub(crate) const WL_MAX_ARGS : i64 = 8;
 
 /**
  * `WL_MARSHAL_FLAG_DESTROY` — this request is the object's destructor,
@@ -35,7 +35,7 @@ pub const WL_MAX_ARGS : i64 = 8;
 const WL_MARSHAL_FLAG_DESTROY : i32 = 1;
 
 /** A reusable argument block. */
-pub class WlArgs : Closeable {
+pub(crate) class WlArgs : Closeable {
     mem : Blob;
 
     constructor() {

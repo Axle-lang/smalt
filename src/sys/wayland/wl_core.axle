@@ -32,7 +32,7 @@ pub extern "C" struct WlCore {
 }
 
 /** Fill `core` from the loaded library; `false` when a symbol is missing. */
-pub fn loadCore(core : ptr<WlCore>) : bool {
+pub(crate) fn loadCore(core : ptr<WlCore>) : bool {
     unsafe {
         let nil = Raw::nil();
         (*core).registry = dlsym(nil, "wl_registry_interface");

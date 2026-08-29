@@ -46,7 +46,7 @@ use crate::kernel::raw::Raw;
 use crate::sys::wl_app::{connect, disconnect, WlApp};
 use crate::sys::wl_lib::{WlInterface, WlMessage, WL_INTERFACE_BYTES, WL_MESSAGE_BYTES};
 
-pub class SysApp {
+pub(crate) class SysApp {
     /** Open the connection and bind what a window needs. */
     static fn instance() : ptr {
         return connect();

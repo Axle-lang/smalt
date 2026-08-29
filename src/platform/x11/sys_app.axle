@@ -45,7 +45,7 @@ use crate::sys::x11_lib::{XCloseDisplay, XkbSetDetectableAutoRepeat, XOpenDispla
 use crate::sys::x11_const::X_TRUE;
 
 /** The process's handle on the OS. */
-pub class SysApp {
+pub(crate) class SysApp {
     /** The token the window layer creates windows from. */
     static fn instance() : ptr {
         return XOpenDisplay(Raw::nil());

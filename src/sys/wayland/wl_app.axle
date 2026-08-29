@@ -41,7 +41,7 @@ use crate::sys::xdg_shell::{buildXdgTables, XdgTables};
  * token that survived would be a promise the window layer could not
  * keep.
  */
-pub fn connect() : ptr {
+pub(crate) fn connect() : ptr {
     unsafe {
         let display = wl_display_connect(Raw::nil());
         if (Raw::isNil(display)) {
@@ -90,7 +90,7 @@ pub fn connect() : ptr {
 }
 
 /** Close the connection the token names, and let its blocks go. */
-pub fn disconnect(token : ptr) : void {
+pub(crate) fn disconnect(token : ptr) : void {
     unsafe {
         if (Raw::isNil(token)) {
             return;
