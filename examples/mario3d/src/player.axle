@@ -19,14 +19,14 @@ use config::stompBounce;
 
 /** The hero: a pixel-space AABB with run/jump physics and a bonk record. */
 class Player {
-    x        : f64;
-    y        : f64;
-    vx       : f64;
-    vy       : f64;
-    onGround : bool;
-    alive    : bool;
-    bonkCol  : i32;
-    bonkRow  : i32;
+    pub(crate) x        : f64;
+    pub(crate) y        : f64;
+    vx                  : f64;
+    pub(crate) vy       : f64;
+    pub(crate) onGround : bool;
+    alive               : bool;
+    pub(crate) bonkCol  : i32;
+    pub(crate) bonkRow  : i32;
 
     /** Spawn the box at `(x, y)`, motionless and airborne. */
     constructor(x : f64, y : f64) {

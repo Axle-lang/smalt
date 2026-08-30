@@ -31,33 +31,33 @@ use config::maxEnemies;
  * parallel buffers), and the rules that advance them each frame.
  */
 class World {
-    level      : Level;
-    player     : Player;
-    camX       : f64;
-    state      : GameState;
-    lives      : i32;
-    coinCount  : i32;
-    jumpBuffer : i32;
-    coyote     : i32;
-    startX     : f64;
-    startY     : f64;
-    goalX      : f64;
-    goalY      : f64;
-    goalW      : f64;
-    goalH      : f64;
+    pub(crate) level     : Level;
+    pub(crate) player    : Player;
+    pub(crate) camX      : f64;
+    pub(crate) state     : GameState;
+    pub(crate) lives     : i32;
+    pub(crate) coinCount : i32;
+    jumpBuffer           : i32;
+    coyote               : i32;
+    startX               : f64;
+    startY               : f64;
+    pub(crate) goalX     : f64;
+    pub(crate) goalY     : f64;
+    goalW                : f64;
+    pub(crate) goalH     : f64;
 
-    cx     : f64[];
-    cy     : f64[];
-    cAlive : i32[];
-    nCoins : i32;
+    pub(crate) cx     : f64[];
+    pub(crate) cy     : f64[];
+    pub(crate) cAlive : i32[];
+    pub(crate) nCoins : i32;
 
-    eX       : f64[];
-    eY       : f64[];
-    eDir     : f64[];
-    eMinX    : f64[];
-    eMaxX    : f64[];
-    eAlive   : i32[];
-    nEnemies : i32;
+    pub(crate) eX       : f64[];
+    pub(crate) eY       : f64[];
+    eDir                : f64[];
+    eMinX               : f64[];
+    eMaxX               : f64[];
+    pub(crate) eAlive   : i32[];
+    pub(crate) nEnemies : i32;
 
     /** Build the level, spawn the hero, and lay out coins and enemies. */
     constructor() {

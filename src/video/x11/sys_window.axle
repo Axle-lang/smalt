@@ -78,13 +78,13 @@ const WINDOW_BORDER_WIDTH : i32 = 0;
 
 /** An on-screen window and its drawing surface, on X11. */
 pub(crate) class SysWindow : Closeable {
-    display : ptr;
-    window : i64;
-    gc : ptr;
+    pub(crate) display         : ptr;
+    pub(crate) window          : i64;
+    gc                         : ptr;
     /** The `(display, window, gc)` triple the blit reads. */
-    token : Blob;
+    token                      : Blob;
     /** The atom a close request carries in `data.l[0]`. */
-    deleteAtom : i64;
+    pub(crate) deleteAtom      : i64;
     /**
      * The cursor that draws nothing, or `None` until one is needed.
      *
@@ -93,18 +93,18 @@ pub(crate) class SysWindow : Closeable {
      * `SysCursor` makes it on the first hide and this class releases it,
      * because it is the window it is defined on that outlives the call.
      */
-    blank : i64;
-    w : i32;
-    h : i32;
-    closePending : bool;
-    destroyed : bool;
-    sizePending : bool;
-    pendingW : i32;
-    pendingH : i32;
-    focusedNow : bool;
-    focusPending : bool;
-    minimisedNow : bool;
-    minimisePending : bool;
+    pub(crate) blank           : i64;
+    w                          : i32;
+    h                          : i32;
+    pub(crate) closePending    : bool;
+    pub(crate) destroyed       : bool;
+    pub(crate) sizePending     : bool;
+    pub(crate) pendingW        : i32;
+    pub(crate) pendingH        : i32;
+    pub(crate) focusedNow      : bool;
+    pub(crate) focusPending    : bool;
+    pub(crate) minimisedNow    : bool;
+    pub(crate) minimisePending : bool;
 
     /**
      * Create a window with a `w` by `h` **client** area.
