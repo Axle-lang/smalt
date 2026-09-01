@@ -81,14 +81,8 @@ pub class Clip : Closeable {
     /** Bytes per decoded sample. */
     pub(file) static SAMPLE_BYTES : i64 = 2;
 
-    samples : Blob;
-    frames  : i32;
-
-    /** An empty clip. Playing it does nothing. */
-    constructor() {
-        self.samples = new Blob(Clip::SAMPLE_BYTES);
-        self.frames = 0;
-    }
+    samples : Blob = new Blob(Clip::SAMPLE_BYTES);
+    frames  : i32 = 0;
 
     /** Frames of mono audio, zero when the clip failed to load. */
     pub fn frameCount(self) : i32 {

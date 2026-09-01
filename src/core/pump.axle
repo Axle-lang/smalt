@@ -46,11 +46,11 @@ use crate::video::window::Window;
  * with an answer right now.
  */
 pub class Events : Closeable {
-    queue         : EventQueue;
-    keys          : KeyboardState;
-    mouse         : MouseState;
-    msg           : Blob;
-    sentQuit      : bool;
+    queue         : EventQueue = new EventQueue();
+    keys          : KeyboardState = new KeyboardState();
+    mouse         : MouseState = new MouseState();
+    msg           : Blob = SysDrain::newScratch();
+    sentQuit      : bool = false;
 
     /**
      * A relative-mouse change waiting for a window to apply it to.
@@ -61,17 +61,7 @@ pub class Events : Closeable {
      * which has the window — one frame later, which is a frame in which
      * the pointer is already pinned and only its visibility lags.
      */
-    cursorPending : bool;
-
-    /** A pump with an empty queue and nothing held. */
-    constructor() {
-        self.queue = new EventQueue();
-        self.keys = new KeyboardState();
-        self.mouse = new MouseState();
-        self.msg = SysDrain::newScratch();
-        self.sentQuit = false;
-        self.cursorPending = false;
-    }
+    cursorPending : bool = false;
 
     /** Whether an event is waiting. */
     pub fn hasNext(self) : bool {

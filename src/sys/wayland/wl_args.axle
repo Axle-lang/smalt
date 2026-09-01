@@ -36,11 +36,7 @@ const WL_MARSHAL_FLAG_DESTROY : i32 = 1;
 
 /** A reusable argument block. */
 pub(crate) class WlArgs : Closeable {
-    mem : Blob;
-
-    constructor() {
-        self.mem = new Blob(WL_MAX_ARGS * WL_WORD_BYTES);
-    }
+    mem : Blob = new Blob(WL_MAX_ARGS * WL_WORD_BYTES);
 
     /** Set slot `i` to `value`; every argument crosses as one word. */
     pub(crate) fn set(mut self, i : i64, value : i64) : void {

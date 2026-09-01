@@ -67,18 +67,10 @@ const BLIT_FRACTION_BITS : i32 = 16;
  * so a game whose window matches its framebuffer never pays for it.
  */
 pub(crate) class SysBlit : Closeable {
-    image      : Blob;
-    scaled     : ScaleScratch;
-    describedW : i32;
-    describedH : i32;
-
-    /** A blit path with no format described and no scratch taken. */
-    constructor() {
-        self.image = new Blob(sizeof<XImage>());
-        self.scaled = new ScaleScratch();
-        self.describedW = 0;
-        self.describedH = 0;
-    }
+    image      : Blob = new Blob(sizeof<XImage>());
+    scaled     : ScaleScratch = new ScaleScratch();
+    describedW : i32 = 0;
+    describedH : i32 = 0;
 
     /** The block, read as the record it holds. */
     pub(crate) fn header(self) : ptr<XImage> {

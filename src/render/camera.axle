@@ -29,24 +29,13 @@ pub class Camera {
     /** Pitch limit, just under a right angle, in radians. */
     pub(file) static PITCH_LIMIT : f64 = 1.5533430343;
 
-    position : Vec3;
-    yaw      : f64;
-    pitch    : f64;
-    fov      : f64;
-    near     : f64;
-    far      : f64;
-    aspect   : f64;
-
-    /** A camera at the origin looking down -Z. */
-    constructor() {
-        self.position = Vec3::zero();
-        self.yaw = 0.0;
-        self.pitch = 0.0;
-        self.fov = Camera::DEFAULT_FOV;
-        self.near = Camera::DEFAULT_NEAR;
-        self.far = Camera::DEFAULT_FAR;
-        self.aspect = 1.0;
-    }
+    position : Vec3 = Vec3::zero();
+    yaw      : f64 = 0.0;
+    pitch    : f64 = 0.0;
+    fov      : f64 = Camera::DEFAULT_FOV;
+    near     : f64 = Camera::DEFAULT_NEAR;
+    far      : f64 = Camera::DEFAULT_FAR;
+    aspect   : f64 = 1.0;
 
     /** Where the camera is. */
     pub fn eye(self) : Vec3 {

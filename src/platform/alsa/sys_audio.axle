@@ -73,18 +73,15 @@ const AUDIO_RECOVER_SILENT : i32 = 1;
  * never branches.
  */
 pub(crate) class SysAudio : Closeable {
-    handle  : Blob; // the snd_pcm_t* slot the open call writes through
-    samples : Blob; // AUDIO_BLOCKS * block bytes, contiguous
-    opened  : bool;
-    cursor  : i32;
+    // the snd_pcm_t* slot the open call writes through
+    handle  : Blob = new Blob(8);
+    // AUDIO_BLOCKS * block bytes, contiguous
+    samples : Blob = new Blob((AUDIO_BLOCKS as i64) * AudioFormat::blockBytes());
+    opened  : bool = false;
+    cursor  : i32 = 0;
 
     /** Open the default output device. */
     constructor() {
-        self.handle = new Blob(8);
-        self.samples = new Blob((AUDIO_BLOCKS as i64) * AudioFormat::blockBytes());
-        self.opened = false;
-        self.cursor = 0;
-
         // Non-blocking, because `reclaim` has to be able to answer "no
         // room" rather than wait: the mixer polls this from its own
         // thread and a blocking write would hold it there.

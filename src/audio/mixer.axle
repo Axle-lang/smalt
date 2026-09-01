@@ -30,16 +30,35 @@ use crate::platform::sys_audio::SysAudio;
  * why a voice must not hold the clip itself.
  */
 struct Voice {
-    base       : i64;
-    frames     : i32;
-    cursor     : i32;
-    gain       : f64;
-    positional : bool;
-    x          : f64;
-    y          : f64;
-    z          : f64;
-    range      : f64;
-    active     : bool;
+    /** Where the clip's samples are; 0 for a slot that holds none. */
+    base       : i64 = 0;
+
+    /** Frames in the clip. */
+    frames     : i32 = 0;
+
+    /** How many of them have been mixed. */
+    cursor     : i32 = 0;
+
+    /** The gain before the listener distance is applied. */
+    gain       : f64 = 0.0;
+
+    /** Whether the three coordinates below mean anything. */
+    positional : bool = false;
+
+    /** Where the sound is, when it is positional. */
+    x          : f64 = 0.0;
+
+    /** Where the sound is, when it is positional. */
+    y          : f64 = 0.0;
+
+    /** Where the sound is, when it is positional. */
+    z          : f64 = 0.0;
+
+    /** Distance at which a positional voice has faded to nothing. */
+    range      : f64 = 0.0;
+
+    /** Whether this slot is playing. */
+    active     : bool = false;
 }
 
 /**
@@ -58,33 +77,17 @@ pub class Mixer : Closeable {
     /** Full-scale sample magnitude, for the clamp. */
     pub(file) static CLAMP : i32 = 32767;
 
-    audio  : SysAudio;
-    voices : Voice[];
-    lx     : f64;
-    ly     : f64;
-    lz     : f64;
+    audio  : SysAudio = new SysAudio();
+    voices : Voice[] = malloc<Voice>(Mixer::VOICES as i64);
+    lx     : f64 = 0.0;
+    ly     : f64 = 0.0;
+    lz     : f64 = 0.0;
 
     /** Open the device and start with every voice idle. */
     constructor() {
-        self.audio = new SysAudio();
-        self.voices = malloc<Voice>(Mixer::VOICES as i64);
-        self.lx = 0.0;
-        self.ly = 0.0;
-        self.lz = 0.0;
         let i : i32 = 0;
         while (i < Mixer::VOICES) {
-            self.voices[i] = Voice {
-                base: 0,
-                frames: 0,
-                cursor: 0,
-                gain: 0.0,
-                positional: false,
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-                range: 0.0,
-                active: false,
-            };
+            self.voices[i] = Voice { active: false };
             i = i + 1;
         }
     }
@@ -140,13 +143,7 @@ pub class Mixer : Closeable {
         self.voices[i] = Voice {
             base: clip.base(),
             frames: clip.frameCount(),
-            cursor: 0,
             gain: gain,
-            positional: false,
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-            range: 0.0,
             active: true,
         };
     }
@@ -160,7 +157,6 @@ pub class Mixer : Closeable {
         self.voices[i] = Voice {
             base: clip.base(),
             frames: clip.frameCount(),
-            cursor: 0,
             gain: gain,
             positional: true,
             x: x,

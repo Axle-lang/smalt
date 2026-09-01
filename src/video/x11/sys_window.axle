@@ -82,7 +82,7 @@ pub(crate) class SysWindow : Closeable {
     pub(crate) window          : i64;
     gc                         : ptr;
     /** The `(display, window, gc)` triple the blit reads. */
-    token                      : Blob;
+    token                      : Blob = new Blob(sizeof<XSurface>());
     /** The atom a close request carries in `data.l[0]`. */
     pub(crate) deleteAtom      : i64;
     /**
@@ -93,18 +93,24 @@ pub(crate) class SysWindow : Closeable {
      * `SysCursor` makes it on the first hide and this class releases it,
      * because it is the window it is defined on that outlives the call.
      */
-    pub(crate) blank           : i64;
+    pub(crate) blank           : i64 = X_NONE;
     w                          : i32;
     h                          : i32;
-    pub(crate) closePending    : bool;
-    pub(crate) destroyed       : bool;
-    pub(crate) sizePending     : bool;
+    pub(crate) closePending    : bool = false;
+    pub(crate) destroyed       : bool = false;
+    pub(crate) sizePending     : bool = false;
     pub(crate) pendingW        : i32;
     pub(crate) pendingH        : i32;
-    pub(crate) focusedNow      : bool;
-    pub(crate) focusPending    : bool;
-    pub(crate) minimisedNow    : bool;
-    pub(crate) minimisePending : bool;
+    /**
+     * Assumed, not observed: a window that has just been mapped usually
+     * has focus, and the first `FocusOut` corrects it. The Win32 backend
+     * makes the same assumption for the same reason — there is no event
+     * that says "you started focused".
+     */
+    pub(crate) focusedNow      : bool = true;
+    pub(crate) focusPending    : bool = false;
+    pub(crate) minimisedNow    : bool = false;
+    pub(crate) minimisePending : bool = false;
 
     /**
      * Create a window with a `w` by `h` **client** area.
@@ -127,21 +133,8 @@ pub(crate) class SysWindow : Closeable {
         self.display = app;
         self.w = w;
         self.h = h;
-        self.closePending = false;
-        self.destroyed = false;
-        self.sizePending = false;
         self.pendingW = w;
         self.pendingH = h;
-        // Assumed, not observed: a window that has just been mapped
-        // usually has focus, and the first `FocusOut` corrects it. The
-        // Win32 backend makes the same assumption for the same reason —
-        // there is no event that says "you started focused".
-        self.focusedNow = true;
-        self.focusPending = false;
-        self.minimisedNow = false;
-        self.minimisePending = false;
-        self.blank = X_NONE;
-        self.token = new Blob(sizeof<XSurface>());
 
         let screen = XDefaultScreen(app);
         let black = XBlackPixel(app, screen);

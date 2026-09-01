@@ -35,14 +35,13 @@ pub class Surface : Closeable {
     colour    : i32[];
     w         : i32;
     h         : i32;
-    presenter : Presenter;
+    presenter : Presenter = new Presenter();
 
     /** A `w` by `h` framebuffer, with its own blit path. */
     constructor(w : i32, h : i32) {
         self.w = w;
         self.h = h;
         self.colour = malloc<i32>((w as i64) * h);
-        self.presenter = new Presenter();
     }
 
     /** Framebuffer width, in pixels. */

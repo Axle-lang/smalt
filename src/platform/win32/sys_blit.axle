@@ -51,15 +51,12 @@ const BLIT_PLANES : i32 = 1;
  * three stores and a branch for a value that changes on resize.
  */
 pub(crate) class SysBlit : Closeable {
-    info       : Blob;
-    describedW : i32;
-    describedH : i32;
+    info       : Blob = new Blob(sizeof<BITMAPINFO>());
+    describedW : i32 = 0;
+    describedH : i32 = 0;
 
     /** A blit path with no format described yet. */
     constructor() {
-        self.info = new Blob(sizeof<BITMAPINFO>());
-        self.describedW = 0;
-        self.describedH = 0;
         unsafe {
             let bmi = self.header();
             // `biSize` is the header validating itself, and it is the

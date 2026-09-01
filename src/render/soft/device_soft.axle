@@ -41,24 +41,17 @@ use std::numeric::math;
  */
 pub class SoftDevice : RenderDevice, Closeable {
     target    : RenderTarget;
-    presenter : Presenter;
-    blank     : Texture;
-    viewProj  : Mat4;
-    eyeX      : f64;
-    eyeY      : f64;
-    eyeZ      : f64;
-    light     : DirectionalLight;
+    presenter : Presenter = new Presenter();
+    blank     : Texture = Texture::white();
+    viewProj  : Mat4 = Mat4::identity();
+    eyeX      : f64 = 0.0;
+    eyeY      : f64 = 0.0;
+    eyeZ      : f64 = 0.0;
+    light     : DirectionalLight = DirectionalLight::noon();
 
     /** A device drawing at `w` by `h`, with a default light and no camera. */
     constructor(w : i32, h : i32) {
         self.target = new RenderTarget(w, h);
-        self.presenter = new Presenter();
-        self.blank = Texture::white();
-        self.viewProj = Mat4::identity();
-        self.eyeX = 0.0;
-        self.eyeY = 0.0;
-        self.eyeZ = 0.0;
-        self.light = DirectionalLight::noon();
     }
 
     /** Framebuffer width, in pixels. */

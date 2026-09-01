@@ -146,16 +146,9 @@ pub class EventQueue {
     /** Events the queue can hold; a full queue drops the oldest. */
     pub(file) static SLOTS : i64 = 256;
 
-    items : Event[];
-    head  : i32;
-    count : i32;
-
-    /** An empty queue. */
-    constructor() {
-        self.items = malloc<Event>(EventQueue::SLOTS);
-        self.head = 0;
-        self.count = 0;
-    }
+    items : Event[] = malloc<Event>(EventQueue::SLOTS);
+    head  : i32 = 0;
+    count : i32 = 0;
 
     /** How many events are waiting. */
     pub fn pending(self) : i32 {

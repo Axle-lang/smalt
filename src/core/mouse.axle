@@ -26,26 +26,14 @@ pub enum MouseButton : i32 {
  * since the last pump.
  */
 pub class MouseState {
-    x        : i32;
-    y        : i32;
-    dx       : i32;
-    dy       : i32;
-    wheel    : i32;
-    buttons  : i32;
-    relative : bool;
-    primed   : bool;
-
-    /** Pointer at the origin, nothing held, position not yet known. */
-    constructor() {
-        self.x = 0;
-        self.y = 0;
-        self.dx = 0;
-        self.dy = 0;
-        self.wheel = 0;
-        self.buttons = 0;
-        self.relative = false;
-        self.primed = false;
-    }
+    x        : i32 = 0;
+    y        : i32 = 0;
+    dx       : i32 = 0;
+    dy       : i32 = 0;
+    wheel    : i32 = 0;
+    buttons  : i32 = 0;
+    relative : bool = false;
+    primed   : bool = false;
 
     /**
      * Whether a real pointer position has been seen yet.

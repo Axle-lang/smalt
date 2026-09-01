@@ -39,11 +39,10 @@ pub class Clock : Closeable {
 
     freq   : i64;
     origin : i64;
-    sys    : SysClock;
+    sys    : SysClock = new SysClock();
 
     /** Start the clock. */
     constructor() {
-        self.sys = new SysClock();
         let hz : i64 = self.sys.frequency();
         // Every later conversion divides by this. A zero would trap, so
         // a machine that answers nonsense gets a clock that runs slow
@@ -150,26 +149,23 @@ pub class FramePacer {
     /** The span a frame rate is averaged over before it is republished — one second. */
     pub(file) static RATE_WINDOW_US : i64 = 1000000;
 
-    periodUs     : i64;
-    deadlineUs   : i64;
-    lastUs       : i64;
-    started      : bool;
-    windowUs     : i64;
-    windowFrames : i64;
-    rate         : f64;
+    periodUs     : i64 = 0;
+    deadlineUs   : i64 = 0;
+    lastUs       : i64 = 0;
+    started      : bool = false;
+    windowUs     : i64 = 0;
+    windowFrames : i64 = 0;
+    rate         : f64 = 0.0;
 
-    /** A pacer targeting `fps` frames per second; `0` leaves it uncapped. */
+    /**
+     * A pacer targeting `fps` frames per second; `0` leaves it uncapped.
+     *
+     * Through `setRate`, so the period is derived from a frame rate in
+     * one place: the two spellings drifting apart would give a pacer
+     * that targeted one rate until it was retargeted to the same one.
+     */
     constructor(fps : i32) {
-        self.periodUs = 0;
-        if (fps > 0) {
-            self.periodUs = Clock::US_PER_SEC / (fps as i64);
-        }
-        self.deadlineUs = 0;
-        self.lastUs = 0;
-        self.started = false;
-        self.windowUs = 0;
-        self.windowFrames = 0;
-        self.rate = 0.0;
+        self.setRate(fps);
     }
 
     /** Retarget the loop; `0` uncaps it. Takes effect on the next tick. */

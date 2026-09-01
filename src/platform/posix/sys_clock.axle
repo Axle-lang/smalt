@@ -49,14 +49,11 @@ const MS_PER_SEC : i64 = 1000;
  * frame for sixteen bytes is a cost with no purpose.
  */
 pub(crate) class SysClock : Closeable {
-    now : Blob;
-    nap : Blob;
+    /** The record a reading is written into. */
+    now : Blob = new Blob(sizeof<timespec>());
 
-    /** A clock with its own reading and sleeping records. */
-    constructor() {
-        self.now = new Blob(sizeof<timespec>());
-        self.nap = new Blob(sizeof<timespec>());
-    }
+    /** The record a sleep's duration is written into. */
+    nap : Blob = new Blob(sizeof<timespec>());
 
     /**
      * Ticks per second of `counter`. Constant for the process.

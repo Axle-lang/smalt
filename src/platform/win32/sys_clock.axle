@@ -32,12 +32,8 @@ use crate::sys::win32_kernel::{QueryPerformanceCounter, QueryPerformanceFrequenc
  * reading allocates nothing.
  */
 pub(crate) class SysClock : Closeable {
-    slot : Blob;
-
-    /** A clock with its own reading slot. */
-    constructor() {
-        self.slot = new Blob(8);
-    }
+    /** The eight bytes a reading is written into. */
+    slot : Blob = new Blob(8);
 
     /** Ticks per second of `counter`. Constant for the process. */
     pub(crate) fn frequency(self) : i64 {

@@ -46,10 +46,10 @@ const BLIT_FORMAT : i32 = 1;
 
 pub(crate) class SysBlit : Closeable {
     /** The scratch a scaled frame is resampled into. */
-    scale : ScaleScratch;
+    scale : ScaleScratch = new ScaleScratch();
 
     /** The layout the current buffers have. */
-    info : Blob;
+    info : Blob = new Blob(sizeof<WlBlitHeader>());
 
     /**
      * The block this seam's requests are marshalled from.
@@ -58,12 +58,9 @@ pub(crate) class SysBlit : Closeable {
      * requests and a resize five, and a block allocated at each would be
      * a malloc and a free sixty times a second for eight words.
      */
-    args : WlArgs;
+    args : WlArgs = new WlArgs();
 
     constructor() {
-        self.scale = new ScaleScratch();
-        self.args = new WlArgs();
-        self.info = new Blob(sizeof<WlBlitHeader>());
         unsafe {
             Raw::clear(self.info.at(), sizeof<WlBlitHeader>());
             let header : ptr<WlBlitHeader> = self.info.at() as ptr<WlBlitHeader>;

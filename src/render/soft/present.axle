@@ -19,12 +19,7 @@ use crate::render::soft::target::RenderTarget;
  * Owns the platform blit for the life of the device that owns it.
  */
 pub class Presenter : Closeable {
-    blit : SysBlit;
-
-    /** A presenter over a fresh platform blit. */
-    constructor() {
-        self.blit = new SysBlit();
-    }
+    blit : SysBlit = new SysBlit();
 
     /**
      * Blit `target` into the `dstW` by `dstH` client area of `surface`.

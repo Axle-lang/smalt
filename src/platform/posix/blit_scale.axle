@@ -22,21 +22,18 @@ pub(crate) class ScaleScratch : Closeable {
     /** Fractional bits of the source walk's fixed-point accumulator. */
     pub(file) static FRACTION_BITS : i32 = 16;
 
-    pixels   : Blob;
-    capacity : i64;
-
     /**
-     * A scratch holding nothing.
+     * The resampled frame, holding nothing until one is needed.
      *
      * One byte rather than none: a `Blob` is at least a byte, and a
      * scratch nobody has needed yet is simpler to model as an empty one
      * than as an absent one every path would have to test for. A game
      * whose window matches its framebuffer never grows it.
      */
-    constructor() {
-        self.pixels = new Blob(1);
-        self.capacity = 0;
-    }
+    pixels   : Blob = new Blob(1);
+
+    /** Pixels the block has room for. */
+    capacity : i64 = 0;
 
     /** Where the resampled frame starts. */
     pub(crate) fn at(self) : ptr {

@@ -67,20 +67,18 @@ const MMSYSERR_NOERROR : i32 = 0;
  * every other call becomes a no-op, so a caller never branches.
  */
 pub(crate) class SysAudio : Closeable {
-    device  : Blob; // the HWAVEOUT slot the open call writes through
-    format  : Blob; // WAVEFORMATEX, read once by the open call
-    headers : Blob; // AUDIO_BLOCKS * WAVEHDR, contiguous
-    samples : Blob; // AUDIO_BLOCKS * block bytes, contiguous
-    opened  : bool;
+    // the HWAVEOUT slot the open call writes through
+    device  : Blob = new Blob(8);
+    // WAVEFORMATEX, read once by the open call
+    format  : Blob = new Blob(sizeof<WAVEFORMATEX>());
+    // AUDIO_BLOCKS * WAVEHDR, contiguous
+    headers : Blob = new Blob((AUDIO_BLOCKS as i64) * (sizeof<WAVEHDR>() as i64));
+    // AUDIO_BLOCKS * block bytes, contiguous
+    samples : Blob = new Blob((AUDIO_BLOCKS as i64) * AudioFormat::blockBytes());
+    opened  : bool = false;
 
     /** Open the default output device. */
     constructor() {
-        self.device = new Blob(8);
-        self.format = new Blob(sizeof<WAVEFORMATEX>());
-        self.headers = new Blob((AUDIO_BLOCKS as i64) * (sizeof<WAVEHDR>() as i64));
-        self.samples = new Blob((AUDIO_BLOCKS as i64) * AudioFormat::blockBytes());
-        self.opened = false;
-
         let align : i32 = AUDIO_CHANNELS * AUDIO_SAMPLE_BYTES;
         unsafe {
             let f = self.format.at() as ptr<WAVEFORMATEX>;

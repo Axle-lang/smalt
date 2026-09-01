@@ -163,11 +163,10 @@ pub(crate) fn windowProc(hwnd : ptr, msg : u32, wParam : u64, lParam : i64) : i6
  * somewhere the compiler is entitled to move.
  */
 pub(crate) class WinProcBlock : Closeable {
-    mem : Blob;
+    mem : Blob = new Blob(sizeof<WinProcState>());
 
     /** A block with nothing pending and focus assumed. */
     constructor() {
-        self.mem = new Blob(sizeof<WinProcState>());
         unsafe {
             let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             (*st).focused = 1;

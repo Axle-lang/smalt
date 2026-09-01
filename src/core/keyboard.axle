@@ -116,14 +116,11 @@ pub class KeyboardState {
     /** Slots in the key-state array; scancodes stay under this. */
     pub(file) static SLOTS : i64 = 256;
 
-    down : bool[];
+    down : bool[] = malloc<bool>(KeyboardState::SLOTS);
 
     /** All keys released. */
     constructor() {
-        self.down = malloc<bool>(KeyboardState::SLOTS);
-        for (i of 0..KeyboardState::SLOTS) {
-            self.down[i] = false;
-        }
+        self.releaseAll();
     }
 
     /** Whether `sc` is currently held. */
