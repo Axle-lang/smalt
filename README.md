@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://axle-lang.dev"><img alt="Powered by Axle" src="https://img.shields.io/badge/powered%20by-Axle-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
-  <a href="https://axle-lang.dev"><img alt="Axle 0.11.0+" src="https://img.shields.io/badge/axle-0.10.0%2B-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
+  <a href="https://axle-lang.dev"><img alt="Axle 0.12.0+" src="https://img.shields.io/badge/axle-0.12.0%2B-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
 </p>
 <p align="center">
   <img alt="Rendering: 100% CPU" src="https://img.shields.io/badge/rendering-100%25%20CPU-FF7A45?style=flat-square&labelColor=1b1b2b">
@@ -132,10 +132,10 @@ That is the whole setup. No DLL beside the binary, no `[link]` section — `gdi3
 
 ### Prerequisite
 
-Only the Axle compiler, **v0.11.0 or newer**:
+Only the Axle compiler, **v0.12.0 or newer**:
 
 ```bash
-axle --version      # must print 0.11.0 or higher
+axle --version      # must print 0.12.0 or higher
 ```
 
 <details>
@@ -143,7 +143,7 @@ axle --version      # must print 0.11.0 or higher
 
 <br>
 
-- **Windows** — install the x64 `.msi` from the `v0.11.0` (or newer) release; it puts `axle.exe` in `C:\Program Files (x86)\Axle\` and on your `PATH`.
+- **Windows** — install the x64 `.msi` from the `v0.12.0` (or newer) release; it puts `axle.exe` in `C:\Program Files (x86)\Axle\` and on your `PATH`.
 - **Other platforms** — see [axle-lang.dev](https://axle-lang.dev).
 
 On Linux, the X11 port needs `libx11-dev` and `libasound2-dev`; the
@@ -488,13 +488,17 @@ Display enumeration covers the primary monitor only — `EnumDisplayMonitors` ta
 
 ## 📝 Notes for anyone extending this
 
-Three language rules shape the signatures here:
+Five language rules shape the signatures here:
 
-- **A `pub const` crosses a crate boundary** and is how a constant is published — `WINDOW_RESIZABLE` and friends. A global's initialiser must be a literal, so a constant derived from another is spelled out with the derivation in its doc comment.
+- **Every member sits on a visibility ladder**, fields and methods alike: unmarked means the declaring class's own, then `pub(derived)`, `pub(file)`, `pub(crate)`, `pub`. smalt writes the narrowest rung that compiles, so the marker is information: `KeyboardState::isDown` is `pub` and `KeyboardState::press` is `pub(crate)`, which says in the signature what the docs used to say in prose — the drain writes the input state and a game reads it. A seam class declares `pub(crate)` and so do its methods; an implementation helper is `pub(file)`.
+- **A constant is a `static` field when it belongs to a class, and a `pub const` when it crosses the crate boundary.** That is not a preference: a `static` field is class-scoped *inside the crate that declares it* and a program that depends on smalt cannot name one, so `Camera::PITCH_LIMIT` and `Raster::MIN_W` are fields while `WINDOW_RESIZABLE` and the four `AUDIO_*` numbers stay globals. Both take a literal, so a constant derived from another is a `static fn` — `AudioFormat::frameBytes()`.
+- **A field's default belongs on the field.** `focusedNow : bool = true;` runs at every construction, so a constructor carries only what depends on an argument, and nine classes here have none at all.
 - **Storing a parameter into a field or an array element needs `own`** (**E0513** otherwise) when the parameter is a *reference* or a value that owns a resource. A plain value struct — `Vertex`, `Vec3`, `Event` — is copied into the slot and needs no keyword.
 - **`mut` on a class parameter is rejected as never-mutated** (**E0281**): calling a mutating method through it is not a mutation *of the binding*.
 
 One shape stays out of reach, and the code works around it on purpose: **a payload-bearing `enum` cannot carry another payload-bearing `enum`**. A variant payload takes a scalar, a payload-free `enum`, a `string`, an owning object, a `Shared`/`Weak` handle or a dynamic array — which is enough for `Event` to become a real tagged union whenever someone wants to do that work. It is a flat struct with a `kind` today (`core/event.axle`) because that is what it was written as.
+
+**Handing a `Closeable` out of a call reads as a transfer.** A getter that returned a field the object still owns — `Window::native()` did — makes the call site an owner with a release to write (**E0511**), because nothing distinguishes it from `AssetFile::readAll`, which really does hand back a fresh block. The field is exposed at `pub(crate)` instead and read as `win.sys`.
 
 Releasing a resource is `defer`'s job wherever a function has more than one way out — `Bmp::read` has six, and one `defer data.close()` covers them all. The compiler enforces the release either way: every `Blob`, `Window`, `Platform`, `Events`, `Clock` and `SoftDevice` implements `Closeable`, so a path that drops one without closing is **E0511**.
 
