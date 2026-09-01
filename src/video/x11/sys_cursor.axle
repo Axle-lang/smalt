@@ -38,7 +38,7 @@ class SysCursor {
      * which is what makes the destination coordinates relative to `win`
      * — the form that needs no coordinate conversion.
      */
-    static fn recentre(win : SysWindow, x : i32, y : i32) : void {
+    pub(crate) static fn recentre(win : SysWindow, x : i32, y : i32) : void {
         XWarpPointer(connection(win), X_NONE, id(win), 0, 0, 0, 0, x, y);
         XFlush(connection(win));
     }
@@ -51,7 +51,7 @@ class SysCursor {
      * flag. Showing removes the definition, so the window inherits its
      * parent's cursor again, which is the arrow the desktop chose.
      */
-    static fn showCursor(win : SysWindow, visible : bool) : void {
+    pub(crate) static fn showCursor(win : SysWindow, visible : bool) : void {
         if (visible) {
             XUndefineCursor(connection(win), id(win));
             XFlush(connection(win));

@@ -36,7 +36,7 @@ pub(crate) class EvdevKeymap {
      * a code that already means something else — which is why the two
      * tables cannot be one.
      */
-    static fn extended(code : i32) : Scancode {
+    pub(crate) static fn extended(code : i32) : Scancode {
         return match code {
             96 => Scancode::KeypadEnter,
             97 => Scancode::RightControl,
@@ -56,7 +56,7 @@ pub(crate) class EvdevKeymap {
     }
 
     /** The scancode an evdev key code names. */
-    static fn lookup(code : i32) : Scancode {
+    pub(crate) static fn lookup(code : i32) : Scancode {
         if (code <= 0) {
             return Scancode::Unknown;
         }

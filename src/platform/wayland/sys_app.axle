@@ -48,12 +48,12 @@ use crate::sys::wl_lib::{WlInterface, WlMessage, WL_INTERFACE_BYTES, WL_MESSAGE_
 
 pub(crate) class SysApp {
     /** Open the connection and bind what a window needs. */
-    static fn instance() : ptr {
+    pub(crate) static fn instance() : ptr {
         return connect();
     }
 
     /** Whether [`SysApp::instance`] failed. */
-    static fn isNil(token : ptr) : bool {
+    pub(crate) static fn isNil(token : ptr) : bool {
         return Raw::isNil(token);
     }
 
@@ -61,7 +61,7 @@ pub(crate) class SysApp {
      * Nothing is left to prepare: the registry sweep and the binds are
      * what `instance` did. A live token is a prepared one.
      */
-    static fn prepareWindows(token : ptr) : bool {
+    pub(crate) static fn prepareWindows(token : ptr) : bool {
         return !Raw::isNil(token);
     }
 
@@ -70,18 +70,18 @@ pub(crate) class SysApp {
      * far below a frame. Reporting `false` is what keeps the matching
      * lower from running.
      */
-    static fn raiseTimerRes() : bool {
+    pub(crate) static fn raiseTimerRes() : bool {
         return false;
     }
 
     /** Nothing was raised, so nothing is lowered. */
-    static fn lowerTimerRes() : void {}
+    pub(crate) static fn lowerTimerRes() : void {}
 
     /**
      * The two records the port and `libwayland` address from opposite
      * sides. Answers which one disagrees, or 0.
      */
-    static fn checkRecords() : i32 {
+    pub(crate) static fn checkRecords() : i32 {
         if (sizeof<WlMessage>() != WL_MESSAGE_BYTES) {
             return 1;
         }
@@ -92,7 +92,7 @@ pub(crate) class SysApp {
     }
 
     /** Close the connection and release the record. */
-    static fn release(token : ptr) : void {
+    pub(crate) static fn release(token : ptr) : void {
         disconnect(token);
     }
 }

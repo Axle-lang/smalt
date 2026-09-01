@@ -21,7 +21,7 @@ const X_KEYCODE_OFFSET : i32 = 8;
 /** The X11 keycode to a position on the keyboard. */
 class XKeymap {
     /** The scancode an X11 key event names. */
-    static fn lookup(keycode : i32) : Scancode {
+    pub(crate) static fn lookup(keycode : i32) : Scancode {
         return EvdevKeymap::lookup(keycode - X_KEYCODE_OFFSET);
     }
 }

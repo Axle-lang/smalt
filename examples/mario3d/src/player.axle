@@ -41,7 +41,7 @@ class Player {
     }
 
     /** Teleport to `(x, y)` and reset velocity (used on respawn). */
-    fn placeAt(mut self, x : f64, y : f64) : void {
+    pub(crate) fn placeAt(mut self, x : f64, y : f64) : void {
         self.x = x;
         self.y = y;
         self.vx = 0.0;
@@ -50,7 +50,7 @@ class Player {
     }
 
     /** Accelerate toward `dir` (-1/0/+1); coast to a stop when idle. */
-    fn accelerate(mut self, dir : f64) : void {
+    pub(crate) fn accelerate(mut self, dir : f64) : void {
         if (dir > 0.5) {
             self.vx = self.vx + moveAccel;
             if (self.vx > maxRun) { self.vx = maxRun; }
@@ -69,18 +69,18 @@ class Player {
     }
 
     /** Launch upward off the ground at the fixed jump velocity. */
-    fn jump(mut self) : void {
+    pub(crate) fn jump(mut self) : void {
         self.vy = -jumpVel;
         self.onGround = false;
     }
 
     /** Small upward kick after stomping an enemy. */
-    fn bounce(mut self) : void {
+    pub(crate) fn bounce(mut self) : void {
         self.vy = -stompBounce;
     }
 
     /** Apply horizontal velocity, then resolve against walls. */
-    fn stepX(mut self, level : Level) : void {
+    pub(crate) fn stepX(mut self, level : Level) : void {
         let t : f64 = tile as f64;
         let w : f64 = playerW;
         let h : f64 = playerH;
@@ -103,7 +103,7 @@ class Player {
     }
 
     /** Apply gravity + vertical velocity, then land or bonk. */
-    fn stepY(mut self, level : Level) : void {
+    pub(crate) fn stepY(mut self, level : Level) : void {
         let t : f64 = tile as f64;
         let w : f64 = playerW;
         let h : f64 = playerH;
@@ -138,7 +138,7 @@ class Player {
     }
 
     /** AABB overlap of the player box with world rect (rx, ry, rw, rh). */
-    fn overlapsRect(self, rx : f64, ry : f64, rw : f64, rh : f64) : bool {
+    pub(crate) fn overlapsRect(self, rx : f64, ry : f64, rw : f64, rh : f64) : bool {
         return self.x < rx + rw && self.x + playerW > rx && self.y < ry + rh && self.y + playerH > ry;
     }
 }

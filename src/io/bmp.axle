@@ -103,7 +103,7 @@ pub class Bmp {
      * thing that would be silently absent: drop it and every one of these
      * grows by two.
      */
-    static fn verifyLayout() : i32 {
+    pub static fn verifyLayout() : i32 {
         if (sizeof<BITMAPFILEHEADER>() != 14) {
             return 1;
         }
@@ -129,7 +129,7 @@ pub class Bmp {
      * The unmistakable magenta checker that stands in for a texture
      * that could not be loaded.
      */
-    static fn missing() : Texture {
+    pub static fn missing() : Texture {
         return Texture::checker(
             BMP_MISSING_SIZE,
             BMP_MISSING_CELLS,
@@ -139,7 +139,7 @@ pub class Bmp {
     }
 
     /** Bytes per row, including the padding up to a four-byte boundary. */
-    static fn stride(width : i32, bytesPerPixel : i32) : i32 {
+    pub(file) static fn stride(width : i32, bytesPerPixel : i32) : i32 {
         let raw : i32 = width * bytesPerPixel;
         return ((raw + BMP_ROW_ALIGN - 1) / BMP_ROW_ALIGN) * BMP_ROW_ALIGN;
     }
@@ -150,7 +150,7 @@ pub class Bmp {
      * Split from `load` so the header validation reads as a list of
      * refusals and the pixel walk as a loop.
      */
-    static fn decode(data : Blob, width : i32, height : i32, topDown : bool, bpp : i32) : Texture {
+    pub(file) static fn decode(data : Blob, width : i32, height : i32, topDown : bool, bpp : i32) : Texture {
         let bytesPerPixel : i32 = bpp / 8;
         let rowBytes = Bmp::stride(width, bytesPerPixel);
         let start : i64 = 0;
@@ -191,7 +191,7 @@ pub class Bmp {
      * Never throws and never returns null: a caller binds the result
      * either way and sees the failure on screen.
      */
-    static fn load(path : string) : Texture {
+    pub static fn load(path : string) : Texture {
         try {
             return Bmp::read(path)?;
         } catch e : IOException {
@@ -205,7 +205,7 @@ pub class Bmp {
      * Split from `load` so the failures have one exit: every `return
      * Bmp::missing()` here would be a second answer to the same question.
      */
-    static fn read(path : string) : Texture ! IOException {
+    pub static fn read(path : string) : Texture ! IOException {
         let data = AssetFile::readAll(path)?;
         // Six exits, one release: a `defer` is registered against the
         // function, so the malformed-header throws below and the success

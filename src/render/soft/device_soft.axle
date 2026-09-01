@@ -65,22 +65,22 @@ pub class SoftDevice : RenderDevice, Closeable {
     }
 
     /** Framebuffer width, in pixels. */
-    fn width(self) : i32 {
+    pub fn width(self) : i32 {
         return self.target.width();
     }
 
     /** Framebuffer height, in pixels. */
-    fn height(self) : i32 {
+    pub fn height(self) : i32 {
         return self.target.height();
     }
 
     /** Match the framebuffer to a new client size. */
-    fn resize(mut self, w : i32, h : i32) : void {
+    pub fn resize(mut self, w : i32, h : i32) : void {
         self.target.resize(w, h);
     }
 
     /** Bind the camera whose view and projection the next draws use. */
-    fn setCamera(mut self, camera : Camera) : void {
+    pub fn setCamera(mut self, camera : Camera) : void {
         self.viewProj = camera.viewProjection();
         let eye = camera.eye();
         self.eyeX = eye.x;
@@ -89,12 +89,12 @@ pub class SoftDevice : RenderDevice, Closeable {
     }
 
     /** Bind the scene's light. */
-    fn setLight(mut self, light : DirectionalLight) : void {
+    pub fn setLight(mut self, light : DirectionalLight) : void {
         self.light = light;
     }
 
     /** Clear colour and depth, opening a frame. */
-    fn beginFrame(mut self, background : Color) : void {
+    pub fn beginFrame(mut self, background : Color) : void {
         self.target.clear(background.packed());
     }
 
@@ -111,12 +111,12 @@ pub class SoftDevice : RenderDevice, Closeable {
      * The array aliases the framebuffer: writes land in the next
      * `endFrame`. It is invalidated by `resize`, so re-read it after one.
      */
-    fn pixels(mut self) : i32[] {
+    pub fn pixels(mut self) : i32[] {
         return self.target.pixels();
     }
 
     /** Write `c` at (`x`, `y`) with no depth test — overlays and diagnostics. */
-    fn plot(mut self, x : i32, y : i32, c : Color) : void {
+    pub fn plot(mut self, x : i32, y : i32, c : Color) : void {
         self.target.plotPacked(x, y, c.packed());
     }
 
@@ -128,7 +128,7 @@ pub class SoftDevice : RenderDevice, Closeable {
      * `pixels()`. Packing a word only to unpack it is the cost this
      * avoids.
      */
-    fn plotPacked(mut self, x : i32, y : i32, packed : i32) : void {
+    pub fn plotPacked(mut self, x : i32, y : i32, packed : i32) : void {
         self.target.plotPacked(x, y, packed);
     }
 
@@ -141,7 +141,7 @@ pub class SoftDevice : RenderDevice, Closeable {
      * need the inverse transpose, which is not built here because
      * nothing in the library produces one.
      */
-    static fn toClip(v : Vertex, mvp : Mat4, model : Mat4) : ClipVertex {
+    pub(file) static fn toClip(v : Vertex, mvp : Mat4, model : Mat4) : ClipVertex {
         let clip = mvp.apply(Vec4::point(v.position));
         let world = model.applyPoint(v.position);
         let normal = model.applyDirection(v.normal);
@@ -162,7 +162,7 @@ pub class SoftDevice : RenderDevice, Closeable {
     }
 
     /** Draw `mesh` positioned by `model`, sampling `tex`. */
-    fn drawMesh(mut self, mesh : Mesh, model : Mat4, tex : Texture, material : Material) : void {
+    pub fn drawMesh(mut self, mesh : Mesh, model : Mat4, tex : Texture, material : Material) : void {
         let mvp = self.viewProj.mul(model);
         let sh = Shading::make(material, self.light, Vec3::make(self.eyeX, self.eyeY, self.eyeZ));
         let count = mesh.triangles();
@@ -180,12 +180,12 @@ pub class SoftDevice : RenderDevice, Closeable {
     }
 
     /** Draw `mesh` with no texture — the material's albedo alone. */
-    fn drawMeshFlat(mut self, mesh : Mesh, model : Mat4, material : Material) : void {
+    pub fn drawMeshFlat(mut self, mesh : Mesh, model : Mat4, material : Material) : void {
         self.drawMesh(mesh, model, self.blank, material);
     }
 
     /** Blit the finished frame into `win`, closing the frame. */
-    fn endFrame(mut self, win : Window) : void {
+    pub fn endFrame(mut self, win : Window) : void {
         if (!win.isOpen()) {
             return;
         }
@@ -193,7 +193,7 @@ pub class SoftDevice : RenderDevice, Closeable {
     }
 
     /** Release what the device holds. */
-    fn close(self) : void {
+    pub fn close(self) : void {
         self.presenter.close();
     }
 }

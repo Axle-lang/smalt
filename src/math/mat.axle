@@ -75,7 +75,7 @@ pub struct Mat4 {
     pub m33 : f64;
 
     /** A matrix from sixteen values, in row-major order. */
-    static fn rows(
+    pub static fn rows(
         m00 : f64,
         m01 : f64,
         m02 : f64,
@@ -114,7 +114,7 @@ pub struct Mat4 {
     }
 
     /** The identity. */
-    static fn identity() : Mat4 {
+    pub static fn identity() : Mat4 {
         return Mat4::rows(
             1.0,
             0.0,
@@ -136,7 +136,7 @@ pub struct Mat4 {
     }
 
     /** A translation by `v`. */
-    static fn translation(v : Vec3) : Mat4 {
+    pub static fn translation(v : Vec3) : Mat4 {
         return Mat4::rows(
             1.0,
             0.0,
@@ -158,7 +158,7 @@ pub struct Mat4 {
     }
 
     /** A non-uniform scale by `v`. */
-    static fn scaling(v : Vec3) : Mat4 {
+    pub static fn scaling(v : Vec3) : Mat4 {
         return Mat4::rows(
             v.x,
             0.0,
@@ -180,21 +180,21 @@ pub struct Mat4 {
     }
 
     /** A rotation of `radians` about +X. */
-    static fn rotationX(radians : f64) : Mat4 {
+    pub static fn rotationX(radians : f64) : Mat4 {
         let c = radians.cos();
         let s = radians.sin();
         return Mat4::rows(1.0, 0.0, 0.0, 0.0, 0.0, c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0);
     }
 
     /** A rotation of `radians` about +Y. */
-    static fn rotationY(radians : f64) : Mat4 {
+    pub static fn rotationY(radians : f64) : Mat4 {
         let c = radians.cos();
         let s = radians.sin();
         return Mat4::rows(c, 0.0, s, 0.0, 0.0, 1.0, 0.0, 0.0, -s, 0.0, c, 0.0, 0.0, 0.0, 0.0, 1.0);
     }
 
     /** A rotation of `radians` about +Z. */
-    static fn rotationZ(radians : f64) : Mat4 {
+    pub static fn rotationZ(radians : f64) : Mat4 {
         let c = radians.cos();
         let s = radians.sin();
         return Mat4::rows(c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
@@ -206,7 +206,7 @@ pub struct Mat4 {
      * The axis is normalised here; a degenerate one yields the identity
      * rather than a matrix of NaNs.
      */
-    static fn rotationAxis(axis : Vec3, radians : f64) : Mat4 {
+    pub static fn rotationAxis(axis : Vec3, radians : f64) : Mat4 {
         let a = axis.normalized();
         if (a.lengthSquared() < MAT_EPSILON) {
             return Mat4::identity();
@@ -242,7 +242,7 @@ pub struct Mat4 {
      * argument — a zero field of view, a zero aspect, a zero-depth
      * frustum — yields the identity instead of trapping on the divide.
      */
-    static fn perspective(fovY : f64, aspect : f64, near : f64, far : f64) : Mat4 {
+    pub static fn perspective(fovY : f64, aspect : f64, near : f64, far : f64) : Mat4 {
         let half = (fovY * 0.5).tan();
         let depth : f64 = near - far;
         if (half < MAT_EPSILON || aspect < MAT_EPSILON) {
@@ -275,7 +275,7 @@ pub struct Mat4 {
     /**
      * A right-handed orthographic projection — shadow maps and 2D overlays.
      */
-    static fn orthographic(
+    pub static fn orthographic(
         left : f64,
         right : f64,
         bottom : f64,
@@ -323,7 +323,7 @@ pub struct Mat4 {
      * camera looking straight down while up is +Y — degenerates, and the
      * identity is returned rather than a scene that flips inside out.
      */
-    static fn lookAt(eye : Vec3, target : Vec3, up : Vec3) : Mat4 {
+    pub static fn lookAt(eye : Vec3, target : Vec3, up : Vec3) : Mat4 {
         let forward = target.minus(eye).normalized();
         if (forward.lengthSquared() < MAT_EPSILON) {
             return Mat4::identity();
@@ -354,7 +354,7 @@ pub struct Mat4 {
     }
 
     /** This matrix times `o` — apply `o` first, then this. */
-    fn mul(self, o : Mat4) : Mat4 {
+    pub fn mul(self, o : Mat4) : Mat4 {
         return Mat4::rows(
             self.m00 * o.m00 + self.m01 * o.m10 + self.m02 * o.m20 + self.m03 * o.m30,
             self.m00 * o.m01 + self.m01 * o.m11 + self.m02 * o.m21 + self.m03 * o.m31,
@@ -376,7 +376,7 @@ pub struct Mat4 {
     }
 
     /** This matrix applied to a homogeneous vector. */
-    fn apply(self, v : Vec4) : Vec4 {
+    pub fn apply(self, v : Vec4) : Vec4 {
         return Vec4 {
             x: self.m00 * v.x + self.m01 * v.y + self.m02 * v.z + self.m03 * v.w,
             y: self.m10 * v.x + self.m11 * v.y + self.m12 * v.z + self.m13 * v.w,
@@ -386,17 +386,17 @@ pub struct Mat4 {
     }
 
     /** This matrix applied to a position (translation included). */
-    fn applyPoint(self, v : Vec3) : Vec3 {
+    pub fn applyPoint(self, v : Vec3) : Vec3 {
         return self.apply(Vec4::point(v)).xyz();
     }
 
     /** This matrix applied to a direction (translation ignored). */
-    fn applyDirection(self, v : Vec3) : Vec3 {
+    pub fn applyDirection(self, v : Vec3) : Vec3 {
         return self.apply(Vec4::direction(v)).xyz();
     }
 
     /** The transpose — the inverse of a rotation, and the normal matrix's half. */
-    fn transposed(self) : Mat4 {
+    pub fn transposed(self) : Mat4 {
         return Mat4::rows(
             self.m00,
             self.m10,

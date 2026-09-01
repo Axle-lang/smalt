@@ -53,13 +53,13 @@ use crate::video::wayland::wl_window_ops::{createWindow, destroyWindow, initStat
 
 pub(crate) class SysWindow : Closeable {
     /** The state block both sides address. */
-    mem : Blob;
+    pub(crate) mem : Blob;
 
     /** The drawable handed to the blit. */
     token : Blob;
 
     /** The connection's record, for the proxies a request needs. */
-    app : ptr;
+    pub(crate) app : ptr;
 
     /** This window's own argument block — see [`WlArgs`]. */
     args : WlArgs;
@@ -110,7 +110,7 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** The drawable `SysBlit::present` writes onto. */
-    fn surface(self) : ptr {
+    pub(crate) fn surface(self) : ptr {
         return self.token.at();
     }
 
@@ -120,7 +120,7 @@ pub(crate) class SysWindow : Closeable {
      * The `wl_surface` proxy: what the pointer's `set_cursor` names and
      * what an event's surface argument is compared against.
      */
-    fn handle(self) : ptr {
+    pub(crate) fn handle(self) : ptr {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             return (*st).surface;
@@ -128,7 +128,7 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** Client-area width, in pixels. */
-    fn width(self) : i32 {
+    pub(crate) fn width(self) : i32 {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             return (*st).w;
@@ -136,7 +136,7 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** Client-area height, in pixels. */
-    fn height(self) : i32 {
+    pub(crate) fn height(self) : i32 {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             return (*st).h;
@@ -151,7 +151,7 @@ pub(crate) class SysWindow : Closeable {
      * game prompt, save, or refuse. A connection that has failed is the
      * other way out, and `SysDrain` is what notices it.
      */
-    fn alive(self) : bool {
+    pub(crate) fn alive(self) : bool {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             return (*st).destroyed == 0;
@@ -159,7 +159,7 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** Put a buffer back on the surface. */
-    fn show(mut self) : void {
+    pub(crate) fn show(mut self) : void {
         unsafe {
             let target : ptr<WlDrawable> = self.token.at() as ptr<WlDrawable>;
             let index = freeSlot(target);
@@ -175,7 +175,7 @@ pub(crate) class SysWindow : Closeable {
      * Wayland has no hide call: a surface with no buffer is a surface
      * with nothing to show, and that is what a hidden window is.
      */
-    fn hide(mut self) : void {
+    pub(crate) fn hide(mut self) : void {
         unsafe {
             let target : ptr<WlDrawable> = self.token.at() as ptr<WlDrawable>;
             detachFrame(target, self.args);
@@ -183,7 +183,7 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** Replace the title bar text. */
-    fn setTitle(mut self, title : string) : void {
+    pub(crate) fn setTitle(mut self, title : string) : void {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             self.args.set(0, cstr(title) as i64);
@@ -192,7 +192,7 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** Whether a close was requested, clearing the request. */
-    fn takeClose(mut self) : bool {
+    pub(crate) fn takeClose(mut self) : bool {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             let pending = (*st).closePending != 0;
@@ -208,7 +208,7 @@ pub(crate) class SysWindow : Closeable {
      * configures a surface for reasons other than a resize, and adopting
      * one of those would rebuild the framebuffer for nothing.
      */
-    fn takeResize(mut self) : bool {
+    pub(crate) fn takeResize(mut self) : bool {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             if ((*st).sizePending == 0) {
@@ -228,7 +228,7 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** Whether a focus edge is waiting, clearing it. */
-    fn takeFocusEdge(mut self) : bool {
+    pub(crate) fn takeFocusEdge(mut self) : bool {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             let pending = (*st).focusPending != 0;
@@ -238,7 +238,7 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** Whether the window holds input focus. */
-    fn focused(self) : bool {
+    pub(crate) fn focused(self) : bool {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             return (*st).focused != 0;
@@ -246,7 +246,7 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** Whether a minimise / restore edge is waiting, clearing it. */
-    fn takeMinimiseEdge(mut self) : bool {
+    pub(crate) fn takeMinimiseEdge(mut self) : bool {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             let pending = (*st).minimisePending != 0;
@@ -264,7 +264,7 @@ pub(crate) class SysWindow : Closeable {
      * callbacks — which is a rate, not a fact. Reporting `false` is the
      * honest answer to a question this protocol does not answer.
      */
-    fn minimised(self) : bool {
+    pub(crate) fn minimised(self) : bool {
         return false;
     }
 
@@ -295,7 +295,7 @@ pub(crate) class SysWindow : Closeable {
      * about them. It leaves one resize pending, as the other two paths
      * do, so the caller's next pump has a `WindowResized` to deliver.
      */
-    fn selfCheck(mut self, width : i32, height : i32) : i32 {
+    pub(crate) fn selfCheck(mut self, width : i32, height : i32) : i32 {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             let a : ptr<WlApp> = self.app as ptr<WlApp>;
@@ -318,7 +318,7 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** Destroy the buffers, then the objects, then the blocks. */
-    fn close(self) : void {
+    pub(crate) fn close(self) : void {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             if ((*st).destroyed != 0) {

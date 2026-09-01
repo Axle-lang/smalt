@@ -90,7 +90,7 @@ pub class Mixer : Closeable {
     }
 
     /** Whether the device opened. Playing into a closed device is silent. */
-    fn isOpen(self) : bool {
+    pub fn isOpen(self) : bool {
         return self.audio.isOpen();
     }
 
@@ -100,7 +100,7 @@ pub class Mixer : Closeable {
      * Published per frame by the game; read per block by the mix, which
      * is what lets a sound fade mid-playback.
      */
-    fn setListener(mut self, x : f64, y : f64, z : f64) : void {
+    pub fn setListener(mut self, x : f64, y : f64, z : f64) : void {
         self.lx = x;
         self.ly = y;
         self.lz = z;
@@ -113,7 +113,7 @@ pub class Mixer : Closeable {
      * the player's own — a footstep or a hurt cry, which is the sound the
      * player most notices missing.
      */
-    fn slot(mut self) : i32 {
+    pub(file) fn slot(mut self) : i32 {
         let i : i32 = 0;
         while (i < MIX_VOICES) {
             if (!self.voices[i].active) {
@@ -132,7 +132,7 @@ pub class Mixer : Closeable {
     }
 
     /** Start `clip` at a fixed gain, heard the same wherever it happens. */
-    fn play(mut self, clip : Clip, gain : f64) : void {
+    pub fn play(mut self, clip : Clip, gain : f64) : void {
         if (!clip.loaded()) {
             return;
         }
@@ -152,7 +152,7 @@ pub class Mixer : Closeable {
     }
 
     /** Start `clip` at a world position, fading to nothing at `range`. */
-    fn playAt(mut self, clip : Clip, gain : f64, x : f64, y : f64, z : f64, range : f64) : void {
+    pub fn playAt(mut self, clip : Clip, gain : f64, x : f64, y : f64, z : f64, range : f64) : void {
         if (!clip.loaded() || range <= 0.0) {
             return;
         }
@@ -172,7 +172,7 @@ pub class Mixer : Closeable {
     }
 
     /** Voice `i`'s gain for this block, listener distance included. */
-    fn voiceGain(self, i : i32) : f64 {
+    pub(file) fn voiceGain(self, i : i32) : f64 {
         let v = self.voices[i];
         if (!v.positional) {
             return v.gain;
@@ -199,7 +199,7 @@ pub class Mixer : Closeable {
      * the block duration: a block that comes free between two calls is
      * silence the device has already played.
      */
-    fn pump(mut self) : bool {
+    pub fn pump(mut self) : bool {
         let slot : i32 = self.audio.reclaim();
         if (slot < 0) {
             return false;
@@ -223,7 +223,7 @@ pub class Mixer : Closeable {
     }
 
     /** Add voice `v`'s next `frames` frames into `dst`, and retire it if it ends. */
-    fn mixVoice(mut self, v : i32, dst : ptr, frames : i32) : void {
+    pub(file) fn mixVoice(mut self, v : i32, dst : ptr, frames : i32) : void {
         let gain : f64 = self.voiceGain(v);
         let total : i32 = self.voices[v].frames;
         let cursor : i32 = self.voices[v].cursor;
@@ -280,7 +280,7 @@ pub class Mixer : Closeable {
     }
 
     /** Stop the device. The clips are the bank's to release. */
-    fn close(self) : void {
+    pub fn close(self) : void {
         free(self.voices);
         self.audio.close();
     }

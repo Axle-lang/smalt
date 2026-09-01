@@ -35,7 +35,7 @@ const SCREEN_UNKNOWN : i32 = 0;
 /** What the primary display measures. */
 pub(crate) class SysScreen {
     /** The primary display's width, in pixels. */
-    static fn width() : i32 {
+    pub(crate) static fn width() : i32 {
         let display = XOpenDisplay(Raw::nil());
         if (Raw::isNil(display)) {
             return SCREEN_UNKNOWN;
@@ -46,7 +46,7 @@ pub(crate) class SysScreen {
     }
 
     /** The primary display's height, in pixels. */
-    static fn height() : i32 {
+    pub(crate) static fn height() : i32 {
         let display = XOpenDisplay(Raw::nil());
         if (Raw::isNil(display)) {
             return SCREEN_UNKNOWN;

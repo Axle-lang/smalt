@@ -49,7 +49,7 @@ pub class Platform : Closeable {
      * opens anything. A platform whose backend fills no OS record
      * answers 0.
      */
-    static fn checkRecords() : i32 {
+    pub static fn checkRecords() : i32 {
         return SysApp::checkRecords();
     }
 
@@ -66,7 +66,7 @@ pub class Platform : Closeable {
     }
 
     /** Open a window with a `w` by `h` client area. */
-    fn createWindow(self, title : string, w : i32, h : i32, flags : i32) : Window ! PlatformError {
+    pub fn createWindow(self, title : string, w : i32, h : i32, flags : i32) : Window ! PlatformError {
         return new Window(self.instance, title, w, h, flags)?;
     }
 
@@ -78,7 +78,7 @@ pub class Platform : Closeable {
      * state the OS does not reclaim for a program that merely exits,
      * which is the whole reason this class is `Closeable`.
      */
-    fn close(self) : void {
+    pub fn close(self) : void {
         if (self.timerRaised) {
             SysApp::lowerTimerRes();
         }

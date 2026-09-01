@@ -85,7 +85,7 @@ pub struct ClipVertex {
     pub v  : f64;
 
     /** A clip vertex from its parts. */
-    static fn make(
+    pub static fn make(
         cx : f64,
         cy : f64,
         cz : f64,
@@ -116,7 +116,7 @@ pub struct ClipVertex {
     }
 
     /** This vertex interpolated towards `o` by `t`. */
-    fn lerp(self, o : ClipVertex, t : f64) : ClipVertex {
+    pub fn lerp(self, o : ClipVertex, t : f64) : ClipVertex {
         return ClipVertex {
             cx: self.cx + (o.cx - self.cx) * t,
             cy: self.cy + (o.cy - self.cy) * t,
@@ -134,7 +134,7 @@ pub struct ClipVertex {
     }
 
     /** Whether this vertex is in front of the near plane. */
-    fn visible(self) : bool {
+    pub fn visible(self) : bool {
         return self.cw >= RASTER_MIN_W;
     }
 }
@@ -189,7 +189,7 @@ pub class Raster {
      * one endpoint is in front of the plane, so the two `w` values
      * differ by at least the epsilon that separates them.
      */
-    static fn crossing(a : ClipVertex, b : ClipVertex) : ClipVertex {
+    pub(file) static fn crossing(a : ClipVertex, b : ClipVertex) : ClipVertex {
         let span : f64 = b.cw - a.cw;
         if (span > -RASTER_MIN_W && span < RASTER_MIN_W) {
             // Degenerate: both endpoints sit on the plane. Interpolating
@@ -206,7 +206,7 @@ pub class Raster {
      * `cw` is at least `RASTER_MIN_W` — the caller clips first — so the
      * reciprocal here is safe.
      */
-    static fn project(v : ClipVertex, halfW : f64, halfH : f64) : ScreenVertex {
+    pub(file) static fn project(v : ClipVertex, halfW : f64, halfH : f64) : ScreenVertex {
         let iw : f64 = 1.0 / v.cw;
         return ScreenVertex {
             sx: (v.cx * iw + 1.0) * halfW,
@@ -224,17 +224,17 @@ pub class Raster {
     }
 
     /** The least of three. */
-    static fn least3(a : f64, b : f64, c : f64) : f64 {
+    pub(file) static fn least3(a : f64, b : f64, c : f64) : f64 {
         return a.min(b.min(c));
     }
 
     /** The greatest of three. */
-    static fn most3(a : f64, b : f64, c : f64) : f64 {
+    pub(file) static fn most3(a : f64, b : f64, c : f64) : f64 {
         return a.max(b.max(c));
     }
 
     /** `v` held between `lo` and `hi`. */
-    static fn clampInt(v : i64, lo : i32, hi : i32) : i32 {
+    pub(file) static fn clampInt(v : i64, lo : i32, hi : i32) : i32 {
         if (v < (lo as i64)) {
             return lo;
         }
@@ -252,7 +252,7 @@ pub class Raster {
      * which after dividing by the area means all three are non-negative
      * — so the same test serves both windings.
      */
-    static fn fill(
+    pub(file) static fn fill(
         target : RenderTarget,
         tex : Texture,
         sh : Shading,
@@ -343,7 +343,7 @@ pub class Raster {
     }
 
     /** Project three clipped vertices and fill them. */
-    static fn emit(
+    pub(file) static fn emit(
         target : RenderTarget,
         tex : Texture,
         sh : Shading,
@@ -368,7 +368,7 @@ pub class Raster {
      * triangle, and the winding is preserved by walking the original
      * order `a` → `b` → `c` → `a`.
      */
-    static fn clipOne(
+    pub(file) static fn clipOne(
         target : RenderTarget,
         tex : Texture,
         sh : Shading,
@@ -383,7 +383,7 @@ pub class Raster {
      * Two vertices in front: the clipped polygon is a quadrilateral,
      * fanned into two triangles from `a`.
      */
-    static fn clipTwo(
+    pub(file) static fn clipTwo(
         target : RenderTarget,
         tex : Texture,
         sh : Shading,
@@ -405,7 +405,7 @@ pub class Raster {
      * cyclic order, so a clipped triangle keeps the winding its
      * back-face test depends on.
      */
-    static fn triangle(
+    pub static fn triangle(
         target : RenderTarget,
         tex : Texture,
         sh : Shading,

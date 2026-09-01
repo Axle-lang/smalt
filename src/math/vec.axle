@@ -27,37 +27,37 @@ pub struct Vec2 {
     pub y : f64;
 
     /** A vector from its components. */
-    static fn make(x : f64, y : f64) : Vec2 {
+    pub static fn make(x : f64, y : f64) : Vec2 {
         return Vec2 { x: x, y: y };
     }
 
     /** The origin. */
-    static fn zero() : Vec2 {
+    pub static fn zero() : Vec2 {
         return Vec2 { x: 0.0, y: 0.0 };
     }
 
     /** Component-wise sum. */
-    fn plus(self, o : Vec2) : Vec2 {
+    pub fn plus(self, o : Vec2) : Vec2 {
         return Vec2 { x: self.x + o.x, y: self.y + o.y };
     }
 
     /** Component-wise difference. */
-    fn minus(self, o : Vec2) : Vec2 {
+    pub fn minus(self, o : Vec2) : Vec2 {
         return Vec2 { x: self.x - o.x, y: self.y - o.y };
     }
 
     /** This vector scaled by `k`. */
-    fn scaled(self, k : f64) : Vec2 {
+    pub fn scaled(self, k : f64) : Vec2 {
         return Vec2 { x: self.x * k, y: self.y * k };
     }
 
     /** Dot product. */
-    fn dot(self, o : Vec2) : f64 {
+    pub fn dot(self, o : Vec2) : f64 {
         return self.x * o.x + self.y * o.y;
     }
 
     /** Euclidean length. */
-    fn length(self) : f64 {
+    pub fn length(self) : f64 {
         return (self.x * self.x + self.y * self.y).sqrt();
     }
 }
@@ -74,67 +74,67 @@ pub struct Vec3 {
     pub z : f64;
 
     /** A vector from its components. */
-    static fn make(x : f64, y : f64, z : f64) : Vec3 {
+    pub static fn make(x : f64, y : f64, z : f64) : Vec3 {
         return Vec3 { x: x, y: y, z: z };
     }
 
     /** The origin. */
-    static fn zero() : Vec3 {
+    pub static fn zero() : Vec3 {
         return Vec3 { x: 0.0, y: 0.0, z: 0.0 };
     }
 
     /** The same value in all three components. */
-    static fn splat(v : f64) : Vec3 {
+    pub static fn splat(v : f64) : Vec3 {
         return Vec3 { x: v, y: v, z: v };
     }
 
     /** The +X axis. */
-    static fn unitX() : Vec3 {
+    pub static fn unitX() : Vec3 {
         return Vec3 { x: 1.0, y: 0.0, z: 0.0 };
     }
 
     /** The +Y axis — up, in this library's convention. */
-    static fn unitY() : Vec3 {
+    pub static fn unitY() : Vec3 {
         return Vec3 { x: 0.0, y: 1.0, z: 0.0 };
     }
 
     /** The +Z axis. */
-    static fn unitZ() : Vec3 {
+    pub static fn unitZ() : Vec3 {
         return Vec3 { x: 0.0, y: 0.0, z: 1.0 };
     }
 
     /** Component-wise sum. */
-    fn plus(self, o : Vec3) : Vec3 {
+    pub fn plus(self, o : Vec3) : Vec3 {
         return Vec3 { x: self.x + o.x, y: self.y + o.y, z: self.z + o.z };
     }
 
     /** Component-wise difference. */
-    fn minus(self, o : Vec3) : Vec3 {
+    pub fn minus(self, o : Vec3) : Vec3 {
         return Vec3 { x: self.x - o.x, y: self.y - o.y, z: self.z - o.z };
     }
 
     /** Component-wise product — a colour tint or a non-uniform scale. */
-    fn times(self, o : Vec3) : Vec3 {
+    pub fn times(self, o : Vec3) : Vec3 {
         return Vec3 { x: self.x * o.x, y: self.y * o.y, z: self.z * o.z };
     }
 
     /** This vector scaled by `k`. */
-    fn scaled(self, k : f64) : Vec3 {
+    pub fn scaled(self, k : f64) : Vec3 {
         return Vec3 { x: self.x * k, y: self.y * k, z: self.z * k };
     }
 
     /** This vector pointing the other way. */
-    fn negated(self) : Vec3 {
+    pub fn negated(self) : Vec3 {
         return Vec3 { x: -self.x, y: -self.y, z: -self.z };
     }
 
     /** Dot product — the cosine of the angle between, times both lengths. */
-    fn dot(self, o : Vec3) : f64 {
+    pub fn dot(self, o : Vec3) : f64 {
         return self.x * o.x + self.y * o.y + self.z * o.z;
     }
 
     /** Cross product — a vector perpendicular to both, right-handed. */
-    fn cross(self, o : Vec3) : Vec3 {
+    pub fn cross(self, o : Vec3) : Vec3 {
         return Vec3 {
             x: self.y * o.z - self.z * o.y,
             y: self.z * o.x - self.x * o.z,
@@ -143,17 +143,17 @@ pub struct Vec3 {
     }
 
     /** Squared length — the comparison form, with no square root. */
-    fn lengthSquared(self) : f64 {
+    pub fn lengthSquared(self) : f64 {
         return self.x * self.x + self.y * self.y + self.z * self.z;
     }
 
     /** Euclidean length. */
-    fn length(self) : f64 {
+    pub fn length(self) : f64 {
         return self.lengthSquared().sqrt();
     }
 
     /** Distance to `o`. */
-    fn distanceTo(self, o : Vec3) : f64 {
+    pub fn distanceTo(self, o : Vec3) : f64 {
         return self.minus(o).length();
     }
 
@@ -165,7 +165,7 @@ pub struct Vec3 {
      * which every consumer here (a normal, a light direction, a view
      * axis) treats as "no contribution" rather than propagating a NaN.
      */
-    fn normalized(self) : Vec3 {
+    pub fn normalized(self) : Vec3 {
         let len = self.length();
         if (len < VEC_EPSILON) {
             return Vec3::zero();
@@ -174,12 +174,12 @@ pub struct Vec3 {
     }
 
     /** Linear interpolation towards `o`, `t` in 0..1. */
-    fn lerp(self, o : Vec3, t : f64) : Vec3 {
+    pub fn lerp(self, o : Vec3, t : f64) : Vec3 {
         return self.plus(o.minus(self).scaled(t));
     }
 
     /** This vector mirrored about the surface normal `n` (unit length). */
-    fn reflected(self, n : Vec3) : Vec3 {
+    pub fn reflected(self, n : Vec3) : Vec3 {
         return self.minus(n.scaled(2.0 * self.dot(n)));
     }
 }
@@ -199,37 +199,37 @@ pub struct Vec4 {
     pub w : f64;
 
     /** A vector from its components. */
-    static fn make(x : f64, y : f64, z : f64, w : f64) : Vec4 {
+    pub static fn make(x : f64, y : f64, z : f64, w : f64) : Vec4 {
         return Vec4 { x: x, y: y, z: z, w: w };
     }
 
     /** `v` as a position (`w` = 1). */
-    static fn point(v : Vec3) : Vec4 {
+    pub static fn point(v : Vec3) : Vec4 {
         return Vec4 { x: v.x, y: v.y, z: v.z, w: 1.0 };
     }
 
     /** `v` as a direction (`w` = 0), so a translation cannot move it. */
-    static fn direction(v : Vec3) : Vec4 {
+    pub static fn direction(v : Vec3) : Vec4 {
         return Vec4 { x: v.x, y: v.y, z: v.z, w: 0.0 };
     }
 
     /** The x, y and z components, ignoring `w`. */
-    fn xyz(self) : Vec3 {
+    pub fn xyz(self) : Vec3 {
         return Vec3 { x: self.x, y: self.y, z: self.z };
     }
 
     /** Component-wise sum. */
-    fn plus(self, o : Vec4) : Vec4 {
+    pub fn plus(self, o : Vec4) : Vec4 {
         return Vec4 { x: self.x + o.x, y: self.y + o.y, z: self.z + o.z, w: self.w + o.w };
     }
 
     /** This vector scaled by `k`. */
-    fn scaled(self, k : f64) : Vec4 {
+    pub fn scaled(self, k : f64) : Vec4 {
         return Vec4 { x: self.x * k, y: self.y * k, z: self.z * k, w: self.w * k };
     }
 
     /** Dot product across all four components. */
-    fn dot(self, o : Vec4) : f64 {
+    pub fn dot(self, o : Vec4) : f64 {
         return self.x * o.x + self.y * o.y + self.z * o.z + self.w * o.w;
     }
 }

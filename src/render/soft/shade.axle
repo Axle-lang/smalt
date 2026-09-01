@@ -37,7 +37,7 @@ pub struct Shading {
     pub eye      : Vec3;
 
     /** The shading state for a material, a light and a viewpoint. */
-    static fn make(material : Material, light : DirectionalLight, eye : Vec3) : Shading {
+    pub static fn make(material : Material, light : DirectionalLight, eye : Vec3) : Shading {
         return Shading { material: material, light: light, eye: eye };
     }
 }
@@ -52,7 +52,7 @@ pub class Shader {
      * skipping the renormalisation is what makes a large smooth-shaded
      * face look faceted.
      */
-    static fn fragment(
+    pub static fn fragment(
         sh : Shading,
         tex : Texture,
         u : f64,

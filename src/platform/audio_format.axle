@@ -33,12 +33,12 @@ pub const AUDIO_BLOCK_FRAMES : i32 = 1024;
 /** Sizes derived from the format, so no backend recomputes them. */
 pub class AudioFormat {
     /** Bytes in one frame — one sample per channel. */
-    static fn frameBytes() : i64 {
+    pub static fn frameBytes() : i64 {
         return (AUDIO_CHANNELS as i64) * (AUDIO_SAMPLE_BYTES as i64);
     }
 
     /** Bytes in one block of `AUDIO_BLOCK_FRAMES` frames. */
-    static fn blockBytes() : i64 {
+    pub static fn blockBytes() : i64 {
         return (AUDIO_BLOCK_FRAMES as i64) * AudioFormat::frameBytes();
     }
 }

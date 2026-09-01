@@ -96,22 +96,22 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** The drawable `SysBlit::present` writes onto — here, an `HDC`. */
-    fn surface(self) : ptr {
+    pub(crate) fn surface(self) : ptr {
         return self.hdc;
     }
 
     /** The window's identity, for the pump and the cursor. */
-    fn handle(self) : ptr {
+    pub(crate) fn handle(self) : ptr {
         return self.hwnd;
     }
 
     /** Client-area width, in pixels. */
-    fn width(self) : i32 {
+    pub(crate) fn width(self) : i32 {
         return self.w;
     }
 
     /** Client-area height, in pixels. */
-    fn height(self) : i32 {
+    pub(crate) fn height(self) : i32 {
         return self.h;
     }
 
@@ -122,27 +122,27 @@ pub(crate) class SysWindow : Closeable {
      * is a *request*: the handle stays valid until `close()`, which is
      * what lets a game prompt, save, or refuse.
      */
-    fn alive(self) : bool {
+    pub(crate) fn alive(self) : bool {
         return !self.proc.destroyed() && WinWindow::alive(self.hwnd);
     }
 
     /** Make a hidden window visible and bring it forward. */
-    fn show(mut self) : void {
+    pub(crate) fn show(mut self) : void {
         WinWindow::show(self.hwnd);
     }
 
     /** Hide the window without destroying it. */
-    fn hide(mut self) : void {
+    pub(crate) fn hide(mut self) : void {
         WinWindow::hide(self.hwnd);
     }
 
     /** Replace the title bar text. */
-    fn setTitle(mut self, title : string) : void {
+    pub(crate) fn setTitle(mut self, title : string) : void {
         WinWindow::retitle(self.hwnd, title);
     }
 
     /** Whether the user asked to close the window, clearing the request. */
-    fn takeClose(mut self) : bool {
+    pub(crate) fn takeClose(mut self) : bool {
         return self.proc.takeClose();
     }
 
@@ -155,7 +155,7 @@ pub(crate) class SysWindow : Closeable {
      * it. A zero extent is refused: a minimised window reports 0x0, and
      * adopting that would resize the framebuffer to nothing.
      */
-    fn takeResize(mut self) : bool {
+    pub(crate) fn takeResize(mut self) : bool {
         if (!self.proc.takeResize()) {
             return false;
         }
@@ -173,22 +173,22 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** Whether a focus edge is waiting, clearing it. */
-    fn takeFocusEdge(mut self) : bool {
+    pub(crate) fn takeFocusEdge(mut self) : bool {
         return self.proc.takeFocusEdge();
     }
 
     /** Whether the window holds input focus. */
-    fn focused(self) : bool {
+    pub(crate) fn focused(self) : bool {
         return self.proc.focused();
     }
 
     /** Whether a minimise / restore edge is waiting, clearing it. */
-    fn takeMinimiseEdge(mut self) : bool {
+    pub(crate) fn takeMinimiseEdge(mut self) : bool {
         return self.proc.takeMinimiseEdge();
     }
 
     /** Whether the window is minimised — the frame to skip. */
-    fn minimised(self) : bool {
+    pub(crate) fn minimised(self) : bool {
         return self.proc.minimised();
     }
 
@@ -207,12 +207,12 @@ pub(crate) class SysWindow : Closeable {
      * for the next pump. So this is called before a frame loop and not
      * during one.
      */
-    fn selfCheck(mut self, width : i32, height : i32) : i32 {
+    pub(crate) fn selfCheck(mut self, width : i32, height : i32) : i32 {
         return selfCheck(self.hwnd, self.proc, width, height);
     }
 
     /** Destroy the window and release the procedure's block. */
-    fn close(self) : void {
+    pub(crate) fn close(self) : void {
         if (WinWindow::alive(self.hwnd)) {
             WinWindow::destroy(self.hwnd);
         }

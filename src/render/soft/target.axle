@@ -47,22 +47,22 @@ pub class RenderTarget {
     }
 
     /** Frame width, in pixels. */
-    fn width(self) : i32 {
+    pub fn width(self) : i32 {
         return self.w;
     }
 
     /** Frame height, in pixels. */
-    fn height(self) : i32 {
+    pub fn height(self) : i32 {
         return self.h;
     }
 
     /** Pixels in the frame. */
-    fn pixelCount(self) : i64 {
+    pub fn pixelCount(self) : i64 {
         return (self.w as i64) * self.h;
     }
 
     /** The colour buffer, for the blit. */
-    fn pixels(self) : i32[] {
+    pub fn pixels(self) : i32[] {
         return self.color;
     }
 
@@ -79,7 +79,7 @@ pub class RenderTarget {
      * this point — a resize is drained from the event queue before the
      * frame that blits, so the pointer the last blit read is dead by now.
      */
-    fn resize(mut self, w : i32, h : i32) : void {
+    pub fn resize(mut self, w : i32, h : i32) : void {
         if (w <= 0 || h <= 0) {
             return;
         }
@@ -95,7 +95,7 @@ pub class RenderTarget {
     }
 
     /** Fill the colour buffer with `packed` and empty the depth buffer. */
-    fn clear(mut self, packed : i32) : void {
+    pub fn clear(mut self, packed : i32) : void {
         for (i of 0..self.pixelCount()) {
             self.color[i] = packed;
             self.depth[i] = DEPTH_CLEARED;
@@ -110,7 +110,7 @@ pub class RenderTarget {
      * caller would otherwise repeat it, and a rasteriser that clips its
      * spans still emits the odd edge pixel one column out.
      */
-    fn shade(mut self, x : i32, y : i32, invDepth : f64, packed : i32) : bool {
+    pub fn shade(mut self, x : i32, y : i32, invDepth : f64, packed : i32) : bool {
         if (x < 0 || y < 0 || x >= self.w || y >= self.h) {
             return false;
         }
@@ -124,7 +124,7 @@ pub class RenderTarget {
     }
 
     /** Write `packed` at (`x`, `y`) with no depth test — for overlays. */
-    fn plotPacked(mut self, x : i32, y : i32, packed : i32) : void {
+    pub fn plotPacked(mut self, x : i32, y : i32, packed : i32) : void {
         if (x < 0 || y < 0 || x >= self.w || y >= self.h) {
             return;
         }
@@ -132,7 +132,7 @@ pub class RenderTarget {
     }
 
     /** The reciprocal depth recorded at (`x`, `y`), or 0 outside the frame. */
-    fn depthAt(self, x : i32, y : i32) : f64 {
+    pub fn depthAt(self, x : i32, y : i32) : f64 {
         if (x < 0 || y < 0 || x >= self.w || y >= self.h) {
             return DEPTH_CLEARED;
         }

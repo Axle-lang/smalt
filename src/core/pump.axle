@@ -74,52 +74,52 @@ pub class Events : Closeable {
     }
 
     /** Whether an event is waiting. */
-    fn hasNext(self) : bool {
+    pub fn hasNext(self) : bool {
         return self.queue.hasNext();
     }
 
     /** The next event, or the empty event when none is waiting. */
-    fn next(mut self) : Event {
+    pub fn next(mut self) : Event {
         return self.queue.next();
     }
 
     /** Whether the physical key `sc` is held. */
-    fn isKeyDown(self, sc : Scancode) : bool {
+    pub fn isKeyDown(self, sc : Scancode) : bool {
         return self.keys.isDown(sc);
     }
 
     /** Whether the mouse button `b` is held. */
-    fn isButtonDown(self, b : MouseButton) : bool {
+    pub fn isButtonDown(self, b : MouseButton) : bool {
         return self.mouse.isDown(b);
     }
 
     /** Pointer x, in client pixels. */
-    fn mouseX(self) : i32 {
+    pub fn mouseX(self) : i32 {
         return self.mouse.posX();
     }
 
     /** Pointer y, in client pixels. */
-    fn mouseY(self) : i32 {
+    pub fn mouseY(self) : i32 {
         return self.mouse.posY();
     }
 
     /** Horizontal pointer motion during the last pump. */
-    fn mouseDX(self) : i32 {
+    pub fn mouseDX(self) : i32 {
         return self.mouse.deltaX();
     }
 
     /** Vertical pointer motion during the last pump. */
-    fn mouseDY(self) : i32 {
+    pub fn mouseDY(self) : i32 {
         return self.mouse.deltaY();
     }
 
     /** Wheel notches during the last pump. */
-    fn mouseWheel(self) : i32 {
+    pub fn mouseWheel(self) : i32 {
         return self.mouse.wheelDelta();
     }
 
     /** Whether the pointer is pinned and hidden for relative motion. */
-    fn isRelativeMouse(self) : bool {
+    pub fn isRelativeMouse(self) : bool {
         return self.mouse.isRelative();
     }
 
@@ -130,7 +130,7 @@ pub class Events : Closeable {
      * on, so `mouseDX` / `mouseDY` keep reporting motion however far the
      * player turns.
      */
-    fn setRelativeMouse(mut self, on : bool) : void {
+    pub fn setRelativeMouse(mut self, on : bool) : void {
         if (self.mouse.isRelative() == on) {
             return;
         }
@@ -144,14 +144,14 @@ pub class Events : Closeable {
      * The clock is read once, so a frame's events share one timestamp
      * rather than a spread of readings taken while draining.
      */
-    fn pump(mut self, win : Window, clock : Clock) : void {
+    pub fn pump(mut self, win : Window, clock : Clock) : void {
         let stamp = clock.ticks();
         self.mouse.newFrame();
         if (self.cursorPending) {
-            SysCursor::showCursor(win.native(), !self.mouse.isRelative());
+            SysCursor::showCursor(win.sys, !self.mouse.isRelative());
             self.cursorPending = false;
         }
-        SysDrain::drain(self.msg, win.native(), stamp, self.queue, self.keys, self.mouse);
+        SysDrain::drain(self.msg, win.sys, stamp, self.queue, self.keys, self.mouse);
 
         // A close the user asked for. The procedure records `WM_CLOSE`
         // rather than obeying it, so the window is still alive here and
@@ -209,13 +209,13 @@ pub class Events : Closeable {
         if (self.mouse.isRelative() && focused && !minimised) {
             let cx = win.width() / 2;
             let cy = win.height() / 2;
-            SysCursor::recentre(win.native(), cx, cy);
+            SysCursor::recentre(win.sys, cx, cy);
             self.mouse.warpTo(cx, cy);
         }
     }
 
     /** Release the message block. */
-    fn close(self) : void {
+    pub fn close(self) : void {
         self.msg.close();
     }
 }

@@ -39,12 +39,12 @@ pub(crate) class ScaleScratch : Closeable {
     }
 
     /** Where the resampled frame starts. */
-    fn at(self) : ptr {
+    pub(crate) fn at(self) : ptr {
         return self.pixels.at();
     }
 
     /** Make sure the scratch holds at least `count` pixels. */
-    fn reserve(mut self, count : i64) : void {
+    pub(crate) fn reserve(mut self, count : i64) : void {
         if (count <= self.capacity) {
             return;
         }
@@ -62,7 +62,7 @@ pub(crate) class ScaleScratch : Closeable {
      * `sx = dx * srcW / dstW` costs, and at a window's worth of pixels
      * sixty times a second that is the whole budget.
      */
-    fn resample(mut self, source : i32[], srcW : i32, srcH : i32, dstW : i32, dstH : i32) : void {
+    pub(crate) fn resample(mut self, source : i32[], srcW : i32, srcH : i32, dstW : i32, dstH : i32) : void {
         let xStep : i64 = ((srcW as i64) << SCALE_FRACTION_BITS) / (dstW as i64);
         let yStep : i64 = ((srcH as i64) << SCALE_FRACTION_BITS) / (dstH as i64);
         unsafe {
@@ -86,7 +86,7 @@ pub(crate) class ScaleScratch : Closeable {
     }
 
     /** Release the scratch. */
-    fn close(self) : void {
+    pub(crate) fn close(self) : void {
         self.pixels.close();
     }
 }

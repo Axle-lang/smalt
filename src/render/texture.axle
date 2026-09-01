@@ -31,17 +31,17 @@ pub class Texture {
     }
 
     /** Texture width, in texels. */
-    fn width(self) : i32 {
+    pub fn width(self) : i32 {
         return self.w;
     }
 
     /** Texture height, in texels. */
-    fn height(self) : i32 {
+    pub fn height(self) : i32 {
         return self.h;
     }
 
     /** Write one texel; out-of-range coordinates are ignored. */
-    fn put(mut self, x : i32, y : i32, packed : i32) : void {
+    pub fn put(mut self, x : i32, y : i32, packed : i32) : void {
         if (x < 0 || y < 0 || x >= self.w || y >= self.h) {
             return;
         }
@@ -49,7 +49,7 @@ pub class Texture {
     }
 
     /** Fill every texel with `packed`. */
-    fn fill(mut self, packed : i32) : void {
+    pub fn fill(mut self, packed : i32) : void {
         let count : i64 = (self.w as i64) * (self.h as i64);
         for (i of 0..count) {
             self.texels[i] = packed;
@@ -57,7 +57,7 @@ pub class Texture {
     }
 
     /** One texel by integer coordinate, wrapped into range. */
-    fn texel(self, x : i32, y : i32) : i32 {
+    pub fn texel(self, x : i32, y : i32) : i32 {
         let tx : i32 = x % self.w;
         let ty : i32 = y % self.h;
         if (tx < 0) {
@@ -76,14 +76,14 @@ pub class Texture {
      * rejected in Axle, and truncation would fold the whole strip
      * between -1 and 1 onto the same texel.
      */
-    fn sampleNearest(self, u : f64, v : f64) : i32 {
+    pub fn sampleNearest(self, u : f64, v : f64) : i32 {
         let x = (u * (self.w as f64)).floorToInt() as i32;
         let y = (v * (self.h as f64)).floorToInt() as i32;
         return self.texel(x, y);
     }
 
     /** The four texels around (`u`, `v`), blended. */
-    fn sampleLinear(self, u : f64, v : f64) : i32 {
+    pub fn sampleLinear(self, u : f64, v : f64) : i32 {
         let fx : f64 = u * (self.w as f64) - 0.5;
         let fy : f64 = v * (self.h as f64) - 0.5;
         let x0 = fx.floorToInt() as i32;
@@ -102,7 +102,7 @@ pub class Texture {
     }
 
     /** A one-texel white texture — what an untextured material binds. */
-    static fn white() : Texture {
+    pub static fn white() : Texture {
         let t = new Texture(TEXTURE_UNIT_SIZE, TEXTURE_UNIT_SIZE);
         t.fill(Color::packBytes(255, 255, 255));
         return t;
@@ -113,7 +113,7 @@ pub class Texture {
      * a side — the standard test pattern for whether UVs and perspective
      * correction are right.
      */
-    static fn checker(size : i32, cells : i32, a : Color, b : Color) : Texture {
+    pub static fn checker(size : i32, cells : i32, a : Color, b : Color) : Texture {
         let t = new Texture(size, size);
         let packedA = a.packed();
         let packedB = b.packed();

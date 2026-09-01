@@ -128,7 +128,7 @@ pub struct Event {
     pub height    : i32 = 0;
 
     /** The empty event — what an exhausted queue answers. */
-    static fn none() : Event {
+    pub static fn none() : Event {
         return Event { kind: EventKind::None, timestamp: 0 };
     }
 }
@@ -158,17 +158,17 @@ pub class EventQueue {
     }
 
     /** How many events are waiting. */
-    fn pending(self) : i32 {
+    pub fn pending(self) : i32 {
         return self.count;
     }
 
     /** Whether `next()` would return a real event. */
-    fn hasNext(self) : bool {
+    pub fn hasNext(self) : bool {
         return self.count > 0;
     }
 
     /** Add `e` to the back, dropping the oldest if the ring is full. */
-    fn push(mut self, e : Event) : void {
+    pub(crate) fn push(mut self, e : Event) : void {
         let slots = EVENT_QUEUE_SLOTS as i32;
         if (self.count == slots) {
             self.head = (self.head + 1) % slots;
@@ -179,7 +179,7 @@ pub class EventQueue {
     }
 
     /** Take the oldest event, or the empty event when there is none. */
-    fn next(mut self) : Event {
+    pub fn next(mut self) : Event {
         if (self.count == 0) {
             return Event::none();
         }
@@ -190,7 +190,7 @@ pub class EventQueue {
     }
 
     /** Drop everything pending. */
-    fn clear(mut self) : void {
+    pub fn clear(mut self) : void {
         self.head = 0;
         self.count = 0;
     }

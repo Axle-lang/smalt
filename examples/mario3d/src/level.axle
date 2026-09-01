@@ -45,7 +45,7 @@ class Level {
     }
 
     /** Tile at `(col, row)`: a wall off the left edge, open air elsewhere. */
-    fn at(self, col : i32, row : i32) : Tile {
+    pub(crate) fn at(self, col : i32, row : i32) : Tile {
         if (col < 0) { return Tile::Ground; }
         if (col >= levelCols || row < 0 || row >= levelRows) {
             return Tile::Empty;
@@ -54,7 +54,7 @@ class Level {
     }
 
     /** Paint tile `t` at `(col, row)`, ignoring out-of-bounds writes. */
-    fn setTile(mut self, col : i32, row : i32, t : Tile) : void {
+    pub(crate) fn setTile(mut self, col : i32, row : i32, t : Tile) : void {
         if (col >= 0 && col < levelCols && row >= 0 && row < levelRows) {
             self.grid[row * levelCols + col] = t as i32;
         }
@@ -66,7 +66,7 @@ class Level {
     }
 
     /** Any solid tile in column `col` over rows `rTop..rBot`? (X sweep) */
-    fn colSolid(self, col : i32, rTop : i32, rBot : i32) : bool {
+    pub(crate) fn colSolid(self, col : i32, rTop : i32, rBot : i32) : bool {
         let r : i32 = rTop;
         while (r <= rBot) {
             if (self.solidAt(col, r)) { return true; }
@@ -76,7 +76,7 @@ class Level {
     }
 
     /** Any solid tile in row `row` over cols `cLeft..cRight`? (Y sweep) */
-    fn rowSolid(self, row : i32, cLeft : i32, cRight : i32) : bool {
+    pub(crate) fn rowSolid(self, row : i32, cLeft : i32, cRight : i32) : bool {
         let c : i32 = cLeft;
         while (c <= cRight) {
             if (self.solidAt(c, row)) { return true; }

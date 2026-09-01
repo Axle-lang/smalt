@@ -56,17 +56,17 @@ class Blob : Closeable {
     }
 
     /** How many bytes the block holds. */
-    fn bytes(self) : i64 {
+    pub(crate) fn bytes(self) : i64 {
         return self.size;
     }
 
     /** The block's address, for the FFI call that consumes it. */
-    fn at(self) : ptr {
+    pub(crate) fn at(self) : ptr {
         return self.base;
     }
 
     /** The unsigned byte at `off`. */
-    fn byteAt(self, off : i64) : i32 {
+    pub(crate) fn byteAt(self, off : i64) : i32 {
         return Raw::u8At(self.base, off);
     }
 
@@ -76,7 +76,7 @@ class Blob : Closeable {
     }
 
     /** Store the low 16 bits of `v` at `off`. */
-    fn setWord(mut self, off : i64, v : i32) : void {
+    pub(crate) fn setWord(mut self, off : i64, v : i32) : void {
         Raw::putU16(self.base, off, v);
     }
 

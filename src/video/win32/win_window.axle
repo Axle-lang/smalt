@@ -26,7 +26,7 @@ class WinWindow {
      * handled by `DefWindowProcW`, which is why the first client size is
      * read from the OS rather than waited for.
      */
-    static fn attachProcState(hwnd : ptr, state : ptr) : void {
+    pub(crate) static fn attachProcState(hwnd : ptr, state : ptr) : void {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, state);
     }
 
@@ -38,7 +38,7 @@ class WinWindow {
      * `AdjustWindowRectEx` before creation. Skipping that step is the
      * classic bug where a 1280×720 request yields a 1264×681 framebuffer.
      */
-    static fn create(instance : ptr, title : string, w : i32, h : i32, style : i32) : ptr {
+    pub(crate) static fn create(instance : ptr, title : string, w : i32, h : i32, style : i32) : ptr {
         let outerW : i32 = 0;
         let outerH : i32 = 0;
         let block = new Blob(sizeof<RECT>());
@@ -82,7 +82,7 @@ class WinWindow {
      * resizable, so they are added only when asked — a fixed-size window
      * that still shows a drag border misleads the player.
      */
-    static fn styleFor(resizable : bool, borderless : bool) : i32 {
+    pub(crate) static fn styleFor(resizable : bool, borderless : bool) : i32 {
         let base : i32 = WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
         if (borderless) {
             return base | WS_POPUP;
@@ -94,19 +94,19 @@ class WinWindow {
     }
 
     /** Make the window visible and give it the foreground. */
-    static fn show(hwnd : ptr) : void {
+    pub(crate) static fn show(hwnd : ptr) : void {
         ShowWindow(hwnd, SW_SHOW);
         UpdateWindow(hwnd);
         SetForegroundWindow(hwnd);
     }
 
     /** Hide the window without destroying it. */
-    static fn hide(hwnd : ptr) : void {
+    pub(crate) static fn hide(hwnd : ptr) : void {
         ShowWindow(hwnd, SW_HIDE);
     }
 
     /** Retitle the window. */
-    static fn retitle(hwnd : ptr, title : string) : void {
+    pub(crate) static fn retitle(hwnd : ptr, title : string) : void {
         let text = Wide::from(title);
         SetWindowTextW(hwnd, text.at());
         text.close();
@@ -121,17 +121,17 @@ class WinWindow {
      * away, `DestroyWindow` from elsewhere), not the close notification
      * it used to be.
      */
-    static fn alive(hwnd : ptr) : bool {
+    pub(crate) static fn alive(hwnd : ptr) : bool {
         return IsWindow(hwnd) != 0;
     }
 
     /** The window's device context; `CS_OWNDC` makes this cheap to repeat. */
-    static fn context(hwnd : ptr) : ptr {
+    pub(crate) static fn context(hwnd : ptr) : ptr {
         return GetDC(hwnd);
     }
 
     /** Destroy the window. */
-    static fn destroy(hwnd : ptr) : void {
+    pub(crate) static fn destroy(hwnd : ptr) : void {
         DestroyWindow(hwnd);
     }
 }

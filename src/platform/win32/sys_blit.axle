@@ -73,7 +73,7 @@ pub(crate) class SysBlit : Closeable {
     }
 
     /** Point the header at a `w` by `h`, top-down framebuffer. */
-    fn describe(mut self, w : i32, h : i32) : void {
+    pub(crate) fn describe(mut self, w : i32, h : i32) : void {
         if (w == self.describedW && h == self.describedH) {
             return;
         }
@@ -95,7 +95,7 @@ pub(crate) class SysBlit : Closeable {
      * error: both happen legitimately while a window is minimised, and a
      * frame loop should not have to test for it.
      */
-    fn present(
+    pub(crate) fn present(
         mut self,
         surface : ptr,
         pixels : i32[],
@@ -135,14 +135,14 @@ pub(crate) class SysBlit : Closeable {
      * each of the three places that use it would be three places to get
      * it wrong.
      */
-    fn header(self) : ptr<BITMAPINFO> {
+    pub(crate) fn header(self) : ptr<BITMAPINFO> {
         unsafe {
             return self.info.at() as ptr<BITMAPINFO>;
         }
     }
 
     /** Release the header block. */
-    fn close(self) : void {
+    pub(crate) fn close(self) : void {
         self.info.close();
     }
 }

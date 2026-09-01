@@ -77,7 +77,7 @@ pub(crate) class SysBlit : Closeable {
      * The cast lives here and only here: the block *is* a
      * [`WlBlitHeader`] for the whole life of this object.
      */
-    fn header(self) : ptr<WlBlitHeader> {
+    pub(crate) fn header(self) : ptr<WlBlitHeader> {
         unsafe {
             return self.info.at() as ptr<WlBlitHeader>;
         }
@@ -90,7 +90,7 @@ pub(crate) class SysBlit : Closeable {
      * what makes [`SysBlit::header`] answer for the same buffers
      * `present` is about to write into.
      */
-    fn describe(mut self, w : i32, h : i32) : void {
+    pub(crate) fn describe(mut self, w : i32, h : i32) : void {
         unsafe {
             let header : ptr<WlBlitHeader> = self.info.at() as ptr<WlBlitHeader>;
             (*header).width = w;
@@ -100,7 +100,7 @@ pub(crate) class SysBlit : Closeable {
     }
 
     /** Copy a frame into a free buffer and commit it. */
-    fn present(
+    pub(crate) fn present(
         mut self,
         surface : ptr,
         pixels : i32[],
@@ -136,7 +136,7 @@ pub(crate) class SysBlit : Closeable {
         }
     }
 
-    fn close(self) : void {
+    pub(crate) fn close(self) : void {
         self.scale.close();
         self.args.close();
         self.info.close();

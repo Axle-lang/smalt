@@ -47,7 +47,7 @@ class Wide {
      * yield two units also consume four bytes), so `len + 1` units is
      * always enough and the buffer is allocated once.
      */
-    static fn from(s : string) : Blob {
+    pub(crate) static fn from(s : string) : Blob {
         let bytes = s.length;
         let out = new Blob(((bytes as i64) + 1) * 2);
         let units : i64 = 0;

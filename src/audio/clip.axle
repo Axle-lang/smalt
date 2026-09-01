@@ -91,12 +91,12 @@ pub class Clip : Closeable {
     }
 
     /** Frames of mono audio, zero when the clip failed to load. */
-    fn frameCount(self) : i32 {
+    pub fn frameCount(self) : i32 {
         return self.frames;
     }
 
     /** Whether the clip carries any audio. */
-    fn loaded(self) : bool {
+    pub fn loaded(self) : bool {
         return self.frames > 0;
     }
 
@@ -107,7 +107,7 @@ pub class Clip : Closeable {
      * second owner of samples the clip owns, and the buffer would be
      * freed while the voice was still reading it.
      */
-    fn base(self) : i64 {
+    pub(crate) fn base(self) : i64 {
         return Raw::addr(self.samples.at());
     }
 
@@ -118,7 +118,7 @@ pub class Clip : Closeable {
      * a fixed layout: the `data` chunk's offset is only known after every
      * preceding chunk has been stepped over.
      */
-    static fn load(path : string) : Clip {
+    pub static fn load(path : string) : Clip {
         let out = new Clip();
         try {
             let file = AssetFile::readAll(path);
@@ -135,7 +135,7 @@ pub class Clip : Closeable {
     }
 
     /** Walk `file`'s chunks and fill this clip, or leave it empty. */
-    fn decode(mut self, file : Blob) : void {
+    pub(file) fn decode(mut self, file : Blob) : void {
         let n : i64 = file.bytes();
         if (n < WAV_FIRST_CHUNK) {
             return;
@@ -213,7 +213,7 @@ pub class Clip : Closeable {
     }
 
     /** Release the sample run. */
-    fn close(self) : void {
+    pub fn close(self) : void {
         self.samples.close();
     }
 }

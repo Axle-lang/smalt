@@ -47,12 +47,12 @@ use crate::sys::x11_const::X_TRUE;
 /** The process's handle on the OS. */
 pub(crate) class SysApp {
     /** The token the window layer creates windows from. */
-    static fn instance() : ptr {
+    pub(crate) static fn instance() : ptr {
         return XOpenDisplay(Raw::nil());
     }
 
     /** Whether `instance` failed to produce a usable token. */
-    static fn isNil(token : ptr) : bool {
+    pub(crate) static fn isNil(token : ptr) : bool {
         return Raw::isNil(token);
     }
 
@@ -64,7 +64,7 @@ pub(crate) class SysApp {
      * declined preference degrades the keyboard rather than preventing a
      * window.
      */
-    static fn prepareWindows(token : ptr) : bool {
+    pub(crate) static fn prepareWindows(token : ptr) : bool {
         if (Raw::isNil(token)) {
             return false;
         }
@@ -85,7 +85,7 @@ pub(crate) class SysApp {
      *
      * Nothing to ask for on this platform, so nothing was granted.
      */
-    static fn raiseTimerRes() : bool {
+    pub(crate) static fn raiseTimerRes() : bool {
         return false;
     }
 
@@ -96,13 +96,13 @@ pub(crate) class SysApp {
      * because the seam has the pair: a caller balancing a raise it was
      * never granted is a caller with a bug on the other platform.
      */
-    static fn lowerTimerRes() : void {}
+    pub(crate) static fn lowerTimerRes() : void {}
 
     /**
      * Whether the X11 records this backend fills are the records the
      * server reads — 0 when every check passes, otherwise its number.
      */
-    static fn checkRecords() : i32 {
+    pub(crate) static fn checkRecords() : i32 {
         return X11Layout::verify();
     }
 
@@ -114,7 +114,7 @@ pub(crate) class SysApp {
      * the server to reap them, and a library that opened one per run of
      * a long-lived host would leak both.
      */
-    static fn release(token : ptr) : void {
+    pub(crate) static fn release(token : ptr) : void {
         if (!Raw::isNil(token)) {
             XCloseDisplay(token);
         }

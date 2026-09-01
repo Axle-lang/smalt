@@ -33,7 +33,7 @@ pub class Presenter : Closeable {
      * for the frame between the resize event and the target's
      * reallocation.
      */
-    fn present(mut self, surface : ptr, target : RenderTarget, dstW : i32, dstH : i32) : void {
+    pub(crate) fn present(mut self, surface : ptr, target : RenderTarget, dstW : i32, dstH : i32) : void {
         self.presentPixels(surface, target.pixels(), target.width(), target.height(), dstW, dstH);
     }
 
@@ -45,7 +45,7 @@ pub class Presenter : Closeable {
      * call and removes the claim that a presented frame must have come
      * from the 3D pipeline — which is not true and never was.
      */
-    fn presentPixels(
+    pub(crate) fn presentPixels(
         mut self,
         surface : ptr,
         pixels : i32[],
@@ -58,7 +58,7 @@ pub class Presenter : Closeable {
     }
 
     /** Release the platform blit. */
-    fn close(self) : void {
+    pub(crate) fn close(self) : void {
         self.blit.close();
     }
 }

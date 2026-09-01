@@ -36,7 +36,7 @@ pub(crate) class X11Layout {
      * wrong" has to bisect this file by hand, and the record that moved
      * is the only thing worth knowing.
      */
-    static fn verify() : i32 {
+    pub(crate) static fn verify() : i32 {
         // The header every event shares. If this is wrong, every event
         // below is wrong in the same way, so it is checked first.
         if (offsetof(XAnyEvent, serial) != 8) {

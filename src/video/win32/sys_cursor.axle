@@ -41,7 +41,7 @@ class SysCursor {
      * coordinates puts the pointer in the wrong place on any window that
      * is not at the origin.
      */
-    static fn recentre(win : SysWindow, x : i32, y : i32) : void {
+    pub(crate) static fn recentre(win : SysWindow, x : i32, y : i32) : void {
         let block = new Blob(sizeof<POINT>());
         defer block.close();
         unsafe {
@@ -62,7 +62,7 @@ class SysCursor {
      * guarantees that by ignoring a mode change that is already in
      * effect. It is process-wide, so `win` is unread here.
      */
-    static fn showCursor(win : SysWindow, visible : bool) : void {
+    pub(crate) static fn showCursor(win : SysWindow, visible : bool) : void {
         if (visible) {
             ShowCursor(1);
         } else {

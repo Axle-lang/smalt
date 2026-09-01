@@ -31,7 +31,7 @@ const WIN_CLASS_NAME : string = "smalt.window";
 /** Registration of the one window class the library uses. */
 class WinClass {
     /** The class name, as `CreateWindowExW` wants it. */
-    static fn name() : Blob {
+    pub(crate) static fn name() : Blob {
         return Wide::from(WIN_CLASS_NAME);
     }
 
@@ -42,7 +42,7 @@ class WinClass {
      * Registering twice fails with `ERROR_CLASS_ALREADY_EXISTS`, so the
      * caller (`Platform`) does it exactly once and keeps the answer.
      */
-    static fn register(instance : ptr) : bool {
+    pub(crate) static fn register(instance : ptr) : bool {
         // Both blocks must outlive `RegisterClassExW` — `wc` holds the
         // address of `name` — and both are released once it returns,
         // whichever way this function leaves.

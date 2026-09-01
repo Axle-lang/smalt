@@ -45,12 +45,12 @@ const SYS_TIMER_PERIOD_MS : i32 = 1;
 /** The process's handle on the OS. */
 pub(crate) class SysApp {
     /** The token the window layer creates windows from. */
-    static fn instance() : ptr {
+    pub(crate) static fn instance() : ptr {
         return GetModuleHandleW(Raw::nil());
     }
 
     /** Whether `instance` failed to produce a usable token. */
-    static fn isNil(token : ptr) : bool {
+    pub(crate) static fn isNil(token : ptr) : bool {
         return Raw::isNil(token);
     }
 
@@ -61,7 +61,7 @@ pub(crate) class SysApp {
      * fails with `ERROR_CLASS_ALREADY_EXISTS`, so the caller does this
      * exactly once and keeps the answer.
      */
-    static fn prepareWindows(token : ptr) : bool {
+    pub(crate) static fn prepareWindows(token : ptr) : bool {
         return WinClass::register(token);
     }
 
@@ -69,12 +69,12 @@ pub(crate) class SysApp {
      * Ask for the finest sleep granularity. Answers whether it was
      * granted — only a granted raise may be lowered.
      */
-    static fn raiseTimerRes() : bool {
+    pub(crate) static fn raiseTimerRes() : bool {
         return timeBeginPeriod(SYS_TIMER_PERIOD_MS) == 0;
     }
 
     /** Undo one granted raise. */
-    static fn lowerTimerRes() : void {
+    pub(crate) static fn lowerTimerRes() : void {
         timeEndPeriod(SYS_TIMER_PERIOD_MS);
     }
 
@@ -90,7 +90,7 @@ pub(crate) class SysApp {
      *
      * A port with no such records answers 0.
      */
-    static fn checkRecords() : i32 {
+    pub(crate) static fn checkRecords() : i32 {
         return Win32Layout::verify();
     }
 
@@ -102,5 +102,5 @@ pub(crate) class SysApp {
      * because the seam has to have it — an X11 `Display*` is a socket,
      * and a library that never closed it would leak one per process.
      */
-    static fn release(token : ptr) : void {}
+    pub(crate) static fn release(token : ptr) : void {}
 }

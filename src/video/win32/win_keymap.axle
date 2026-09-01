@@ -46,7 +46,7 @@ class WinKeymap {
     }
 
     /** The scancode a key message names. */
-    static fn lookup(scan : i32, isExtended : bool) : Scancode {
+    pub(crate) static fn lookup(scan : i32, isExtended : bool) : Scancode {
         if (isExtended) {
             return WinKeymap::extended(scan);
         }

@@ -57,32 +57,32 @@ pub class Clock : Closeable {
     }
 
     /** Ticks of the performance counter per second. */
-    fn frequency(self) : i64 {
+    pub fn frequency(self) : i64 {
         return self.freq;
     }
 
     /** The raw monotonic counter, in `frequency()` ticks. */
-    fn counter(mut self) : i64 {
+    pub fn counter(mut self) : i64 {
         return self.sys.counter();
     }
 
     /** Milliseconds since the clock started. */
-    fn ticks(mut self) : i64 {
+    pub fn ticks(mut self) : i64 {
         return ((self.counter() - self.origin) * CLOCK_MS_PER_SEC) / self.freq;
     }
 
     /** Microseconds since the clock started. */
-    fn micros(mut self) : i64 {
+    pub fn micros(mut self) : i64 {
         return ((self.counter() - self.origin) * CLOCK_US_PER_SEC) / self.freq;
     }
 
     /** Seconds since the clock started, as a fraction. */
-    fn seconds(mut self) : f64 {
+    pub fn seconds(mut self) : f64 {
         return (self.micros() as f64) / (CLOCK_US_PER_SEC as f64);
     }
 
     /** Hand `ms` milliseconds back to the scheduler. */
-    fn delay(self, ms : i32) : void {
+    pub fn delay(self, ms : i32) : void {
         if (ms > 0) {
             self.sys.sleep(ms);
         }
@@ -95,7 +95,7 @@ pub class Clock : Closeable {
      * Sleeps while more than `CLOCK_SPIN_MARGIN_US` remains and spins the
      * rest, which is what keeps a 16.67 ms frame from becoming 17.9 ms.
      */
-    fn delayUntil(mut self, deadlineUs : i64) : void {
+    pub fn delayUntil(mut self, deadlineUs : i64) : void {
         let remaining : i64 = deadlineUs - self.micros();
         if (remaining > CLOCK_SPIN_MARGIN_US) {
             let sleepable : i64 = remaining - CLOCK_SPIN_MARGIN_US;
@@ -107,7 +107,7 @@ pub class Clock : Closeable {
     }
 
     /** Release the platform clock.*/
-    fn close(self) : void {
+    pub fn close(self) : void {
         self.sys.close();
     }
 }
@@ -173,7 +173,7 @@ pub class FramePacer {
     }
 
     /** Retarget the loop; `0` uncaps it. Takes effect on the next tick. */
-    fn setRate(mut self, fps : i32) : void {
+    pub fn setRate(mut self, fps : i32) : void {
         self.periodUs = 0;
         if (fps > 0) {
             self.periodUs = CLOCK_US_PER_SEC / (fps as i64);
@@ -181,7 +181,7 @@ pub class FramePacer {
     }
 
     /** The frame period being targeted, in microseconds; `0` when uncapped. */
-    fn period(self) : i64 {
+    pub fn period(self) : i64 {
         return self.periodUs;
     }
 
@@ -191,7 +191,7 @@ pub class FramePacer {
      * Zero until a full window has elapsed, so a title bar shows nothing
      * rather than a wild number extrapolated from three frames.
      */
-    fn fps(self) : f64 {
+    pub fn fps(self) : f64 {
         return self.rate;
     }
 
@@ -204,7 +204,7 @@ pub class FramePacer {
      * than a period leaves a backlog that no run of short frames can
      * clear, so the deadline is re-seeded from now rather than chased.
      */
-    fn tick(mut self, clock : Clock) : f64 {
+    pub fn tick(mut self, clock : Clock) : f64 {
         if (!self.started) {
             self.started = true;
             self.lastUs = clock.micros();

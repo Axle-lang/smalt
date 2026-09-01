@@ -133,17 +133,17 @@ pub(crate) class SysAudio : Closeable {
     }
 
     /** Frames the caller may write into one block. */
-    static fn blockFrames() : i32 {
+    pub(crate) static fn blockFrames() : i32 {
         return AUDIO_BLOCK_FRAMES;
     }
 
     /** Whether the device opened. Everything else is a no-op if not. */
-    fn isOpen(self) : bool {
+    pub(crate) fn isOpen(self) : bool {
         return self.opened;
     }
 
     /** The address of block `i`'s first frame. */
-    fn blockAddress(self, i : i32) : i64 {
+    pub(crate) fn blockAddress(self, i : i32) : i64 {
         unsafe {
             return Raw::addr(self.samples.at()) + (i as i64) * AudioFormat::blockBytes();
         }
@@ -156,7 +156,7 @@ pub(crate) class SysAudio : Closeable {
      * Answering -1 is the normal case, not a failure: it means the
      * device still has enough queued and the mixer has nothing to do.
      */
-    fn reclaim(mut self) : i32 {
+    pub(crate) fn reclaim(mut self) : i32 {
         if (!self.opened) {
             return -1;
         }
@@ -184,7 +184,7 @@ pub(crate) class SysAudio : Closeable {
      * prepared — so a missing unprepare shows up as a process that will
      * not exit cleanly rather than as audible trouble.
      */
-    fn submit(mut self, i : i32) : void {
+    pub(crate) fn submit(mut self, i : i32) : void {
         if (!self.opened || i < 0 || i >= AUDIO_BLOCKS) {
             return;
         }
@@ -212,7 +212,7 @@ pub(crate) class SysAudio : Closeable {
      * done: unpreparing a block the device still holds is refused, and
      * closing with a prepared block outstanding is refused too.
      */
-    fn close(self) : void {
+    pub(crate) fn close(self) : void {
         if (self.opened) {
             let size : u32 = sizeof<WAVEHDR>() as u32;
             unsafe {

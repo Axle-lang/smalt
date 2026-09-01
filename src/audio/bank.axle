@@ -52,7 +52,7 @@ pub class SoundBank : Closeable {
      * offer `1.wav`..`8.wav` and get however many exist without probing
      * the filesystem first.
      */
-    fn add(mut self, path : string) : void {
+    pub fn add(mut self, path : string) : void {
         if (self.count >= self.cap) {
             return;
         }
@@ -66,17 +66,17 @@ pub class SoundBank : Closeable {
     }
 
     /** How many variants decoded. */
-    fn size(self) : i32 {
+    pub fn size(self) : i32 {
         return self.count;
     }
 
     /** Whether the bank holds any audio at all. */
-    fn loaded(self) : bool {
+    pub fn loaded(self) : bool {
         return self.count > 0;
     }
 
     /** The variant `rnd` in [0, 1) selects, or -1 when the bank is empty. */
-    fn pick(self, rnd : f64) : i32 {
+    pub fn pick(self, rnd : f64) : i32 {
         if (self.count <= 0) {
             return -1;
         }
@@ -91,7 +91,7 @@ pub class SoundBank : Closeable {
     }
 
     /** Play one variant at a fixed gain — the listener's own sound. */
-    fn playRand(self, mx : Mixer, rnd : f64, gain : f64) : void {
+    pub fn playRand(self, mx : Mixer, rnd : f64, gain : f64) : void {
         let i : i32 = self.pick(rnd);
         if (i < 0) {
             return;
@@ -100,7 +100,7 @@ pub class SoundBank : Closeable {
     }
 
     /** Play one variant at a world position, fading to nothing at `range`. */
-    fn playRandPos(
+    pub fn playRandPos(
         self,
         mx : Mixer,
         rnd : f64,
@@ -124,7 +124,7 @@ pub class SoundBank : Closeable {
      * holds sample addresses, not clips, so a voice still reading one
      * would read freed memory. Close banks after the mixer.
      */
-    fn close(self) : void {
+    pub fn close(self) : void {
         let i : i32 = 0;
         while (i < self.count) {
             self.clips[i].close();

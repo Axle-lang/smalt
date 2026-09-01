@@ -49,10 +49,10 @@ class SysCursor {
      * Nothing: the protocol has no warp. See this file's header for what
      * replaces it and what it costs.
      */
-    static fn recentre(win : SysWindow, x : i32, y : i32) : void {}
+    pub(crate) static fn recentre(win : SysWindow, x : i32, y : i32) : void {}
 
     /** Hide the pointer over `win`, or leave it as the compositor drew it. */
-    static fn showCursor(win : SysWindow, visible : bool) : void {
+    pub(crate) static fn showCursor(win : SysWindow, visible : bool) : void {
         unsafe {
             if (visible) {
                 return;

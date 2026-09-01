@@ -38,7 +38,7 @@ pub class AssetFile {
      * It is not for guarding a read: `readAll` already reports a missing
      * file, and testing first is a race and a second syscall.
      */
-    static fn exists(path : string) : bool {
+    pub static fn exists(path : string) : bool {
         return Path::from(path).isFile();
     }
 
@@ -59,7 +59,7 @@ pub class AssetFile {
      * and compares the count. Zero means the file could not be opened,
      * which is the same answer a caller treats an empty read as.
      */
-    static fn readInto(path : string, base : i64, bytes : i64) : i64 {
+    pub static fn readInto(path : string, base : i64, bytes : i64) : i64 {
         if (base == 0 || bytes <= 0) {
             return 0;
         }
@@ -80,7 +80,7 @@ pub class AssetFile {
      * what `readInto` is for: a caller that owns its buffer says how big
      * it is and gets back how much arrived.
      */
-    static fn readAll(path : string) : Blob ! IOException {
+    pub static fn readAll(path : string) : Blob ! IOException {
         let stream = fs::fopen(path, FILE_MODE_READ);
         if (Raw::isNil(stream)) {
             throw IOException("cannot open ${path}");

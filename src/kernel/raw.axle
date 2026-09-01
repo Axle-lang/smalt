@@ -19,7 +19,7 @@ use std::ffi::libc::mem::{libc_malloc, libc_free, libc_memset, libc_memcpy};
  */
 class Raw {
     /** The null pointer — the `NULL` of every optional Win32 argument. */
-    static fn nil() : ptr {
+    pub(crate) static fn nil() : ptr {
         unsafe {
             let z : i64 = 0;
             return z as ptr;
@@ -27,48 +27,48 @@ class Raw {
     }
 
     /** True when `p` is null, the failure answer of every Win32 create call. */
-    static fn isNil(p : ptr) : bool {
+    pub(crate) static fn isNil(p : ptr) : bool {
         unsafe {
             return (p as i64) == 0;
         }
     }
 
     /** `p` as a plain integer address, for arithmetic and comparison. */
-    static fn addr(p : ptr) : i64 {
+    pub(crate) static fn addr(p : ptr) : i64 {
         unsafe {
             return p as i64;
         }
     }
 
     /** The integer address `a` viewed as a pointer. */
-    static fn at(a : i64) : ptr {
+    pub(crate) static fn at(a : i64) : ptr {
         unsafe {
             return a as ptr;
         }
     }
 
     /** `n` uninitialised bytes from libc, or null. Release with `release`. */
-    static fn take(n : i64) : ptr {
+    pub(crate) static fn take(n : i64) : ptr {
         return libc_malloc(n);
     }
 
     /** Return a block from `take` to libc. */
-    static fn release(p : ptr) : void {
+    pub(crate) static fn release(p : ptr) : void {
         libc_free(p);
     }
 
     /** Fill `n` bytes at `p` with zero. */
-    static fn clear(p : ptr, n : i64) : void {
+    pub(crate) static fn clear(p : ptr, n : i64) : void {
         libc_memset(p, 0, n);
     }
 
     /** Copy `n` bytes from `src` to `dst`; the regions must not overlap. */
-    static fn copy(dst : ptr, src : ptr, n : i64) : void {
+    pub(crate) static fn copy(dst : ptr, src : ptr, n : i64) : void {
         libc_memcpy(dst, src, n);
     }
 
     /** The unsigned byte at `base + off`, widened without sign extension. */
-    static fn u8At(base : ptr, off : i64) : i32 {
+    pub(crate) static fn u8At(base : ptr, off : i64) : i32 {
         unsafe {
             let slot : ptr<u8> = ((base as i64) + off) as ptr<u8>;
             return (*slot) as i32;
@@ -76,7 +76,7 @@ class Raw {
     }
 
     /** Store the low byte of `v` at `base + off`. */
-    static fn putU8(base : ptr, off : i64, v : i32) : void {
+    pub(crate) static fn putU8(base : ptr, off : i64, v : i32) : void {
         unsafe {
             let slot : ptr<u8> = ((base as i64) + off) as ptr<u8>;
             *slot = v as u8;
@@ -90,7 +90,7 @@ class Raw {
      * the `WNDCLASSEXW.style` flags and UTF-16 code units that live at
      * this width arrive unsigned, in one load.
      */
-    static fn u16At(base : ptr, off : i64) : i32 {
+    pub(crate) static fn u16At(base : ptr, off : i64) : i32 {
         unsafe {
             let slot : ptr<u16> = ((base as i64) + off) as ptr<u16>;
             return (*slot) as i32;
@@ -105,7 +105,7 @@ class Raw {
      * 32768, subtract 65536 — is a branch per sample in a mixer's inner
      * loop, and it is the same three lines wherever a caller needs it.
      */
-    static fn i16At(base : ptr, off : i64) : i32 {
+    pub(crate) static fn i16At(base : ptr, off : i64) : i32 {
         unsafe {
             let slot : ptr<i16> = ((base as i64) + off) as ptr<i16>;
             return (*slot) as i32;
@@ -113,7 +113,7 @@ class Raw {
     }
 
     /** Store the low 16 bits of `v` at `base + off`. */
-    static fn putU16(base : ptr, off : i64, v : i32) : void {
+    pub(crate) static fn putU16(base : ptr, off : i64, v : i32) : void {
         unsafe {
             let slot : ptr<u16> = ((base as i64) + off) as ptr<u16>;
             *slot = (v & 0xFFFF) as u16;
@@ -121,7 +121,7 @@ class Raw {
     }
 
     /** The 32-bit word at `base + off`. */
-    static fn i32At(base : ptr, off : i64) : i32 {
+    pub(crate) static fn i32At(base : ptr, off : i64) : i32 {
         unsafe {
             let slot : ptr<i32> = ((base as i64) + off) as ptr<i32>;
             return *slot;
@@ -129,7 +129,7 @@ class Raw {
     }
 
     /** Store the 32-bit word `v` at `base + off`. */
-    static fn putI32(base : ptr, off : i64, v : i32) : void {
+    pub(crate) static fn putI32(base : ptr, off : i64, v : i32) : void {
         unsafe {
             let slot : ptr<i32> = ((base as i64) + off) as ptr<i32>;
             *slot = v;
@@ -137,7 +137,7 @@ class Raw {
     }
 
     /** The 64-bit word at `base + off` — every Win32 handle and `LPARAM`. */
-    static fn i64At(base : ptr, off : i64) : i64 {
+    pub(crate) static fn i64At(base : ptr, off : i64) : i64 {
         unsafe {
             let slot : ptr<i64> = ((base as i64) + off) as ptr<i64>;
             return *slot;
@@ -145,7 +145,7 @@ class Raw {
     }
 
     /** Store the 64-bit word `v` at `base + off`. */
-    static fn putI64(base : ptr, off : i64, v : i64) : void {
+    pub(crate) static fn putI64(base : ptr, off : i64, v : i64) : void {
         unsafe {
             let slot : ptr<i64> = ((base as i64) + off) as ptr<i64>;
             *slot = v;
@@ -171,7 +171,7 @@ class Raw {
      * The array outlives the call by construction — every caller holds
      * it in a live field for the duration of the blit.
      */
-    static fn pixelsOf(buf : i32[]) : ptr {
+    pub(crate) static fn pixelsOf(buf : i32[]) : ptr {
         unsafe {
             return buf as ptr;
         }

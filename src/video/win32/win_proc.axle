@@ -175,12 +175,12 @@ pub(crate) class WinProcBlock : Closeable {
     }
 
     /** The address stored in the window's user data. */
-    fn at(self) : ptr {
+    pub(crate) fn at(self) : ptr {
         return self.mem.at();
     }
 
     /** Whether `WM_CLOSE` arrived, clearing the latch. */
-    fn takeClose(mut self) : bool {
+    pub(crate) fn takeClose(mut self) : bool {
         unsafe {
             let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             let pending : bool = (*st).closePending != 0;
@@ -190,7 +190,7 @@ pub(crate) class WinProcBlock : Closeable {
     }
 
     /** Whether `WM_DESTROY` arrived. Not a latch: destruction is final. */
-    fn destroyed(self) : bool {
+    pub(crate) fn destroyed(self) : bool {
         unsafe {
             let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             return (*st).destroyed != 0;
@@ -198,7 +198,7 @@ pub(crate) class WinProcBlock : Closeable {
     }
 
     /** Whether a resize is waiting, clearing the latch. */
-    fn takeResize(mut self) : bool {
+    pub(crate) fn takeResize(mut self) : bool {
         unsafe {
             let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             let pending : bool = (*st).sizePending != 0;
@@ -208,7 +208,7 @@ pub(crate) class WinProcBlock : Closeable {
     }
 
     /** The client width from the last `WM_SIZE`. */
-    fn width(self) : i32 {
+    pub(crate) fn width(self) : i32 {
         unsafe {
             let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             return (*st).width;
@@ -216,7 +216,7 @@ pub(crate) class WinProcBlock : Closeable {
     }
 
     /** The client height from the last `WM_SIZE`. */
-    fn height(self) : i32 {
+    pub(crate) fn height(self) : i32 {
         unsafe {
             let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             return (*st).height;
@@ -224,7 +224,7 @@ pub(crate) class WinProcBlock : Closeable {
     }
 
     /** Whether a focus edge is waiting, clearing the latch. */
-    fn takeFocusEdge(mut self) : bool {
+    pub(crate) fn takeFocusEdge(mut self) : bool {
         unsafe {
             let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             let pending : bool = (*st).focusPending != 0;
@@ -234,7 +234,7 @@ pub(crate) class WinProcBlock : Closeable {
     }
 
     /** Whether the window holds focus. */
-    fn focused(self) : bool {
+    pub(crate) fn focused(self) : bool {
         unsafe {
             let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             return (*st).focused != 0;
@@ -242,7 +242,7 @@ pub(crate) class WinProcBlock : Closeable {
     }
 
     /** Whether a minimise / restore edge is waiting, clearing the latch. */
-    fn takeMinimiseEdge(mut self) : bool {
+    pub(crate) fn takeMinimiseEdge(mut self) : bool {
         unsafe {
             let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             let pending : bool = (*st).minimisePending != 0;
@@ -252,7 +252,7 @@ pub(crate) class WinProcBlock : Closeable {
     }
 
     /** Whether the window is minimised. */
-    fn minimised(self) : bool {
+    pub(crate) fn minimised(self) : bool {
         unsafe {
             let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             return (*st).minimised != 0;
@@ -260,7 +260,7 @@ pub(crate) class WinProcBlock : Closeable {
     }
 
     /** Release the block. */
-    fn close(self) : void {
+    pub(crate) fn close(self) : void {
         self.mem.close();
     }
 }

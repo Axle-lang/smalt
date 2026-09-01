@@ -46,22 +46,22 @@ pub class Surface : Closeable {
     }
 
     /** Framebuffer width, in pixels. */
-    fn width(self) : i32 {
+    pub fn width(self) : i32 {
         return self.w;
     }
 
     /** Framebuffer height, in pixels. */
-    fn height(self) : i32 {
+    pub fn height(self) : i32 {
         return self.h;
     }
 
     /** Pixels in the framebuffer. */
-    fn pixelCount(self) : i64 {
+    pub fn pixelCount(self) : i64 {
         return (self.w as i64) * self.h;
     }
 
     /** The pixels, addressed `y * width + x`. */
-    fn pixels(self) : i32[] {
+    pub fn pixels(self) : i32[] {
         return self.colour;
     }
 
@@ -72,7 +72,7 @@ pub class Surface : Closeable {
      * the whole of the contract, and the reason a caller that keeps it
      * across a resize must take it again afterwards.
      */
-    fn base(self) : i64 {
+    pub fn base(self) : i64 {
         return Mem::addressOf(self.colour);
     }
 
@@ -85,7 +85,7 @@ pub class Surface : Closeable {
      *
      * **Any address taken from `base()` is dead after this returns.**
      */
-    fn resize(mut self, w : i32, h : i32) : void {
+    pub fn resize(mut self, w : i32, h : i32) : void {
         if (w <= 0 || h <= 0) {
             return;
         }
@@ -99,14 +99,14 @@ pub class Surface : Closeable {
     }
 
     /** Fill every pixel with `packed`. */
-    fn clear(mut self, packed : i32) : void {
+    pub fn clear(mut self, packed : i32) : void {
         for (i of 0..self.pixelCount()) {
             self.colour[i] = packed;
         }
     }
 
     /** Write `packed` at (`x`, `y`), or nothing if it is off the frame. */
-    fn plot(mut self, x : i32, y : i32, packed : i32) : void {
+    pub fn plot(mut self, x : i32, y : i32, packed : i32) : void {
         if (x < 0 || y < 0 || x >= self.w || y >= self.h) {
             return;
         }
@@ -120,7 +120,7 @@ pub class Surface : Closeable {
      * window is any size — and what absorbs the frame between a resize
      * event and the reallocation that follows it.
      */
-    fn present(mut self, win : Window) : void {
+    pub fn present(mut self, win : Window) : void {
         self.presenter.presentPixels(
             win.surface(),
             self.colour,
@@ -132,7 +132,7 @@ pub class Surface : Closeable {
     }
 
     /** Release the blit path. The pixels are the destructor's. */
-    fn close(self) : void {
+    pub fn close(self) : void {
         self.presenter.close();
     }
 }

@@ -46,7 +46,7 @@ use crate::video::win32::msg_decode::handle;
 /** Decoding of the `MSG` fields, and the drain loop over the queue. */
 class SysDrain {
     /** A block sized for exactly one `MSG`. */
-    static fn newScratch() : Blob {
+    pub(crate) static fn newScratch() : Blob {
         return new Blob(sizeof<MSG>());
     }
 
@@ -60,7 +60,7 @@ class SysDrain {
      * The parameter is the seam's, not this file's — a port that drains
      * one queue for both halves needs it.
      */
-    static fn drain(
+    pub(crate) static fn drain(
         scratch : Blob,
         win : SysWindow,
         stamp : i64,

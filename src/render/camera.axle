@@ -49,27 +49,27 @@ pub class Camera {
     }
 
     /** Where the camera is. */
-    fn eye(self) : Vec3 {
+    pub fn eye(self) : Vec3 {
         return self.position;
     }
 
     /** Place the camera. */
-    fn moveTo(mut self, p : Vec3) : void {
+    pub fn moveTo(mut self, p : Vec3) : void {
         self.position = p;
     }
 
     /** Shift the camera by `d`, in world space. */
-    fn translate(mut self, d : Vec3) : void {
+    pub fn translate(mut self, d : Vec3) : void {
         self.position = self.position.plus(d);
     }
 
     /** The current yaw, in radians. */
-    fn yawAngle(self) : f64 {
+    pub fn yawAngle(self) : f64 {
         return self.yaw;
     }
 
     /** The current pitch, in radians. */
-    fn pitchAngle(self) : f64 {
+    pub fn pitchAngle(self) : f64 {
         return self.pitch;
     }
 
@@ -80,29 +80,29 @@ pub class Camera {
      * direction parallel to the up axis, which leaves `lookAt` without a
      * right axis and flips the world over.
      */
-    fn turn(mut self, dYaw : f64, dPitch : f64) : void {
+    pub fn turn(mut self, dYaw : f64, dPitch : f64) : void {
         self.yaw += dYaw;
         self.pitch = Camera::clampPitch(self.pitch + dPitch);
     }
 
     /** `radians` brought inside the pitch limit, either side of level. */
-    static fn clampPitch(radians : f64) : f64 {
+    pub(file) static fn clampPitch(radians : f64) : f64 {
         return radians.max(-CAMERA_PITCH_LIMIT).min(CAMERA_PITCH_LIMIT);
     }
 
     /** Set the vertical field of view, in radians. */
-    fn setFieldOfView(mut self, radians : f64) : void {
+    pub fn setFieldOfView(mut self, radians : f64) : void {
         self.fov = radians;
     }
 
     /** Set the near and far planes. */
-    fn setRange(mut self, near : f64, far : f64) : void {
+    pub fn setRange(mut self, near : f64, far : f64) : void {
         self.near = near;
         self.far = far;
     }
 
     /** Match the projection to a `w` by `h` viewport. */
-    fn setViewport(mut self, w : i32, h : i32) : void {
+    pub fn setViewport(mut self, w : i32, h : i32) : void {
         if (w <= 0 || h <= 0) {
             return;
         }
@@ -110,34 +110,34 @@ pub class Camera {
     }
 
     /** The unit vector the camera is looking along. */
-    fn forward(self) : Vec3 {
+    pub fn forward(self) : Vec3 {
         let cp = self.pitch.cos();
         return Vec3::make(cp * self.yaw.sin(), self.pitch.sin(), -cp * self.yaw.cos());
     }
 
     /** The unit vector to the camera's right, level with the horizon. */
-    fn right(self) : Vec3 {
+    pub fn right(self) : Vec3 {
         return Vec3::make(self.yaw.cos(), 0.0, self.yaw.sin());
     }
 
     /** The view matrix — world space into camera space. */
-    fn view(self) : Mat4 {
+    pub fn view(self) : Mat4 {
         let eye = self.eye();
         return Mat4::lookAt(eye, eye.plus(self.forward()), Vec3::unitY());
     }
 
     /** The projection matrix — camera space into clip space. */
-    fn projection(self) : Mat4 {
+    pub fn projection(self) : Mat4 {
         return Mat4::perspective(self.fov, self.aspect, self.near, self.far);
     }
 
     /** Projection times view — what a draw call multiplies the model by. */
-    fn viewProjection(self) : Mat4 {
+    pub fn viewProjection(self) : Mat4 {
         return self.projection().mul(self.view());
     }
 
     /** Point the camera at `target` from where it is. */
-    fn lookAt(mut self, target : Vec3) : void {
+    pub fn lookAt(mut self, target : Vec3) : void {
         let d = target.minus(self.eye());
         let flat = (d.x * d.x + d.z * d.z).sqrt();
         self.yaw = math::atan2(d.x, -d.z);

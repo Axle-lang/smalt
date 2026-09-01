@@ -81,7 +81,7 @@ pub(crate) class SysBlit : Closeable {
     }
 
     /** The block, read as the record it holds. */
-    fn header(self) : ptr<XImage> {
+    pub(crate) fn header(self) : ptr<XImage> {
         unsafe {
             return self.image.at() as ptr<XImage>;
         }
@@ -94,7 +94,7 @@ pub(crate) class SysBlit : Closeable {
      * function pointers Xlib dispatches through. Re-running it on a size
      * change is the whole cost of a resize here, and it is a few stores.
      */
-    fn describe(mut self, w : i32, h : i32) : void {
+    pub(crate) fn describe(mut self, w : i32, h : i32) : void {
         if (w == self.describedW && h == self.describedH) {
             return;
         }
@@ -132,7 +132,7 @@ pub(crate) class SysBlit : Closeable {
      * error: both happen legitimately while a window is minimised, and a
      * frame loop should not have to test for it.
      */
-    fn present(
+    pub(crate) fn present(
         mut self,
         surface : ptr,
         pixels : i32[],
@@ -186,7 +186,7 @@ pub(crate) class SysBlit : Closeable {
     }
 
     /** Release the image record and the resample scratch. */
-    fn close(self) : void {
+    pub(crate) fn close(self) : void {
         self.scaled.close();
         self.image.close();
     }

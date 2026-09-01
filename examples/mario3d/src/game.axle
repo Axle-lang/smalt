@@ -142,7 +142,7 @@ class World {
     }
 
     // ── Update ──────────────────────────────────────────────────
-    fn update(mut self, events : Events) : void {
+    pub(crate) fn update(mut self, events : Events) : void {
         if (self.state != GameState::Playing) { return; }
 
         let dir : f64 = 0.0;

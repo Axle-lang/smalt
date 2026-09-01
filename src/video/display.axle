@@ -15,12 +15,12 @@ use crate::platform::sys_screen::SysScreen;
 /** The primary display. */
 pub class Display {
     /** Width of the primary display, in pixels. */
-    static fn width() : i32 {
+    pub static fn width() : i32 {
         return SysScreen::width();
     }
 
     /** Height of the primary display, in pixels. */
-    static fn height() : i32 {
+    pub static fn height() : i32 {
         return SysScreen::height();
     }
 
@@ -38,7 +38,7 @@ pub class Display {
      * aid only — this is the same type as `(i32, i32)`, and a caller that
      * prefers `let (w, h) = …` is unaffected.
      */
-    static fn suggestedSize(fraction : f64) : (w: i32, h: i32) {
+    pub static fn suggestedSize(fraction : f64) : (w: i32, h: i32) {
         let f : f64 = fraction;
         if (f <= 0.0 || f > 1.0) {
             f = 0.75;

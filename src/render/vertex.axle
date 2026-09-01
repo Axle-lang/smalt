@@ -24,12 +24,12 @@ pub struct Vertex {
     pub uv       : Vec2;
 
     /** A vertex from its three attributes. */
-    static fn make(position : Vec3, normal : Vec3, uv : Vec2) : Vertex {
+    pub static fn make(position : Vec3, normal : Vec3, uv : Vec2) : Vertex {
         return Vertex { position: position, normal: normal, uv: uv };
     }
 
     /** A vertex with no meaningful attributes — the fill value of a fresh mesh. */
-    static fn empty() : Vertex {
+    pub static fn empty() : Vertex {
         return Vertex { position: Vec3::zero(), normal: Vec3::unitY(), uv: Vec2::zero() };
     }
 }
@@ -61,7 +61,7 @@ pub struct Material {
     pub cullBackface : bool;
 
     /** A matte, untextured surface of colour `albedo`. */
-    static fn matte(albedo : Color) : Material {
+    pub static fn matte(albedo : Color) : Material {
         return Material {
             albedo: albedo,
             ambient: 0.18,
@@ -73,7 +73,7 @@ pub struct Material {
     }
 
     /** A matte, textured surface; the texel is tinted white by default. */
-    static fn textured() : Material {
+    pub static fn textured() : Material {
         return Material {
             albedo: Color::white(),
             ambient: 0.18,
@@ -85,7 +85,7 @@ pub struct Material {
     }
 
     /** A textured surface with a highlight. */
-    static fn glossy(specular : f64, shininess : f64) : Material {
+    pub static fn glossy(specular : f64, shininess : f64) : Material {
         return Material {
             albedo: Color::white(),
             ambient: 0.15,
@@ -112,12 +112,12 @@ pub struct DirectionalLight {
     pub color     : Color;
 
     /** A light of `color` travelling along `direction`. */
-    static fn make(direction : Vec3, color : Color) : DirectionalLight {
+    pub static fn make(direction : Vec3, color : Color) : DirectionalLight {
         return DirectionalLight { direction: direction.normalized(), color: color };
     }
 
     /** A plain white light from above and slightly to the front-left. */
-    static fn noon() : DirectionalLight {
+    pub static fn noon() : DirectionalLight {
         return DirectionalLight::make(Vec3::make(-0.4, -1.0, -0.35), Color::rgb(1.0, 0.98, 0.92));
     }
 }

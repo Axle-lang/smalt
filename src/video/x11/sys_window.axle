@@ -192,22 +192,22 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** The drawable `SysBlit::present` writes onto. */
-    fn surface(self) : ptr {
+    pub(crate) fn surface(self) : ptr {
         return self.token.at();
     }
 
     /** The window's identity, for the pump and the cursor. */
-    fn handle(self) : ptr {
+    pub(crate) fn handle(self) : ptr {
         return Raw::at(self.window);
     }
 
     /** Client-area width, in pixels. */
-    fn width(self) : i32 {
+    pub(crate) fn width(self) : i32 {
         return self.w;
     }
 
     /** Client-area height, in pixels. */
-    fn height(self) : i32 {
+    pub(crate) fn height(self) : i32 {
         return self.h;
     }
 
@@ -218,30 +218,30 @@ pub(crate) class SysWindow : Closeable {
      * does not obey it, so the window stays valid until `close()` —
      * which is what lets a game prompt, save, or refuse.
      */
-    fn alive(self) : bool {
+    pub(crate) fn alive(self) : bool {
         return !self.destroyed;
     }
 
     /** Make a hidden window visible and bring it forward. */
-    fn show(mut self) : void {
+    pub(crate) fn show(mut self) : void {
         XMapRaised(self.display, self.window);
         XFlush(self.display);
     }
 
     /** Hide the window without destroying it. */
-    fn hide(mut self) : void {
+    pub(crate) fn hide(mut self) : void {
         XUnmapWindow(self.display, self.window);
         XFlush(self.display);
     }
 
     /** Replace the title bar text. */
-    fn setTitle(mut self, title : string) : void {
+    pub(crate) fn setTitle(mut self, title : string) : void {
         XStoreName(self.display, self.window, title);
         XFlush(self.display);
     }
 
     /** Whether the user asked to close the window, clearing the request. */
-    fn takeClose(mut self) : bool {
+    pub(crate) fn takeClose(mut self) : bool {
         let pending = self.closePending;
         self.closePending = false;
         return pending;
@@ -253,7 +253,7 @@ pub(crate) class SysWindow : Closeable {
      * A zero extent is refused: an unmapped window can report one, and
      * adopting it would resize the framebuffer to nothing.
      */
-    fn takeResize(mut self) : bool {
+    pub(crate) fn takeResize(mut self) : bool {
         if (!self.sizePending) {
             return false;
         }
@@ -270,26 +270,26 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** Whether a focus edge is waiting, clearing it. */
-    fn takeFocusEdge(mut self) : bool {
+    pub(crate) fn takeFocusEdge(mut self) : bool {
         let pending = self.focusPending;
         self.focusPending = false;
         return pending;
     }
 
     /** Whether the window holds input focus. */
-    fn focused(self) : bool {
+    pub(crate) fn focused(self) : bool {
         return self.focusedNow;
     }
 
     /** Whether a minimise / restore edge is waiting, clearing it. */
-    fn takeMinimiseEdge(mut self) : bool {
+    pub(crate) fn takeMinimiseEdge(mut self) : bool {
         let pending = self.minimisePending;
         self.minimisePending = false;
         return pending;
     }
 
     /** Whether the window is minimised — the frame to skip. */
-    fn minimised(self) : bool {
+    pub(crate) fn minimised(self) : bool {
         return self.minimisedNow;
     }
 
@@ -313,7 +313,7 @@ pub(crate) class SysWindow : Closeable {
      * for the next pump. So this is called before a frame loop and not
      * during one.
      */
-    fn selfCheck(mut self, width : i32, height : i32) : i32 {
+    pub(crate) fn selfCheck(mut self, width : i32, height : i32) : i32 {
         let scratch = new Blob(X_EVENT_BYTES);
         defer scratch.close();
 
@@ -385,7 +385,7 @@ pub(crate) class SysWindow : Closeable {
     }
 
     /** Destroy the window and release what it holds. */
-    fn close(self) : void {
+    pub(crate) fn close(self) : void {
         if (self.blank != X_NONE) {
             XFreeCursor(self.display, self.blank);
         }

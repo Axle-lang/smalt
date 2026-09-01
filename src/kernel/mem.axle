@@ -51,7 +51,7 @@ pub class Mem {
      * construction is a memset per allocation nobody asked for. Use
      * `takeZeroed` where the first read comes before the first write.
      */
-    static fn take(bytes : i64) : i64 {
+    pub static fn take(bytes : i64) : i64 {
         if (bytes <= 0) {
             return 0;
         }
@@ -59,7 +59,7 @@ pub class Mem {
     }
 
     /** `bytes` bytes, zeroed, or 0 when the allocation failed. */
-    static fn takeZeroed(bytes : i64) : i64 {
+    pub static fn takeZeroed(bytes : i64) : i64 {
         let base = Mem::take(bytes);
         if (base != 0) {
             Mem::clear(base, bytes);
@@ -68,69 +68,69 @@ pub class Mem {
     }
 
     /** Return a block from `take` to the allocator. */
-    static fn release(base : i64) : void {
+    pub static fn release(base : i64) : void {
         if (base != 0) {
             Raw::release(Raw::at(base));
         }
     }
 
     /** Whether an address is the null one — a refused allocation. */
-    static fn isNil(base : i64) : bool {
+    pub static fn isNil(base : i64) : bool {
         return base == 0;
     }
 
     /** Fill `bytes` bytes at `base` with zero. */
-    static fn clear(base : i64, bytes : i64) : void {
+    pub static fn clear(base : i64, bytes : i64) : void {
         Raw::clear(Raw::at(base), bytes);
     }
 
     /** Copy `bytes` bytes; the regions must not overlap. */
-    static fn copy(dst : i64, src : i64, bytes : i64) : void {
+    pub static fn copy(dst : i64, src : i64, bytes : i64) : void {
         Raw::copy(Raw::at(dst), Raw::at(src), bytes);
     }
 
     /** The unsigned byte at `base + off`, widened without sign extension. */
-    static fn byteAt(base : i64, off : i64) : i32 {
+    pub static fn byteAt(base : i64, off : i64) : i32 {
         return Raw::u8At(Raw::at(base), off);
     }
 
     /** Store the low byte of `v` at `base + off`. */
-    static fn putByte(base : i64, off : i64, v : i32) : void {
+    pub static fn putByte(base : i64, off : i64, v : i32) : void {
         Raw::putU8(Raw::at(base), off, v);
     }
 
     /** The unsigned 16-bit word at `base + off`. */
-    static fn wordAt(base : i64, off : i64) : i32 {
+    pub static fn wordAt(base : i64, off : i64) : i32 {
         return Raw::u16At(Raw::at(base), off);
     }
 
     /** The SIGNED 16-bit half-word at `base + off` — a PCM sample. */
-    static fn signedWordAt(base : i64, off : i64) : i32 {
+    pub static fn signedWordAt(base : i64, off : i64) : i32 {
         return Raw::i16At(Raw::at(base), off);
     }
 
     /** Store the low 16 bits of `v` at `base + off`. */
-    static fn putWord(base : i64, off : i64, v : i32) : void {
+    pub static fn putWord(base : i64, off : i64, v : i32) : void {
         Raw::putU16(Raw::at(base), off, v);
     }
 
     /** The 32-bit word at `base + off`. */
-    static fn dwordAt(base : i64, off : i64) : i32 {
+    pub static fn dwordAt(base : i64, off : i64) : i32 {
         return Raw::i32At(Raw::at(base), off);
     }
 
     /** Store the 32-bit word `v` at `base + off`. */
-    static fn putDword(base : i64, off : i64, v : i32) : void {
+    pub static fn putDword(base : i64, off : i64, v : i32) : void {
         Raw::putI32(Raw::at(base), off, v);
     }
 
     /** The 64-bit word at `base + off`. */
-    static fn qwordAt(base : i64, off : i64) : i64 {
+    pub static fn qwordAt(base : i64, off : i64) : i64 {
         return Raw::i64At(Raw::at(base), off);
     }
 
     /** Store the 64-bit word `v` at `base + off`. */
-    static fn putQword(base : i64, off : i64, v : i64) : void {
+    pub static fn putQword(base : i64, off : i64, v : i64) : void {
         Raw::putI64(Raw::at(base), off, v);
     }
 
@@ -142,7 +142,7 @@ pub class Mem {
      * byte offset reads a pixel that is *almost* right, which is the
      * hardest kind of wrong to see.
      */
-    static fn wordOf(base : i64, index : i64) : i32 {
+    pub static fn wordOf(base : i64, index : i64) : i32 {
         unsafe {
             let slot : ptr<i32> = (base + index * MEM_WORD_BYTES) as ptr<i32>;
             return *slot;
@@ -150,7 +150,7 @@ pub class Mem {
     }
 
     /** Store the 32-bit element `v` at `index`. */
-    static fn putWordOf(base : i64, index : i64, v : i32) : void {
+    pub static fn putWordOf(base : i64, index : i64, v : i32) : void {
         unsafe {
             let slot : ptr<i32> = (base + index * MEM_WORD_BYTES) as ptr<i32>;
             *slot = v;
@@ -158,7 +158,7 @@ pub class Mem {
     }
 
     /** The `f64` element at `index` — a depth, in a z-buffer. */
-    static fn realOf(base : i64, index : i64) : f64 {
+    pub static fn realOf(base : i64, index : i64) : f64 {
         unsafe {
             let slot : ptr<f64> = (base + index * MEM_WIDE_BYTES) as ptr<f64>;
             return *slot;
@@ -166,7 +166,7 @@ pub class Mem {
     }
 
     /** Store the `f64` element `v` at `index`. */
-    static fn putRealOf(base : i64, index : i64, v : f64) : void {
+    pub static fn putRealOf(base : i64, index : i64, v : f64) : void {
         unsafe {
             let slot : ptr<f64> = (base + index * MEM_WIDE_BYTES) as ptr<f64>;
             *slot = v;
@@ -174,7 +174,7 @@ pub class Mem {
     }
 
     /** The `i64` element at `index`. */
-    static fn qwordOf(base : i64, index : i64) : i64 {
+    pub static fn qwordOf(base : i64, index : i64) : i64 {
         unsafe {
             let slot : ptr<i64> = (base + index * MEM_WIDE_BYTES) as ptr<i64>;
             return *slot;
@@ -182,7 +182,7 @@ pub class Mem {
     }
 
     /** Store the `i64` element `v` at `index`. */
-    static fn putQwordOf(base : i64, index : i64, v : i64) : void {
+    pub static fn putQwordOf(base : i64, index : i64, v : i64) : void {
         unsafe {
             let slot : ptr<i64> = (base + index * MEM_WIDE_BYTES) as ptr<i64>;
             *slot = v;
@@ -198,7 +198,7 @@ pub class Mem {
      * must outlive every use of the address, which is the caller's to
      * know — the compiler stops tracking it at this line.
      */
-    static fn addressOf(pixels : i32[]) : i64 {
+    pub static fn addressOf(pixels : i32[]) : i64 {
         return Raw::addr(Raw::pixelsOf(pixels));
     }
 }

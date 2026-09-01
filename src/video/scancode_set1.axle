@@ -35,7 +35,7 @@ class ScancodeSet1 {
      * table answers the second, which is why this one does not have to
      * distinguish them.
      */
-    static fn base(code : i32) : Scancode {
+    pub(crate) static fn base(code : i32) : Scancode {
         return match code {
             0x01 => Scancode::Escape,
             0x02 => Scancode::Num1,

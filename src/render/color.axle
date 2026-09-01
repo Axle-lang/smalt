@@ -39,22 +39,22 @@ pub struct Color {
     pub b : f64;
 
     /** A colour from three channel values. */
-    static fn rgb(r : f64, g : f64, b : f64) : Color {
+    pub static fn rgb(r : f64, g : f64, b : f64) : Color {
         return Color { r: r, g: g, b: b };
     }
 
     /** Black. */
-    static fn black() : Color {
+    pub static fn black() : Color {
         return Color { r: 0.0, g: 0.0, b: 0.0 };
     }
 
     /** White. */
-    static fn white() : Color {
+    pub static fn white() : Color {
         return Color { r: 1.0, g: 1.0, b: 1.0 };
     }
 
     /** One channel clamped to 0..255. */
-    static fn channel(v : f64) : i32 {
+    pub static fn channel(v : f64) : i32 {
         if (v <= 0.0) {
             return 0;
         }
@@ -65,7 +65,7 @@ pub struct Color {
     }
 
     /** A colour from three 0..255 integers. */
-    static fn bytes(r : i32, g : i32, b : i32) : Color {
+    pub static fn bytes(r : i32, g : i32, b : i32) : Color {
         return Color {
             r: (r as f64) / COLOR_CHANNEL_MAX,
             g: (g as f64) / COLOR_CHANNEL_MAX,
@@ -74,12 +74,12 @@ pub struct Color {
     }
 
     /** Pack three 0..255 integers into the framebuffer's word. */
-    static fn packBytes(r : i32, g : i32, b : i32) : i32 {
+    pub static fn packBytes(r : i32, g : i32, b : i32) : i32 {
         return ((r & 0xFF) << COLOR_RED_SHIFT) | ((g & 0xFF) << COLOR_GREEN_SHIFT) | (b & 0xFF);
     }
 
     /** Unpack a framebuffer word. */
-    static fn unpack(v : i32) : Color {
+    pub static fn unpack(v : i32) : Color {
         return Color::bytes(
             (v >>> COLOR_RED_SHIFT) & 0xFF,
             (v >>> COLOR_GREEN_SHIFT) & 0xFF,
@@ -88,7 +88,7 @@ pub struct Color {
     }
 
     /** This colour as a framebuffer word, clamped. */
-    fn packed(self) : i32 {
+    pub fn packed(self) : i32 {
         return Color::packBytes(
             Color::channel(self.r),
             Color::channel(self.g),
@@ -97,17 +97,17 @@ pub struct Color {
     }
 
     /** This colour scaled by `k` — a light's contribution. */
-    fn scaled(self, k : f64) : Color {
+    pub fn scaled(self, k : f64) : Color {
         return Color { r: self.r * k, g: self.g * k, b: self.b * k };
     }
 
     /** This colour added to `o` — accumulating two lights. */
-    fn plus(self, o : Color) : Color {
+    pub fn plus(self, o : Color) : Color {
         return Color { r: self.r + o.r, g: self.g + o.g, b: self.b + o.b };
     }
 
     /** This colour multiplied channel-wise by `o` — a texel times a tint. */
-    fn times(self, o : Color) : Color {
+    pub fn times(self, o : Color) : Color {
         return Color { r: self.r * o.r, g: self.g * o.g, b: self.b * o.b };
     }
 }

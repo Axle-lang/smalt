@@ -50,7 +50,18 @@ pub const WINDOW_HIDDEN : i32 = 4;
  * reclaim — the `Closeable` contract is what releases it.
  */
 pub class Window : Closeable {
-    sys : SysWindow;
+    /**
+     * The native window.
+     *
+     * Read by `core::pump`, which drives the platform's event path
+     * against it, and by nothing outside the crate: `SysWindow` is
+     * `pub(crate)`, so a rung wider than that would publish a name a
+     * program cannot spell. A field rather than a getter because what
+     * the accessor returned was the window's own handle, not a fresh
+     * one, and a value handed out of a call reads as an owned result the
+     * caller must release (E0511).
+     */
+    pub(crate) sys : SysWindow;
 
     /**
      * Create a window with a `w` by `h` **client** area.
@@ -74,22 +85,17 @@ pub class Window : Closeable {
     }
 
     /** Client-area width, in pixels. */
-    fn width(self) : i32 {
+    pub fn width(self) : i32 {
         return self.sys.width();
     }
 
     /** Client-area height, in pixels. */
-    fn height(self) : i32 {
+    pub fn height(self) : i32 {
         return self.sys.height();
     }
 
-    /** The native window, for the layers that need it (`pump`, the cursor). */
-    fn native(self) : SysWindow {
-        return self.sys;
-    }
-
     /** The drawable the framebuffer is blitted onto. */
-    fn surface(self) : ptr {
+    pub(crate) fn surface(self) : ptr {
         return self.sys.surface();
     }
 
@@ -100,47 +106,47 @@ pub class Window : Closeable {
      * until the game calls `close()`, which is what lets it prompt,
      * save, or refuse.
      */
-    fn isOpen(self) : bool {
+    pub fn isOpen(self) : bool {
         return self.sys.alive();
     }
 
     /** Whether the window is minimised — the frame to skip. */
-    fn minimised(self) : bool {
+    pub fn minimised(self) : bool {
         return self.sys.minimised();
     }
 
     /** Whether the window holds input focus. */
-    fn focused(self) : bool {
+    pub fn focused(self) : bool {
         return self.sys.focused();
     }
 
     /** Whether the user asked to close the window, clearing the request. */
-    fn takeCloseRequest(mut self) : bool {
+    pub fn takeCloseRequest(mut self) : bool {
         return self.sys.takeClose();
     }
 
     /** Whether a focus edge is waiting, clearing it. */
-    fn takeFocusEdge(mut self) : bool {
+    pub fn takeFocusEdge(mut self) : bool {
         return self.sys.takeFocusEdge();
     }
 
     /** Whether a minimise / restore edge is waiting, clearing it. */
-    fn takeMinimiseEdge(mut self) : bool {
+    pub fn takeMinimiseEdge(mut self) : bool {
         return self.sys.takeMinimiseEdge();
     }
 
     /** Make a hidden window visible and bring it forward. */
-    fn show(mut self) : void {
+    pub fn show(mut self) : void {
         self.sys.show();
     }
 
     /** Hide the window without destroying it. */
-    fn hide(mut self) : void {
+    pub fn hide(mut self) : void {
         self.sys.hide();
     }
 
     /** Replace the title bar text. */
-    fn setTitle(mut self, title : string) : void {
+    pub fn setTitle(mut self, title : string) : void {
         self.sys.setTitle(title);
     }
 
@@ -150,7 +156,7 @@ pub class Window : Closeable {
      * Answers whether the client size changed, and adopts the new size
      * into `width()` / `height()`.
      */
-    fn syncSize(mut self) : bool {
+    pub fn syncSize(mut self) : bool {
         return self.sys.takeResize();
     }
 
@@ -167,12 +173,12 @@ pub class Window : Closeable {
      * Called before a frame loop and not during one — it leaves one
      * resize waiting for the next pump.
      */
-    fn selfCheckProc(mut self, width : i32, height : i32) : i32 {
+    pub fn selfCheckProc(mut self, width : i32, height : i32) : i32 {
         return self.sys.selfCheck(width, height);
     }
 
     /** Destroy the window and release what it holds. */
-    fn close(self) : void {
+    pub fn close(self) : void {
         self.sys.close();
     }
 }

@@ -34,7 +34,7 @@ use crate::video::wayland::wl_window_ops::{winApp, winState};
 
 class SysDrain {
     /** One `pollfd`, reused for the life of the queue. */
-    static fn newScratch() : Blob {
+    pub(crate) static fn newScratch() : Blob {
         return new Blob(sizeof<PollFd>());
     }
 
@@ -42,7 +42,7 @@ class SysDrain {
      * Read whatever the compositor has sent, then turn the ring the
      * callbacks filled into events.
      */
-    static fn drain(
+    pub(crate) static fn drain(
         scratch : Blob,
         win : SysWindow,
         stamp : i64,

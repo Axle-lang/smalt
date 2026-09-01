@@ -40,7 +40,7 @@ pub(crate) class SysClock : Closeable {
     }
 
     /** Ticks per second of `counter`. Constant for the process. */
-    fn frequency(self) : i64 {
+    pub(crate) fn frequency(self) : i64 {
         unsafe {
             let out = self.slot.at() as ptr<i64>;
             QueryPerformanceFrequency(out);
@@ -49,7 +49,7 @@ pub(crate) class SysClock : Closeable {
     }
 
     /** The monotonic tick count. */
-    fn counter(self) : i64 {
+    pub(crate) fn counter(self) : i64 {
         unsafe {
             let out = self.slot.at() as ptr<i64>;
             QueryPerformanceCounter(out);
@@ -58,12 +58,12 @@ pub(crate) class SysClock : Closeable {
     }
 
     /** Hand at least `ms` milliseconds back to the scheduler. */
-    fn sleep(self, ms : i32) : void {
+    pub(crate) fn sleep(self, ms : i32) : void {
         Sleep(ms);
     }
 
     /** Release the reading slot. */
-    fn close(self) : void {
+    pub(crate) fn close(self) : void {
         self.slot.close();
     }
 }

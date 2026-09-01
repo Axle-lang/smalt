@@ -36,12 +36,12 @@ pub struct Quat {
     pub w : f64;
 
     /** A quaternion from its four components. */
-    static fn make(x : f64, y : f64, z : f64, w : f64) : Quat {
+    pub static fn make(x : f64, y : f64, z : f64, w : f64) : Quat {
         return Quat { x: x, y: y, z: z, w: w };
     }
 
     /** No rotation. */
-    static fn identity() : Quat {
+    pub static fn identity() : Quat {
         return Quat { x: 0.0, y: 0.0, z: 0.0, w: 1.0 };
     }
 
@@ -51,7 +51,7 @@ pub struct Quat {
      * A degenerate axis yields the identity rather than a quaternion of
      * NaNs, matching `Mat4::rotationAxis`.
      */
-    static fn axisAngle(axis : Vec3, radians : f64) : Quat {
+    pub static fn axisAngle(axis : Vec3, radians : f64) : Quat {
         let a = axis.normalized();
         if (a.lengthSquared() < QUAT_EPSILON) {
             return Quat::identity();
@@ -62,7 +62,7 @@ pub struct Quat {
     }
 
     /** A rotation from yaw about +Y then pitch about +X then roll about +Z. */
-    static fn euler(yaw : f64, pitch : f64, roll : f64) : Quat {
+    pub static fn euler(yaw : f64, pitch : f64, roll : f64) : Quat {
         let cy = (yaw * 0.5).cos();
         let sy = (yaw * 0.5).sin();
         let cp = (pitch * 0.5).cos();
@@ -78,12 +78,12 @@ pub struct Quat {
     }
 
     /** The squared magnitude. */
-    fn lengthSquared(self) : f64 {
+    pub fn lengthSquared(self) : f64 {
         return self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w;
     }
 
     /** This rotation at unit magnitude, or the identity if it has none. */
-    fn normalized(self) : Quat {
+    pub fn normalized(self) : Quat {
         let lenSq = self.lengthSquared();
         if (lenSq < QUAT_EPSILON) {
             return Quat::identity();
@@ -93,12 +93,12 @@ pub struct Quat {
     }
 
     /** The opposite rotation — the conjugate, for a unit quaternion. */
-    fn inverse(self) : Quat {
+    pub fn inverse(self) : Quat {
         return Quat { x: -self.x, y: -self.y, z: -self.z, w: self.w };
     }
 
     /** This rotation followed by `o`. */
-    fn mul(self, o : Quat) : Quat {
+    pub fn mul(self, o : Quat) : Quat {
         return Quat {
             x: self.w * o.x + self.x * o.w + self.y * o.z - self.z * o.y,
             y: self.w * o.y - self.x * o.z + self.y * o.w + self.z * o.x,
@@ -108,12 +108,12 @@ pub struct Quat {
     }
 
     /** Dot product — the cosine of half the angle between two rotations. */
-    fn dot(self, o : Quat) : f64 {
+    pub fn dot(self, o : Quat) : f64 {
         return self.x * o.x + self.y * o.y + self.z * o.z + self.w * o.w;
     }
 
     /** `v` turned by this rotation. */
-    fn rotate(self, v : Vec3) : Vec3 {
+    pub fn rotate(self, v : Vec3) : Vec3 {
         let u = Vec3::make(self.x, self.y, self.z);
         let cross1 = u.cross(v);
         let term = cross1.scaled(self.w).plus(u.cross(cross1));
@@ -121,7 +121,7 @@ pub struct Quat {
     }
 
     /** This rotation as a matrix, ready to compose with a translation. */
-    fn matrix(self) : Mat4 {
+    pub fn matrix(self) : Mat4 {
         let xx = self.x * self.x;
         let yy = self.y * self.y;
         let zz = self.z * self.z;
@@ -161,7 +161,7 @@ pub struct Quat {
      * the interpolation falls back to a normalised linear blend rather
      * than dividing by it.
      */
-    fn slerp(self, o : Quat, t : f64) : Quat {
+    pub fn slerp(self, o : Quat, t : f64) : Quat {
         let target : Quat = o;
         let cosine = self.dot(o);
         if (cosine < 0.0) {

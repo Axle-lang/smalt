@@ -29,7 +29,7 @@ pub(crate) class Win32Layout {
      * has to bisect this file by hand, and the record that moved is the
      * only thing worth knowing.
      */
-    static fn verify() : i32 {
+    pub(crate) static fn verify() : i32 {
         if (sizeof<POINT>() != 8) { return 1; }
         if (offsetof(POINT, y) != 4) { return 2; }
 

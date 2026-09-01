@@ -30,12 +30,12 @@ use crate::platform::wayland::wl_screen_probe::measure;
 
 pub(crate) class SysScreen {
     /** The first output's current mode width, or 0. */
-    static fn width() : i32 {
+    pub(crate) static fn width() : i32 {
         return measure(true);
     }
 
     /** The first output's current mode height, or 0. */
-    static fn height() : i32 {
+    pub(crate) static fn height() : i32 {
         return measure(false);
     }
 }
