@@ -123,38 +123,42 @@ pub(crate) fn absorb(win : SysWindow, event : ptr) : bool {
         let any : ptr<XAnyEvent> = event as ptr<XAnyEvent>;
         let kind : i32 = (*any).type_;
 
-        if (kind == X_CLIENT_MESSAGE) {
-            let msg : ptr<XClientMessageEvent> = event as ptr<XClientMessageEvent>;
-            // Any other client message is somebody else's protocol.
-            if ((*msg).data[0] == win.deleteAtom) {
-                win.closePending = true;
+        match kind {
+            X_CLIENT_MESSAGE => {
+                let msg : ptr<XClientMessageEvent> = event as ptr<XClientMessageEvent>;
+                // Any other client message is somebody else's protocol.
+                if ((*msg).data[0] == win.deleteAtom) {
+                    win.closePending = true;
+                }
+                return true;
             }
-            return true;
-        }
-        if (kind == X_CONFIGURE_NOTIFY) {
-            let cfg : ptr<XConfigureEvent> = event as ptr<XConfigureEvent>;
-            noteResize(win, (*cfg).width, (*cfg).height);
-            return true;
-        }
-        if (kind == X_DESTROY_NOTIFY) {
-            win.destroyed = true;
-            return true;
-        }
-        if (kind == X_FOCUS_IN) {
-            noteFocus(win, true);
-            return true;
-        }
-        if (kind == X_FOCUS_OUT) {
-            noteFocus(win, false);
-            return true;
-        }
-        if (kind == X_UNMAP_NOTIFY) {
-            noteMinimised(win, true);
-            return true;
-        }
-        if (kind == X_MAP_NOTIFY) {
-            noteMinimised(win, false);
-            return true;
+            X_CONFIGURE_NOTIFY => {
+                let cfg : ptr<XConfigureEvent> = event as ptr<XConfigureEvent>;
+                noteResize(win, (*cfg).width, (*cfg).height);
+                return true;
+            }
+            X_DESTROY_NOTIFY => {
+                win.destroyed = true;
+                return true;
+            }
+            X_FOCUS_IN => {
+                noteFocus(win, true);
+                return true;
+            }
+            X_FOCUS_OUT => {
+                noteFocus(win, false);
+                return true;
+            }
+            X_UNMAP_NOTIFY => {
+                noteMinimised(win, true);
+                return true;
+            }
+            X_MAP_NOTIFY => {
+                noteMinimised(win, false);
+                return true;
+            }
+            // Not this file's: the drain reads it as input instead.
+            _ => {}
         }
         return false;
     }

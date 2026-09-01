@@ -105,49 +105,49 @@ pub(crate) fn windowProc(hwnd : ptr, msg : u32, wParam : u64, lParam : i64) : i6
         let st : ptr<WinProcState> = raw as ptr<WinProcState>;
         let m : i32 = msg as i32;
 
-        if (m == WM_CLOSE) {
-            // Recorded, not obeyed. `DefWindowProcW` would destroy the
-            // window here, and the frame loop would find a dead handle
-            // with no chance to save, prompt, or refuse.
-            (*st).closePending = 1;
-            return 0;
-        }
-
-        if (m == WM_DESTROY) {
-            (*st).destroyed = 1;
-            return 0;
-        }
-
-        if (m == WM_SIZE) {
-            let minimised : i32 = 0;
-            if ((wParam as i64) == (SIZE_MINIMIZED as i64)) {
-                minimised = 1;
+        match m {
+            WM_CLOSE => {
+                // Recorded, not obeyed. `DefWindowProcW` would destroy the
+                // window here, and the frame loop would find a dead handle
+                // with no chance to save, prompt, or refuse.
+                (*st).closePending = 1;
+                return 0;
             }
-            if (minimised != (*st).minimised) {
-                (*st).minimised = minimised;
-                (*st).minimisePending = 1;
+            WM_DESTROY => {
+                (*st).destroyed = 1;
+                return 0;
             }
-            // A minimised window reports a 0×0 client area. Recording it
-            // would resize the framebuffer to nothing and the restore
-            // would come back to a window with no pixels.
-            if (minimised == 0) {
-                (*st).width = (lParam & 0xFFFF) as i32;
-                (*st).height = ((lParam >>> 16) & 0xFFFF) as i32;
-                (*st).sizePending = 1;
+            WM_SIZE => {
+                let minimised : i32 = 0;
+                if ((wParam as i64) == (SIZE_MINIMIZED as i64)) {
+                    minimised = 1;
+                }
+                if (minimised != (*st).minimised) {
+                    (*st).minimised = minimised;
+                    (*st).minimisePending = 1;
+                }
+                // A minimised window reports a 0×0 client area. Recording it
+                // would resize the framebuffer to nothing and the restore
+                // would come back to a window with no pixels.
+                if (minimised == 0) {
+                    (*st).width = (lParam & 0xFFFF) as i32;
+                    (*st).height = ((lParam >>> 16) & 0xFFFF) as i32;
+                    (*st).sizePending = 1;
+                }
+                return 0;
             }
-            return 0;
-        }
-
-        if (m == WM_SETFOCUS) {
-            (*st).focused = 1;
-            (*st).focusPending = 1;
-            return 0;
-        }
-
-        if (m == WM_KILLFOCUS) {
-            (*st).focused = 0;
-            (*st).focusPending = 1;
-            return 0;
+            WM_SETFOCUS => {
+                (*st).focused = 1;
+                (*st).focusPending = 1;
+                return 0;
+            }
+            WM_KILLFOCUS => {
+                (*st).focused = 0;
+                (*st).focusPending = 1;
+                return 0;
+            }
+            // Every message this does not recognise is the system's.
+            _ => {}
         }
 
         return DefWindowProcW(hwnd, msg, wParam, lParam);
