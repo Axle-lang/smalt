@@ -64,34 +64,34 @@ extern "C" struct BMPHEADER {
     info : BITMAPINFOHEADER;
 }
 
-/**
- * `BM` read as one little-endian `WORD` — `'M' << 8 | 'B'`.
- *
- * One comparison rather than two, because `bfType` is one field: the pair
- * of bytes was a consequence of addressing the header by offset.
- */
-const BMP_MAGIC : i32 = 19778;
-
-/** `B`, the byte the file opens with. */
-const BMP_MAGIC_B : i32 = 66;
-
-/** `M`, the one after it. */
-const BMP_MAGIC_M : i32 = 77;
-
-/** `BI_RGB` — the only compression accepted. */
-const BMP_UNCOMPRESSED : i32 = 0;
-
-/** Rows are padded up to a multiple of this many bytes. */
-const BMP_ROW_ALIGN : i32 = 4;
-
-/** Side of the placeholder returned when a load fails. */
-const BMP_MISSING_SIZE : i32 = 64;
-
-/** Squares per side of the placeholder. */
-const BMP_MISSING_CELLS : i32 = 8;
-
 /** The BMP decoder. */
 pub class Bmp {
+    /**
+     * `BM` read as one little-endian `WORD` — `'M' << 8 | 'B'`.
+     *
+     * One comparison rather than two, because `bfType` is one field: the pair
+     * of bytes was a consequence of addressing the header by offset.
+     */
+    pub(file) static MAGIC : i32 = 19778;
+
+    /** `B`, the byte the file opens with. */
+    pub(file) static MAGIC_B : i32 = 66;
+
+    /** `M`, the one after it. */
+    pub(file) static MAGIC_M : i32 = 77;
+
+    /** `BI_RGB` — the only compression accepted. */
+    pub(file) static UNCOMPRESSED : i32 = 0;
+
+    /** Rows are padded up to a multiple of this many bytes. */
+    pub(file) static ROW_ALIGN : i32 = 4;
+
+    /** Side of the placeholder returned when a load fails. */
+    pub(file) static MISSING_SIZE : i32 = 64;
+
+    /** Squares per side of the placeholder. */
+    pub(file) static MISSING_CELLS : i32 = 8;
+
     /**
      * 0 when the two headers sit where the format puts them, otherwise the
      * number of the first check that failed.
@@ -119,7 +119,7 @@ pub class Bmp {
         if (sizeof<BMPHEADER>() != 54) { return 5; }
         // `BM`, little-endian: the two bytes this decoder compared
         // separately are one `WORD` field.
-        if (BMP_MAGIC != (BMP_MAGIC_M * 256) + BMP_MAGIC_B) {
+        if (Bmp::MAGIC != (Bmp::MAGIC_M * 256) + Bmp::MAGIC_B) {
             return 6;
         }
         return 0;
@@ -131,8 +131,8 @@ pub class Bmp {
      */
     pub static fn missing() : Texture {
         return Texture::checker(
-            BMP_MISSING_SIZE,
-            BMP_MISSING_CELLS,
+            Bmp::MISSING_SIZE,
+            Bmp::MISSING_CELLS,
             Color::rgb(1.0, 0.0, 1.0),
             Color::black()
         );
@@ -141,7 +141,7 @@ pub class Bmp {
     /** Bytes per row, including the padding up to a four-byte boundary. */
     pub(file) static fn stride(width : i32, bytesPerPixel : i32) : i32 {
         let raw : i32 = width * bytesPerPixel;
-        return ((raw + BMP_ROW_ALIGN - 1) / BMP_ROW_ALIGN) * BMP_ROW_ALIGN;
+        return ((raw + Bmp::ROW_ALIGN - 1) / Bmp::ROW_ALIGN) * Bmp::ROW_ALIGN;
     }
 
     /**
@@ -232,10 +232,10 @@ pub class Bmp {
             rawHeight = (*h).info.biHeight;
         }
 
-        if (magic != BMP_MAGIC) {
+        if (magic != Bmp::MAGIC) {
             throw IOException("${path} is not a BMP this loader reads");
         }
-        if (compression != BMP_UNCOMPRESSED) {
+        if (compression != Bmp::UNCOMPRESSED) {
             throw IOException("${path} is not a BMP this loader reads");
         }
         if (bpp != 24 && bpp != 32) {

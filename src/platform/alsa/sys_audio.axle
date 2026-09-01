@@ -37,7 +37,7 @@
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
 use crate::platform::alsa::pcm_handle::{latencyUs, pcm, recover};
-use crate::platform::audio_format::{AudioFormat, AUDIO_BLOCK_FRAMES, AUDIO_CHANNELS, AUDIO_RATE};
+use crate::platform::audio_format::{AUDIO_BLOCK_FRAMES, AUDIO_CHANNELS, AUDIO_RATE, AudioFormat};
 use crate::sys::alsa_lib::{snd_pcm_avail_update, snd_pcm_close, snd_pcm_drop, snd_pcm_open, snd_pcm_prepare, snd_pcm_recover, snd_pcm_set_params, snd_pcm_writei, SND_PCM_ACCESS_RW_INTERLEAVED, SND_PCM_FORMAT_S16_LE, SND_PCM_NONBLOCK, SND_PCM_STREAM_PLAYBACK};
 
 /**

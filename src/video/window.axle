@@ -24,9 +24,11 @@ use crate::video::sys_window::SysWindow;
 /**
  * Window creation flags, as `SDL_WindowFlags` would spell them.
  *
- * Constants rather than a class of static accessors: a `pub const`
- * crosses a crate boundary, so a consumer writes what it means and
- * combines with `|` exactly like SDL's flag word.
+ * A `pub const` and not a `static` field of `Window`, which is where a
+ * flag would otherwise belong: a `static` field is class-scoped inside
+ * the crate that declares it and does not cross the crate boundary, so
+ * writing these there would put them out of reach of every program that
+ * needs them. They combine with `|` exactly like SDL's flag word.
  *
  * ```
  * platform.createWindow("game", 1280, 720, WINDOW_RESIZABLE | WINDOW_HIDDEN);

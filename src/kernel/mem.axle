@@ -35,14 +35,14 @@
 
 use crate::kernel::raw::Raw;
 
-/** Bytes in an `i32` / a pixel. */
-const MEM_WORD_BYTES : i64 = 4;
-
-/** Bytes in an `i64` / an `f64`. */
-const MEM_WIDE_BYTES : i64 = 8;
-
 /** Owned raw memory, addressed as an integer. */
 pub class Mem {
+    /** Bytes in an `i32` / a pixel. */
+    pub(file) static WORD_BYTES : i64 = 4;
+
+    /** Bytes in an `i64` / an `f64`. */
+    pub(file) static WIDE_BYTES : i64 = 8;
+
     /**
      * `bytes` uninitialised bytes, or 0 when the allocation failed.
      *
@@ -144,7 +144,7 @@ pub class Mem {
      */
     pub static fn wordOf(base : i64, index : i64) : i32 {
         unsafe {
-            let slot : ptr<i32> = (base + index * MEM_WORD_BYTES) as ptr<i32>;
+            let slot : ptr<i32> = (base + index * Mem::WORD_BYTES) as ptr<i32>;
             return *slot;
         }
     }
@@ -152,7 +152,7 @@ pub class Mem {
     /** Store the 32-bit element `v` at `index`. */
     pub static fn putWordOf(base : i64, index : i64, v : i32) : void {
         unsafe {
-            let slot : ptr<i32> = (base + index * MEM_WORD_BYTES) as ptr<i32>;
+            let slot : ptr<i32> = (base + index * Mem::WORD_BYTES) as ptr<i32>;
             *slot = v;
         }
     }
@@ -160,7 +160,7 @@ pub class Mem {
     /** The `f64` element at `index` — a depth, in a z-buffer. */
     pub static fn realOf(base : i64, index : i64) : f64 {
         unsafe {
-            let slot : ptr<f64> = (base + index * MEM_WIDE_BYTES) as ptr<f64>;
+            let slot : ptr<f64> = (base + index * Mem::WIDE_BYTES) as ptr<f64>;
             return *slot;
         }
     }
@@ -168,7 +168,7 @@ pub class Mem {
     /** Store the `f64` element `v` at `index`. */
     pub static fn putRealOf(base : i64, index : i64, v : f64) : void {
         unsafe {
-            let slot : ptr<f64> = (base + index * MEM_WIDE_BYTES) as ptr<f64>;
+            let slot : ptr<f64> = (base + index * Mem::WIDE_BYTES) as ptr<f64>;
             *slot = v;
         }
     }
@@ -176,7 +176,7 @@ pub class Mem {
     /** The `i64` element at `index`. */
     pub static fn qwordOf(base : i64, index : i64) : i64 {
         unsafe {
-            let slot : ptr<i64> = (base + index * MEM_WIDE_BYTES) as ptr<i64>;
+            let slot : ptr<i64> = (base + index * Mem::WIDE_BYTES) as ptr<i64>;
             return *slot;
         }
     }
@@ -184,7 +184,7 @@ pub class Mem {
     /** Store the `i64` element `v` at `index`. */
     pub static fn putQwordOf(base : i64, index : i64, v : i64) : void {
         unsafe {
-            let slot : ptr<i64> = (base + index * MEM_WIDE_BYTES) as ptr<i64>;
+            let slot : ptr<i64> = (base + index * Mem::WIDE_BYTES) as ptr<i64>;
             *slot = v;
         }
     }

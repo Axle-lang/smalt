@@ -36,7 +36,7 @@
 
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
-use crate::platform::audio_format::{AudioFormat, AUDIO_BLOCK_FRAMES, AUDIO_CHANNELS, AUDIO_RATE, AUDIO_SAMPLE_BYTES};
+use crate::platform::audio_format::{AUDIO_BLOCK_FRAMES, AUDIO_CHANNELS, AUDIO_RATE, AUDIO_SAMPLE_BYTES, AudioFormat};
 use crate::platform::win32::wave_block::{deviceHandle, headerAt};
 use crate::sys::win32_types::{WAVEFORMATEX, WAVEHDR};
 use crate::sys::win32_mm::{waveOutOpen, waveOutPrepareHeader, waveOutWrite, waveOutUnprepareHeader, waveOutReset, waveOutClose};

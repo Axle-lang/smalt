@@ -23,15 +23,6 @@ use crate::audio::clip::Clip;
 use crate::platform::audio_format::AUDIO_CHANNELS;
 use crate::platform::sys_audio::SysAudio;
 
-/** Simultaneous voices. Beyond this the oldest positional voice loses. */
-const MIX_VOICES : i32 = 32;
-
-/** Bytes per device sample. */
-const MIX_SAMPLE_BYTES : i64 = 2;
-
-/** Full-scale sample magnitude, for the clamp. */
-const MIX_CLAMP : i32 = 32767;
-
 /**
  * One playing sound.
  *
@@ -58,6 +49,15 @@ struct Voice {
  * output and fight over it.
  */
 pub class Mixer : Closeable {
+    /** Simultaneous voices. Beyond this the oldest positional voice loses. */
+    pub(file) static VOICES : i32 = 32;
+
+    /** Bytes per device sample. */
+    pub(file) static SAMPLE_BYTES : i64 = 2;
+
+    /** Full-scale sample magnitude, for the clamp. */
+    pub(file) static CLAMP : i32 = 32767;
+
     audio  : SysAudio;
     voices : Voice[];
     lx     : f64;
@@ -67,12 +67,12 @@ pub class Mixer : Closeable {
     /** Open the device and start with every voice idle. */
     constructor() {
         self.audio = new SysAudio();
-        self.voices = malloc<Voice>(MIX_VOICES as i64);
+        self.voices = malloc<Voice>(Mixer::VOICES as i64);
         self.lx = 0.0;
         self.ly = 0.0;
         self.lz = 0.0;
         let i : i32 = 0;
-        while (i < MIX_VOICES) {
+        while (i < Mixer::VOICES) {
             self.voices[i] = Voice {
                 base: 0,
                 frames: 0,
@@ -115,14 +115,14 @@ pub class Mixer : Closeable {
      */
     pub(file) fn slot(mut self) : i32 {
         let i : i32 = 0;
-        while (i < MIX_VOICES) {
+        while (i < Mixer::VOICES) {
             if (!self.voices[i].active) {
                 return i;
             }
             i = i + 1;
         }
         i = 0;
-        while (i < MIX_VOICES) {
+        while (i < Mixer::VOICES) {
             if (self.voices[i].positional) {
                 return i;
             }
@@ -209,10 +209,10 @@ pub class Mixer : Closeable {
 
         // Silence first: a block comes back carrying whatever it played
         // last, and every voice below ADDS.
-        Raw::clear(dst, (frames as i64) * (AUDIO_CHANNELS as i64) * MIX_SAMPLE_BYTES);
+        Raw::clear(dst, (frames as i64) * (AUDIO_CHANNELS as i64) * Mixer::SAMPLE_BYTES);
 
         let v : i32 = 0;
-        while (v < MIX_VOICES) {
+        while (v < Mixer::VOICES) {
             if (self.voices[v].active) {
                 self.mixVoice(v, dst, frames);
             }
@@ -250,21 +250,21 @@ pub class Mixer : Closeable {
 
         let i : i32 = 0;
         while (i < frames && cursor < total) {
-            let s : i32 = Raw::i16At(src, (cursor as i64) * MIX_SAMPLE_BYTES);
+            let s : i32 = Raw::i16At(src, (cursor as i64) * Mixer::SAMPLE_BYTES);
             let add : i32 = ((s as f64) * gain).floorToInt() as i32;
-            let frame : i64 = (i as i64) * (AUDIO_CHANNELS as i64) * MIX_SAMPLE_BYTES;
+            let frame : i64 = (i as i64) * (AUDIO_CHANNELS as i64) * Mixer::SAMPLE_BYTES;
             let c : i32 = 0;
             while (c < AUDIO_CHANNELS) {
-                let off : i64 = frame + (c as i64) * MIX_SAMPLE_BYTES;
+                let off : i64 = frame + (c as i64) * Mixer::SAMPLE_BYTES;
                 let sum : i32 = Raw::i16At(dst, off) + add;
                 // Clamp rather than wrap: a wrapped sum is a loud click,
                 // which is worse than the distortion clamping costs when
                 // many voices land on the same frame.
-                if (sum > MIX_CLAMP) {
-                    sum = MIX_CLAMP;
+                if (sum > Mixer::CLAMP) {
+                    sum = Mixer::CLAMP;
                 }
-                if (sum < -MIX_CLAMP) {
-                    sum = -MIX_CLAMP;
+                if (sum < -Mixer::CLAMP) {
+                    sum = -Mixer::CLAMP;
                 }
                 Raw::putU16(dst, off, sum);
                 c = c + 1;

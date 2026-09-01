@@ -26,9 +26,6 @@ use crate::render::vertex::{DirectionalLight, Material, Vertex};
 use crate::video::window::Window;
 use std::numeric::math;
 
-/** Indices per triangle. */
-const DEVICE_TRIANGLE_CORNERS : i32 = 3;
-
 /**
  * A CPU rasteriser drawing into its own framebuffer.
  *
@@ -167,7 +164,7 @@ pub class SoftDevice : RenderDevice, Closeable {
         let sh = Shading::make(material, self.light, Vec3::make(self.eyeX, self.eyeY, self.eyeZ));
         let count = mesh.triangles();
         for (t of 0..count) {
-            let base : i32 = t * DEVICE_TRIANGLE_CORNERS;
+            let base : i32 = t * Mesh::TRIANGLE_CORNERS;
             Raster::triangle(
                 self.target,
                 tex,

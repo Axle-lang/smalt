@@ -11,9 +11,6 @@
 // hardware code in bits 16..23 of a key message's `lParam`, and X11
 // carries an evdev keycode. Neither is the virtual key.
 
-/** Slots in the key-state array; scancodes stay under this. */
-const SCANCODE_SLOTS : i64 = 256;
-
 /**
  * A key by physical position, numbered as USB HID numbers keys.
  *
@@ -116,12 +113,15 @@ pub enum Scancode : i32 {
  * *what is held right now*, which is what a movement loop reads.
  */
 pub class KeyboardState {
+    /** Slots in the key-state array; scancodes stay under this. */
+    pub(file) static SLOTS : i64 = 256;
+
     down : bool[];
 
     /** All keys released. */
     constructor() {
-        self.down = malloc<bool>(SCANCODE_SLOTS);
-        for (i of 0..SCANCODE_SLOTS) {
+        self.down = malloc<bool>(KeyboardState::SLOTS);
+        for (i of 0..KeyboardState::SLOTS) {
             self.down[i] = false;
         }
     }
@@ -129,7 +129,7 @@ pub class KeyboardState {
     /** Whether `sc` is currently held. */
     pub fn isDown(self, sc : Scancode) : bool {
         let idx = sc as i32;
-        if (idx <= 0 || idx >= SCANCODE_SLOTS) {
+        if (idx <= 0 || idx >= KeyboardState::SLOTS) {
             return false;
         }
         return self.down[idx];
@@ -138,7 +138,7 @@ pub class KeyboardState {
     /** Record `sc` as held. */
     pub(crate) fn press(mut self, sc : Scancode) : void {
         let idx = sc as i32;
-        if (idx > 0 && idx < SCANCODE_SLOTS) {
+        if (idx > 0 && idx < KeyboardState::SLOTS) {
             self.down[idx] = true;
         }
     }
@@ -146,7 +146,7 @@ pub class KeyboardState {
     /** Record `sc` as released. */
     pub(crate) fn release(mut self, sc : Scancode) : void {
         let idx = sc as i32;
-        if (idx > 0 && idx < SCANCODE_SLOTS) {
+        if (idx > 0 && idx < KeyboardState::SLOTS) {
             self.down[idx] = false;
         }
     }
@@ -160,7 +160,7 @@ pub class KeyboardState {
      * held forever and the player walks into a wall.
      */
     pub(crate) fn releaseAll(mut self) : void {
-        for (i of 0..SCANCODE_SLOTS) {
+        for (i of 0..KeyboardState::SLOTS) {
             self.down[i] = false;
         }
     }

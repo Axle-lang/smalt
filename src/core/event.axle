@@ -25,9 +25,6 @@
 use crate::core::keyboard::Scancode;
 use crate::core::mouse::MouseButton;
 
-/** Events the queue can hold; a full queue drops the oldest. */
-const EVENT_QUEUE_SLOTS : i64 = 256;
-
 /** What happened — the tag that says which fields below are meaningful. */
 pub enum EventKind : i32 {
     /** The queue was empty — never delivered by `next()`. */
@@ -146,13 +143,16 @@ pub struct Event {
  * would strand a key-up and leave a key stuck down forever.
  */
 pub class EventQueue {
+    /** Events the queue can hold; a full queue drops the oldest. */
+    pub(file) static SLOTS : i64 = 256;
+
     items : Event[];
     head  : i32;
     count : i32;
 
     /** An empty queue. */
     constructor() {
-        self.items = malloc<Event>(EVENT_QUEUE_SLOTS);
+        self.items = malloc<Event>(EventQueue::SLOTS);
         self.head = 0;
         self.count = 0;
     }
@@ -169,7 +169,7 @@ pub class EventQueue {
 
     /** Add `e` to the back, dropping the oldest if the ring is full. */
     pub(crate) fn push(mut self, e : Event) : void {
-        let slots = EVENT_QUEUE_SLOTS as i32;
+        let slots = EventQueue::SLOTS as i32;
         if (self.count == slots) {
             self.head = (self.head + 1) % slots;
             self.count -= 1;
@@ -184,7 +184,7 @@ pub class EventQueue {
             return Event::none();
         }
         let e = self.items[self.head as i64];
-        self.head = (self.head + 1) % (EVENT_QUEUE_SLOTS as i32);
+        self.head = (self.head + 1) % (EventQueue::SLOTS as i32);
         self.count -= 1;
         return e;
     }

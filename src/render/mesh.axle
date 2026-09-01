@@ -16,11 +16,11 @@ use crate::math::vec::{Vec2, Vec3};
 use crate::render::vertex::Vertex;
 use std::numeric::math;
 
-/** Corners in a triangle. */
-const MESH_TRIANGLE_CORNERS : i32 = 3;
-
 /** Indexed triangle geometry. */
 pub class Mesh {
+    /** Corners in a triangle. */
+    pub(crate) static TRIANGLE_CORNERS : i32 = 3;
+
     verts       : Vertex[];
     indices     : i32[];
     vertexCount : i32;
@@ -29,7 +29,7 @@ pub class Mesh {
     /** Storage for `vertices` corners and `indices` index slots. */
     constructor(vertices : i32, indices : i32) {
         self.vertexCount = vertices.max(1);
-        self.indexCount = indices.max(MESH_TRIANGLE_CORNERS);
+        self.indexCount = indices.max(Mesh::TRIANGLE_CORNERS);
         self.verts = malloc<Vertex>(self.vertexCount as i64);
         self.indices = malloc<i32>(self.indexCount as i64);
     }
@@ -46,7 +46,7 @@ pub class Mesh {
 
     /** Triangles in the mesh. */
     pub fn triangles(self) : i32 {
-        return self.indexCount / MESH_TRIANGLE_CORNERS;
+        return self.indexCount / Mesh::TRIANGLE_CORNERS;
     }
 
     /** Write the corner at `i`. */
@@ -81,7 +81,7 @@ pub class Mesh {
 
     /** Write one triangle's three indices at triangle `t`. */
     pub fn setTriangle(mut self, t : i32, a : i32, b : i32, c : i32) : void {
-        let base = t * MESH_TRIANGLE_CORNERS;
+        let base = t * Mesh::TRIANGLE_CORNERS;
         self.setIndex(base, a);
         self.setIndex(base + 1, b);
         self.setIndex(base + 2, c);

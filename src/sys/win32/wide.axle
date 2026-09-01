@@ -13,18 +13,6 @@
 
 use crate::kernel::blob::Blob;
 
-/** The replacement character, for a byte sequence that does not decode. */
-const WIDE_REPLACEMENT : i32 = 65533;
-
-/** First codepoint needing a surrogate pair. */
-const WIDE_SUPPLEMENTARY : i32 = 65536;
-
-/** High-surrogate base, `0xD800`. */
-const WIDE_HIGH_BASE : i32 = 55296;
-
-/** Low-surrogate base, `0xDC00`. */
-const WIDE_LOW_BASE : i32 = 56320;
-
 /**
  * UTF-16 text handed to Win32.
  *
@@ -34,6 +22,18 @@ const WIDE_LOW_BASE : i32 = 56320;
  * process's lifetime rather than freeing it after `RegisterClassExW`.
  */
 class Wide {
+    /** The replacement character, for a byte sequence that does not decode. */
+    pub(file) static REPLACEMENT : i32 = 65533;
+
+    /** First codepoint needing a surrogate pair. */
+    pub(file) static SUPPLEMENTARY : i32 = 65536;
+
+    /** High-surrogate base, `0xD800`. */
+    pub(file) static HIGH_BASE : i32 = 55296;
+
+    /** Low-surrogate base, `0xDC00`. */
+    pub(file) static LOW_BASE : i32 = 56320;
+
     /** The payload bits of the continuation byte at `i`. */
     static fn tail(s : string, i : i32) : i32 {
         return s.byteAt(i) & 0x3F;
@@ -54,7 +54,7 @@ class Wide {
         let i : i32 = 0;
         while (i < bytes) {
             let b0 = s.byteAt(i) & 0xFF;
-            let cp = WIDE_REPLACEMENT;
+            let cp = Wide::REPLACEMENT;
             let taken = 1;
 
             if (b0 < 0x80) {
@@ -73,13 +73,13 @@ class Wide {
                 taken = 4;
             }
 
-            if (cp < WIDE_SUPPLEMENTARY) {
+            if (cp < Wide::SUPPLEMENTARY) {
                 out.setWord(units * 2, cp);
                 units += 1;
             } else {
-                let rest = cp - WIDE_SUPPLEMENTARY;
-                out.setWord(units * 2, WIDE_HIGH_BASE + (rest >>> 10));
-                out.setWord((units + 1) * 2, WIDE_LOW_BASE + (rest & 0x3FF));
+                let rest = cp - Wide::SUPPLEMENTARY;
+                out.setWord(units * 2, Wide::HIGH_BASE + (rest >>> 10));
+                out.setWord((units + 1) * 2, Wide::LOW_BASE + (rest & 0x3FF));
                 units += 2;
             }
             i += taken;

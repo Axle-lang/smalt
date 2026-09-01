@@ -10,7 +10,7 @@
 //      has `w <= 0`; projecting it divides by zero — which *traps* in
 //      Axle rather than yielding infinity — and even a small positive
 //      `w` throws the vertex to a coordinate that overflows the
-//      rasteriser. Triangles are clipped against `w >= RASTER_MIN_W`
+//      rasteriser. Triangles are clipped against `w >= Raster::MIN_W`
 //      first, which is also what stops geometry behind the viewer
 //      appearing mirrored in front of it.
 //
@@ -30,15 +30,6 @@ use crate::render::soft::shade::{Shader, Shading};
 use crate::render::soft::target::RenderTarget;
 use crate::render::texture::Texture;
 use std::numeric::math;
-
-/** The near plane, in clip-space `w`. Nothing nearer is drawn. */
-const RASTER_MIN_W : f64 = 0.0001;
-
-/** A triangle with less screen area than this is degenerate. */
-const RASTER_MIN_AREA : f64 = 0.000001;
-
-/** Guard for the interpolated reciprocal depth. */
-const RASTER_MIN_INV_W : f64 = 0.0000000001;
 
 /**
  * A vertex after transformation, before projection.
@@ -135,7 +126,7 @@ pub struct ClipVertex {
 
     /** Whether this vertex is in front of the near plane. */
     pub fn visible(self) : bool {
-        return self.cw >= RASTER_MIN_W;
+        return self.cw >= Raster::MIN_W;
     }
 }
 
@@ -182,6 +173,15 @@ pub struct ScreenVertex {
 
 /** Clipping, projection, and the scanline fill. */
 pub class Raster {
+    /** The near plane, in clip-space `w`. Nothing nearer is drawn. */
+    pub(file) static MIN_W : f64 = 0.0001;
+
+    /** A triangle with less screen area than this is degenerate. */
+    pub(file) static MIN_AREA : f64 = 0.000001;
+
+    /** Guard for the interpolated reciprocal depth. */
+    pub(file) static MIN_INV_W : f64 = 0.0000000001;
+
     /**
      * The point where the segment `a`→`b` crosses the near plane.
      *
@@ -191,19 +191,19 @@ pub class Raster {
      */
     pub(file) static fn crossing(a : ClipVertex, b : ClipVertex) : ClipVertex {
         let span : f64 = b.cw - a.cw;
-        if (span > -RASTER_MIN_W && span < RASTER_MIN_W) {
+        if (span > -Raster::MIN_W && span < Raster::MIN_W) {
             // Degenerate: both endpoints sit on the plane. Interpolating
             // by zero yields a copy of `a` — returning `a` itself would
             // be handing back a borrow that outlives the call.
             return a.lerp(b, 0.0);
         }
-        return a.lerp(b, (RASTER_MIN_W - a.cw) / span);
+        return a.lerp(b, (Raster::MIN_W - a.cw) / span);
     }
 
     /**
      * A clip vertex projected into pixels.
      *
-     * `cw` is at least `RASTER_MIN_W` — the caller clips first — so the
+     * `cw` is at least `Raster::MIN_W` — the caller clips first — so the
      * reciprocal here is safe.
      */
     pub(file) static fn project(v : ClipVertex, halfW : f64, halfH : f64) : ScreenVertex {
@@ -261,7 +261,7 @@ pub class Raster {
         c : ScreenVertex
     ) : void {
         let area : f64 = (b.sx - a.sx) * (c.sy - a.sy) - (b.sy - a.sy) * (c.sx - a.sx);
-        if (area.abs() < RASTER_MIN_AREA) {
+        if (area.abs() < Raster::MIN_AREA) {
             return;
         }
         // The viewport transform flips y, so a triangle wound
@@ -315,7 +315,7 @@ pub class Raster {
                 }
 
                 let iw : f64 = e0 * a.invW + e1 * b.invW + e2 * c.invW;
-                if (iw < RASTER_MIN_INV_W) {
+                if (iw < Raster::MIN_INV_W) {
                     continue;
                 }
                 // Depth first: a fragment that loses here must not pay

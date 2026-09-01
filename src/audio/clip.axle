@@ -37,9 +37,6 @@ const WAV_BITS : i32 = 16;
 /** The only format tag decoded — uncompressed PCM. */
 const WAV_PCM : i32 = 1;
 
-/** Bytes per decoded sample. */
-const CLIP_SAMPLE_BYTES : i64 = 2;
-
 /**
  * Four bytes at `off` read as a chunk id, packed little-endian into an
  * `i32` so a comparison is one integer compare rather than four.
@@ -81,12 +78,15 @@ fn ccData() : i32 {
  * everywhere: playing it is a no-op.
  */
 pub class Clip : Closeable {
+    /** Bytes per decoded sample. */
+    pub(file) static SAMPLE_BYTES : i64 = 2;
+
     samples : Blob;
     frames  : i32;
 
     /** An empty clip. Playing it does nothing. */
     constructor() {
-        self.samples = new Blob(CLIP_SAMPLE_BYTES);
+        self.samples = new Blob(Clip::SAMPLE_BYTES);
         self.frames = 0;
     }
 
@@ -181,7 +181,7 @@ pub class Clip : Closeable {
         if (channels <= 0 || rate <= 0 || dataLen <= 0) {
             return;
         }
-        let srcFrames : i32 = (dataLen / (CLIP_SAMPLE_BYTES * (channels as i64))) as i32;
+        let srcFrames : i32 = (dataLen / (Clip::SAMPLE_BYTES * (channels as i64))) as i32;
         if (srcFrames <= 0) {
             return;
         }
@@ -193,7 +193,7 @@ pub class Clip : Closeable {
         // Assigned, not closed-then-assigned: the field's previous block
         // is the compiler's to drop, and closing it here as well is the
         // second free.
-        self.samples = new Blob((outFrames as i64) * CLIP_SAMPLE_BYTES);
+        self.samples = new Blob((outFrames as i64) * Clip::SAMPLE_BYTES);
         let dst : ptr = self.samples.at();
         let i : i32 = 0;
         while (i < outFrames) {
@@ -201,12 +201,12 @@ pub class Clip : Closeable {
             if (src >= srcFrames) {
                 src = srcFrames - 1;
             }
-            let off : i64 = dataOff + (src as i64) * CLIP_SAMPLE_BYTES * (channels as i64);
+            let off : i64 = dataOff + (src as i64) * Clip::SAMPLE_BYTES * (channels as i64);
             let v : i32 = Raw::i16At(base, off);
             if (channels > 1) {
-                v = (v + Raw::i16At(base, off + CLIP_SAMPLE_BYTES)) / 2;
+                v = (v + Raw::i16At(base, off + Clip::SAMPLE_BYTES)) / 2;
             }
-            Raw::putU16(dst, (i as i64) * CLIP_SAMPLE_BYTES, v);
+            Raw::putU16(dst, (i as i64) * Clip::SAMPLE_BYTES, v);
             i = i + 1;
         }
         self.frames = outFrames;

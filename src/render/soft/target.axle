@@ -22,9 +22,6 @@
 // keeping the buffer in the same units means the test is a comparison
 // rather than a division per fragment.
 
-/** The reciprocal depth of an empty pixel — nothing is further than this. */
-const DEPTH_CLEARED : f64 = 0.0;
-
 /**
  * A colour buffer and its depth buffer.
  *
@@ -32,6 +29,9 @@ const DEPTH_CLEARED : f64 = 0.0;
  * a resize means for a frame that is about to be redrawn anyway.
  */
 pub class RenderTarget {
+    /** The reciprocal depth of an empty pixel — nothing is further than this. */
+    pub(file) static DEPTH_CLEARED : f64 = 0.0;
+
     color : i32[];
     depth : f64[];
     w     : i32;
@@ -98,7 +98,7 @@ pub class RenderTarget {
     pub fn clear(mut self, packed : i32) : void {
         for (i of 0..self.pixelCount()) {
             self.color[i] = packed;
-            self.depth[i] = DEPTH_CLEARED;
+            self.depth[i] = RenderTarget::DEPTH_CLEARED;
         }
     }
 
@@ -134,7 +134,7 @@ pub class RenderTarget {
     /** The reciprocal depth recorded at (`x`, `y`), or 0 outside the frame. */
     pub fn depthAt(self, x : i32, y : i32) : f64 {
         if (x < 0 || y < 0 || x >= self.w || y >= self.h) {
-            return DEPTH_CLEARED;
+            return RenderTarget::DEPTH_CLEARED;
         }
         return self.depth[(y as i64) * self.w + x];
     }

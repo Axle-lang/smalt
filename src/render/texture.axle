@@ -14,19 +14,19 @@
 
 use crate::render::color::Color;
 
-/** The smallest texture that can be bound — one white texel. */
-const TEXTURE_UNIT_SIZE : i32 = 1;
-
 /** A sampled image. */
 pub class Texture {
+    /** The smallest texture that can be bound — one white texel. */
+    pub(file) static UNIT_SIZE : i32 = 1;
+
     texels : i32[];
     w      : i32;
     h      : i32;
 
     /** A `w` by `h` texture, black. */
     constructor(w : i32, h : i32) {
-        self.w = w.max(TEXTURE_UNIT_SIZE);
-        self.h = h.max(TEXTURE_UNIT_SIZE);
+        self.w = w.max(Texture::UNIT_SIZE);
+        self.h = h.max(Texture::UNIT_SIZE);
         self.texels = malloc<i32>((self.w as i64) * (self.h as i64));
     }
 
@@ -103,7 +103,7 @@ pub class Texture {
 
     /** A one-texel white texture — what an untextured material binds. */
     pub static fn white() : Texture {
-        let t = new Texture(TEXTURE_UNIT_SIZE, TEXTURE_UNIT_SIZE);
+        let t = new Texture(Texture::UNIT_SIZE, Texture::UNIT_SIZE);
         t.fill(Color::packBytes(255, 255, 255));
         return t;
     }

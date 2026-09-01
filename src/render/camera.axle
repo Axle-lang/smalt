@@ -15,20 +15,20 @@ use crate::math::mat::Mat4;
 use crate::math::vec::Vec3;
 use std::numeric::math;
 
-/** Default vertical field of view, in radians (about 60 degrees). */
-const CAMERA_DEFAULT_FOV : f64 = 1.0471975512;
-
-/** Default near plane. */
-const CAMERA_DEFAULT_NEAR : f64 = 0.1;
-
-/** Default far plane. */
-const CAMERA_DEFAULT_FAR : f64 = 500.0;
-
-/** Pitch limit, just under a right angle, in radians. */
-const CAMERA_PITCH_LIMIT : f64 = 1.5533430343;
-
 /** A perspective viewer. */
 pub class Camera {
+    /** Default vertical field of view, in radians (about 60 degrees). */
+    pub(file) static DEFAULT_FOV : f64 = 1.0471975512;
+
+    /** Default near plane. */
+    pub(file) static DEFAULT_NEAR : f64 = 0.1;
+
+    /** Default far plane. */
+    pub(file) static DEFAULT_FAR : f64 = 500.0;
+
+    /** Pitch limit, just under a right angle, in radians. */
+    pub(file) static PITCH_LIMIT : f64 = 1.5533430343;
+
     position : Vec3;
     yaw      : f64;
     pitch    : f64;
@@ -42,9 +42,9 @@ pub class Camera {
         self.position = Vec3::zero();
         self.yaw = 0.0;
         self.pitch = 0.0;
-        self.fov = CAMERA_DEFAULT_FOV;
-        self.near = CAMERA_DEFAULT_NEAR;
-        self.far = CAMERA_DEFAULT_FAR;
+        self.fov = Camera::DEFAULT_FOV;
+        self.near = Camera::DEFAULT_NEAR;
+        self.far = Camera::DEFAULT_FAR;
         self.aspect = 1.0;
     }
 
@@ -87,7 +87,7 @@ pub class Camera {
 
     /** `radians` brought inside the pitch limit, either side of level. */
     pub(file) static fn clampPitch(radians : f64) : f64 {
-        return radians.max(-CAMERA_PITCH_LIMIT).min(CAMERA_PITCH_LIMIT);
+        return radians.max(-Camera::PITCH_LIMIT).min(Camera::PITCH_LIMIT);
     }
 
     /** Set the vertical field of view, in radians. */

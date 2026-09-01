@@ -15,9 +15,6 @@ use crate::render::texture::Texture;
 use crate::render::vertex::{DirectionalLight, Material};
 use std::numeric::math;
 
-/** Below this, a highlight is not worth the `pow`. */
-const SHADE_MIN_SPECULAR : f64 = 0.0001;
-
 /**
  * Everything a fragment needs that does not vary across it: the surface
  * it belongs to, the light on it, and where the viewer is.
@@ -44,6 +41,9 @@ pub struct Shading {
 
 /** The per-fragment lighting. */
 pub class Shader {
+    /** Below this, a highlight is not worth the `pow`. */
+    pub(file) static MIN_SPECULAR : f64 = 0.0001;
+
     /**
      * The colour of one fragment, packed for the framebuffer.
      *
@@ -78,7 +78,7 @@ pub class Shader {
         let ambient = Color::white().scaled(sh.material.ambient);
         let out = albedo.times(ambient.plus(lit));
 
-        if (sh.material.specular > SHADE_MIN_SPECULAR && diffuse > 0.0) {
+        if (sh.material.specular > Shader::MIN_SPECULAR && diffuse > 0.0) {
             let toEye : Vec3 = sh.eye.minus(world).normalized();
             let half = toLight.plus(toEye).normalized();
             let cosine = n.dot(half);

@@ -14,21 +14,6 @@
 
 use crate::platform::sys_clock::SysClock;
 
-/** Milliseconds in a second. */
-const CLOCK_MS_PER_SEC : i64 = 1000;
-
-/** Microseconds in a second. */
-const CLOCK_US_PER_SEC : i64 = 1000000;
-
-/**
- * How much of a wait is handed to the scheduler rather than spun.
- *
- * `Sleep` returns late, not early, so the last millisecond is spun: a
- * frame paced entirely by `Sleep` misses vsync roughly one frame in ten
- * even at a 1 ms period.
- */
-const CLOCK_SPIN_MARGIN_US : i64 = 1500;
-
 /**
  * The monotonic clock, started when it is constructed.
  *
@@ -37,6 +22,21 @@ const CLOCK_SPIN_MARGIN_US : i64 = 1500;
  * separated their construction.
  */
 pub class Clock : Closeable {
+    /** Milliseconds in a second. */
+    pub(file) static MS_PER_SEC : i64 = 1000;
+
+    /** Microseconds in a second. */
+    pub(file) static US_PER_SEC : i64 = 1000000;
+
+    /**
+     * How much of a wait is handed to the scheduler rather than spun.
+     *
+     * `Sleep` returns late, not early, so the last millisecond is spun: a
+     * frame paced entirely by `Sleep` misses vsync roughly one frame in ten
+     * even at a 1 ms period.
+     */
+    pub(file) static SPIN_MARGIN_US : i64 = 1500;
+
     freq   : i64;
     origin : i64;
     sys    : SysClock;
@@ -49,7 +49,7 @@ pub class Clock : Closeable {
         // a machine that answers nonsense gets a clock that runs slow
         // rather than a process that dies.
         if (hz <= 0) {
-            self.freq = CLOCK_US_PER_SEC;
+            self.freq = Clock::US_PER_SEC;
         } else {
             self.freq = hz;
         }
@@ -68,17 +68,17 @@ pub class Clock : Closeable {
 
     /** Milliseconds since the clock started. */
     pub fn ticks(mut self) : i64 {
-        return ((self.counter() - self.origin) * CLOCK_MS_PER_SEC) / self.freq;
+        return ((self.counter() - self.origin) * Clock::MS_PER_SEC) / self.freq;
     }
 
     /** Microseconds since the clock started. */
     pub fn micros(mut self) : i64 {
-        return ((self.counter() - self.origin) * CLOCK_US_PER_SEC) / self.freq;
+        return ((self.counter() - self.origin) * Clock::US_PER_SEC) / self.freq;
     }
 
     /** Seconds since the clock started, as a fraction. */
     pub fn seconds(mut self) : f64 {
-        return (self.micros() as f64) / (CLOCK_US_PER_SEC as f64);
+        return (self.micros() as f64) / (Clock::US_PER_SEC as f64);
     }
 
     /** Hand `ms` milliseconds back to the scheduler. */
@@ -92,14 +92,14 @@ pub class Clock : Closeable {
      * Wait until `deadlineUs` microseconds have elapsed since the clock
      * started, then return — the frame pacer.
      *
-     * Sleeps while more than `CLOCK_SPIN_MARGIN_US` remains and spins the
+     * Sleeps while more than `Clock::SPIN_MARGIN_US` remains and spins the
      * rest, which is what keeps a 16.67 ms frame from becoming 17.9 ms.
      */
     pub fn delayUntil(mut self, deadlineUs : i64) : void {
         let remaining : i64 = deadlineUs - self.micros();
-        if (remaining > CLOCK_SPIN_MARGIN_US) {
-            let sleepable : i64 = remaining - CLOCK_SPIN_MARGIN_US;
-            self.sys.sleep((sleepable / CLOCK_MS_PER_SEC) as i32);
+        if (remaining > Clock::SPIN_MARGIN_US) {
+            let sleepable : i64 = remaining - Clock::SPIN_MARGIN_US;
+            self.sys.sleep((sleepable / Clock::MS_PER_SEC) as i32);
         }
         while (self.micros() < deadlineUs) {
             // Spin. The margin above keeps this under two milliseconds.
@@ -111,20 +111,6 @@ pub class Clock : Closeable {
         self.sys.close();
     }
 }
-
-/**
- * How much of a frame's delta is reported, however long the frame took.
- *
- * A stalled frame — a dragged window, a breakpoint, a paging storm —
- * would otherwise hand the simulation one enormous step, and a step that
- * large moves a body through a wall instead of into it. Reporting less
- * time than passed makes the world run slow for one frame, which is the
- * failure a player forgives.
- */
-const PACER_MAX_DELTA_US : i64 = 250000;
-
-/** The span a frame rate is averaged over before it is republished — one second. */
-const PACER_RATE_WINDOW_US : i64 = 1000000;
 
 /**
  * The frame loop's metronome: it sleeps to the frame boundary, and
@@ -150,6 +136,20 @@ const PACER_RATE_WINDOW_US : i64 = 1000000;
  * time — and never sleeps.
  */
 pub class FramePacer {
+    /**
+     * How much of a frame's delta is reported, however long the frame took.
+     *
+     * A stalled frame — a dragged window, a breakpoint, a paging storm —
+     * would otherwise hand the simulation one enormous step, and a step that
+     * large moves a body through a wall instead of into it. Reporting less
+     * time than passed makes the world run slow for one frame, which is the
+     * failure a player forgives.
+     */
+    pub(file) static MAX_DELTA_US : i64 = 250000;
+
+    /** The span a frame rate is averaged over before it is republished — one second. */
+    pub(file) static RATE_WINDOW_US : i64 = 1000000;
+
     periodUs     : i64;
     deadlineUs   : i64;
     lastUs       : i64;
@@ -162,7 +162,7 @@ pub class FramePacer {
     constructor(fps : i32) {
         self.periodUs = 0;
         if (fps > 0) {
-            self.periodUs = CLOCK_US_PER_SEC / (fps as i64);
+            self.periodUs = Clock::US_PER_SEC / (fps as i64);
         }
         self.deadlineUs = 0;
         self.lastUs = 0;
@@ -176,7 +176,7 @@ pub class FramePacer {
     pub fn setRate(mut self, fps : i32) : void {
         self.periodUs = 0;
         if (fps > 0) {
-            self.periodUs = CLOCK_US_PER_SEC / (fps as i64);
+            self.periodUs = Clock::US_PER_SEC / (fps as i64);
         }
     }
 
@@ -228,15 +228,15 @@ pub class FramePacer {
 
         self.windowFrames += 1;
         let span = now - self.windowUs;
-        if (span >= PACER_RATE_WINDOW_US) {
-            self.rate = ((self.windowFrames * CLOCK_US_PER_SEC) as f64) / (span as f64);
+        if (span >= FramePacer::RATE_WINDOW_US) {
+            self.rate = ((self.windowFrames * Clock::US_PER_SEC) as f64) / (span as f64);
             self.windowFrames = 0;
             self.windowUs = now;
         }
 
-        if (elapsed > PACER_MAX_DELTA_US) {
-            elapsed = PACER_MAX_DELTA_US;
+        if (elapsed > FramePacer::MAX_DELTA_US) {
+            elapsed = FramePacer::MAX_DELTA_US;
         }
-        return (elapsed as f64) / (CLOCK_US_PER_SEC as f64);
+        return (elapsed as f64) / (Clock::US_PER_SEC as f64);
     }
 }
