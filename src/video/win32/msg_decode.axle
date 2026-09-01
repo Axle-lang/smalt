@@ -79,7 +79,10 @@ pub(crate) fn wheelOf(wp : i64) : i32 {
  * Turn one message into state changes and queued events.
  *
  * Split out of the drain loop so the loop stays a loop: this is the
- * whole translation table, and it reads as one.
+ * whole translation table, and it reads as one — one arm per message,
+ * with the pairs that differ only in a boolean (`WM_KEYDOWN` and
+ * `WM_SYSKEYDOWN`, the three button-down messages) folded into the arm
+ * that treats them alike.
  */
 pub(crate) fn handle(
     message : i32,
@@ -90,95 +93,94 @@ pub(crate) fn handle(
     keys : KeyboardState,
     mouse : MouseState
 ) : void {
-    if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
-        let sc = keyOf(lp);
-        keys.press(sc);
-        queue.push(
-            Event { kind: EventKind::KeyDown, timestamp: stamp, scancode: sc, repeat: repeatOf(lp) }
-        );
-        return;
-    }
-    if (message == WM_KEYUP || message == WM_SYSKEYUP) {
-        let sc = keyOf(lp);
-        keys.release(sc);
-        queue.push(Event { kind: EventKind::KeyUp, timestamp: stamp, scancode: sc });
-        return;
-    }
-    if (message == WM_CHAR) {
-        let cp : i32 = (wp & 0xFFFF) as i32;
-        // A surrogate half is not a character. Dropping it loses
-        // astral-plane text input, which no key on a keyboard
-        // produces; pairing it would need state this layer has no
-        // reason to carry.
-        if (cp < SURROGATE_LOW_BOUND || cp > SURROGATE_HIGH_BOUND) {
-            queue.push(Event { kind: EventKind::TextInput, timestamp: stamp, text: cp });
+    match message {
+        WM_KEYDOWN | WM_SYSKEYDOWN => {
+            let sc = keyOf(lp);
+            keys.press(sc);
+            queue.push(
+                Event {
+                    kind: EventKind::KeyDown,
+                    timestamp: stamp,
+                    scancode: sc,
+                    repeat: repeatOf(lp),
+                }
+            );
         }
-        return;
-    }
-    if (message == WM_MOUSEMOVE) {
-        let nx = mouseX(lp);
-        let ny = mouseY(lp);
-        let known = mouse.isPrimed();
-        let px = mouse.posX();
-        let py = mouse.posY();
-        mouse.moveTo(nx, ny);
-        // The very first motion has no previous position to subtract, so
-        // the delta stays at the field's own default rather than being a
-        // jump from wherever the pointer happened to enter.
-        let e = Event { kind: EventKind::MouseMotion, timestamp: stamp, x: nx, y: ny };
-        if (known) {
-            e.dx = nx - px;
-            e.dy = ny - py;
+        WM_KEYUP | WM_SYSKEYUP => {
+            let sc = keyOf(lp);
+            keys.release(sc);
+            queue.push(Event { kind: EventKind::KeyUp, timestamp: stamp, scancode: sc });
         }
-        queue.push(e);
-        return;
-    }
-    if (message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN || message == WM_MBUTTONDOWN) {
-        let b = buttonOf(message);
-        mouse.press(b);
-        queue.push(
-            Event {
-                kind: EventKind::MouseButtonDown,
-                timestamp: stamp,
-                button: b,
-                x: mouseX(lp),
-                y: mouseY(lp),
+        WM_CHAR => {
+            let cp : i32 = (wp & 0xFFFF) as i32;
+            // A surrogate half is not a character. Dropping it loses
+            // astral-plane text input, which no key on a keyboard
+            // produces; pairing it would need state this layer has no
+            // reason to carry.
+            if (cp < SURROGATE_LOW_BOUND || cp > SURROGATE_HIGH_BOUND) {
+                queue.push(Event { kind: EventKind::TextInput, timestamp: stamp, text: cp });
             }
-        );
-        return;
-    }
-    if (message == WM_LBUTTONUP || message == WM_RBUTTONUP || message == WM_MBUTTONUP) {
-        let b = buttonOf(message);
-        mouse.release(b);
-        queue.push(
-            Event {
-                kind: EventKind::MouseButtonUp,
-                timestamp: stamp,
-                button: b,
-                x: mouseX(lp),
-                y: mouseY(lp),
+        }
+        WM_MOUSEMOVE => {
+            let nx = mouseX(lp);
+            let ny = mouseY(lp);
+            let known = mouse.isPrimed();
+            let px = mouse.posX();
+            let py = mouse.posY();
+            mouse.moveTo(nx, ny);
+            // The very first motion has no previous position to subtract, so
+            // the delta stays at the field's own default rather than being a
+            // jump from wherever the pointer happened to enter.
+            let e = Event { kind: EventKind::MouseMotion, timestamp: stamp, x: nx, y: ny };
+            if (known) {
+                e.dx = nx - px;
+                e.dy = ny - py;
             }
-        );
-        return;
-    }
-    if (message == WM_MOUSEWHEEL) {
-        let notches = wheelOf(wp);
-        mouse.scroll(notches);
-        queue.push(Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: notches });
-        return;
-    }
-    if (message == WM_CLOSE || message == WM_QUIT) {
-        queue.push(Event { kind: EventKind::Quit, timestamp: stamp });
+            queue.push(e);
+        }
+        WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN => {
+            let b = buttonOf(message);
+            mouse.press(b);
+            queue.push(
+                Event {
+                    kind: EventKind::MouseButtonDown,
+                    timestamp: stamp,
+                    button: b,
+                    x: mouseX(lp),
+                    y: mouseY(lp),
+                }
+            );
+        }
+        WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP => {
+            let b = buttonOf(message);
+            mouse.release(b);
+            queue.push(
+                Event {
+                    kind: EventKind::MouseButtonUp,
+                    timestamp: stamp,
+                    button: b,
+                    x: mouseX(lp),
+                    y: mouseY(lp),
+                }
+            );
+        }
+        WM_MOUSEWHEEL => {
+            let notches = wheelOf(wp);
+            mouse.scroll(notches);
+            queue.push(Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: notches });
+        }
+        WM_CLOSE | WM_QUIT => {
+            queue.push(Event { kind: EventKind::Quit, timestamp: stamp });
+        }
+        _ => {}
     }
 }
 
 /** The button a message names, or `Left` for a message that names none. */
 pub(crate) fn buttonOf(message : i32) : MouseButton {
     return match message {
-        WM_RBUTTONDOWN => MouseButton::Right,
-        WM_RBUTTONUP => MouseButton::Right,
-        WM_MBUTTONDOWN => MouseButton::Middle,
-        WM_MBUTTONUP => MouseButton::Middle,
+        WM_RBUTTONDOWN | WM_RBUTTONUP => MouseButton::Right,
+        WM_MBUTTONDOWN | WM_MBUTTONUP => MouseButton::Middle,
         _ => MouseButton::Left,
     };
 }

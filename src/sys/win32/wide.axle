@@ -57,20 +57,30 @@ class Wide {
             let cp = Wide::REPLACEMENT;
             let taken = 1;
 
-            if (b0 < 0x80) {
-                cp = b0;
-            } else if (b0 >= 0xC2 && b0 <= 0xDF && i + 1 < bytes) {
-                cp = ((b0 & 0x1F) << 6) | Wide::tail(s, i + 1);
-                taken = 2;
-            } else if (b0 >= 0xE0 && b0 <= 0xEF && i + 2 < bytes) {
-                cp = ((b0 & 0x0F) << 12) | (Wide::tail(s, i + 1) << 6) | Wide::tail(s, i + 2);
-                taken = 3;
-            } else if (b0 >= 0xF0 && b0 <= 0xF4 && i + 3 < bytes) {
-                cp = ((b0 & 0x07) << 18) | (Wide::tail(
-                    s,
-                    i + 1
-                ) << 12) | (Wide::tail(s, i + 2) << 6) | Wide::tail(s, i + 3);
-                taken = 4;
+            // The lead byte's range is the length of the sequence — that
+            // is the whole of UTF-8's table, so it is written as one. The
+            // guard is the separate question of whether the string still
+            // holds the continuation bytes that range promises; a lead
+            // byte at the end of a truncated string falls through to the
+            // replacement character rather than reading past it.
+            match b0 {
+                0x00..=0x7F => { cp = b0; }
+                0xC2..=0xDF if i + 1 < bytes => {
+                    cp = ((b0 & 0x1F) << 6) | Wide::tail(s, i + 1);
+                    taken = 2;
+                }
+                0xE0..=0xEF if i + 2 < bytes => {
+                    cp = ((b0 & 0x0F) << 12) | (Wide::tail(s, i + 1) << 6) | Wide::tail(s, i + 2);
+                    taken = 3;
+                }
+                0xF0..=0xF4 if i + 3 < bytes => {
+                    cp = ((b0 & 0x07) << 18) | (Wide::tail(
+                        s,
+                        i + 1
+                    ) << 12) | (Wide::tail(s, i + 2) << 6) | Wide::tail(s, i + 3);
+                    taken = 4;
+                }
+                _ => {}
             }
 
             if (cp < Wide::SUPPLEMENTARY) {

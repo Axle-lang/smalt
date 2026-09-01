@@ -398,11 +398,37 @@ pub class Raster {
     }
 
     /**
+     * Which vertices are in front of the near plane, as one 0..7 mask —
+     * bit 0 is `a`, bit 1 `b`, bit 2 `c`.
+     *
+     * A mask rather than three booleans because what follows is an
+     * eight-way choice: written as a chain of `&&` and `!` tests it is
+     * only correct if the reader checks that the cases are mutually
+     * exclusive and that none is missing. Eight arms over three bits are
+     * both, by construction.
+     */
+    pub(file) static fn nearMask(a : ClipVertex, b : ClipVertex, c : ClipVertex) : i32 {
+        let mask : i32 = 0;
+        if (a.visible()) {
+            mask |= 1;
+        }
+        if (b.visible()) {
+            mask |= 2;
+        }
+        if (c.visible()) {
+            mask |= 4;
+        }
+        return mask;
+    }
+
+    /**
      * Draw one transformed triangle, clipping it against the near plane
      * first.
      *
-     * The rotations below keep the surviving vertices in their original
-     * cyclic order, so a clipped triangle keeps the winding its
+     * How many vertices survive decides the shape drawn: three is the
+     * triangle itself, one is a smaller triangle, two is a
+     * quadrilateral. The rotations below keep the survivors in their
+     * original cyclic order, so a clipped triangle keeps the winding its
      * back-face test depends on.
      */
     pub static fn triangle(
@@ -413,37 +439,18 @@ pub class Raster {
         v1 : ClipVertex,
         v2 : ClipVertex
     ) : void {
-        let in0 = v0.visible();
-        let in1 = v1.visible();
-        let in2 = v2.visible();
-
-        if (in0 && in1 && in2) {
-            Raster::emit(target, tex, sh, v0, v1, v2);
-            return;
+        match Raster::nearMask(v0, v1, v2) {
+            0b111 => { Raster::emit(target, tex, sh, v0, v1, v2); }
+            0b001 => { Raster::clipOne(target, tex, sh, v0, v1, v2); }
+            0b010 => { Raster::clipOne(target, tex, sh, v1, v2, v0); }
+            0b100 => { Raster::clipOne(target, tex, sh, v2, v0, v1); }
+            0b110 => { Raster::clipTwo(target, tex, sh, v1, v2, v0); }
+            0b101 => { Raster::clipTwo(target, tex, sh, v2, v0, v1); }
+            0b011 => { Raster::clipTwo(target, tex, sh, v0, v1, v2); }
+            // `0b000` — nothing is in front of the plane. The mask is
+            // three bits, so this arm is the exhaustiveness rule's and
+            // covers no other value.
+            _ => {}
         }
-        if (!in0 && !in1 && !in2) {
-            return;
-        }
-        if (in0 && !in1 && !in2) {
-            Raster::clipOne(target, tex, sh, v0, v1, v2);
-            return;
-        }
-        if (in1 && !in0 && !in2) {
-            Raster::clipOne(target, tex, sh, v1, v2, v0);
-            return;
-        }
-        if (in2 && !in0 && !in1) {
-            Raster::clipOne(target, tex, sh, v2, v0, v1);
-            return;
-        }
-        if (!in0) {
-            Raster::clipTwo(target, tex, sh, v1, v2, v0);
-            return;
-        }
-        if (!in1) {
-            Raster::clipTwo(target, tex, sh, v2, v0, v1);
-            return;
-        }
-        Raster::clipTwo(target, tex, sh, v0, v1, v2);
     }
 }

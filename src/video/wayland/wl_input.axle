@@ -326,21 +326,25 @@ pub(crate) fn drainRing(
             let b = (*st).ring[tail + 2];
             (*st).tail = ((tail + WL_RING_STRIDE) % WL_RING_WORDS) as i32;
 
-            if (kind == RING_KEY) {
-                emitKey(a, b, stamp, queue, keys);
-            } else if (kind == RING_BUTTON) {
-                emitButton(a, b, stamp, queue, mouse);
-            } else if (kind == RING_MOTION) {
-                emitMotion(a, b, stamp, queue, mouse);
-            } else if (kind == RING_WHEEL) {
-                mouse.scroll(a as i32);
-                queue.push(Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: a as i32 });
-            } else if (kind == RING_ENTER) {
-                (*st).focused = 1;
-                (*st).focusPending = 1;
-            } else if (kind == RING_LEAVE) {
-                (*st).focused = 0;
-                (*st).focusPending = 1;
+            match kind {
+                RING_KEY => { emitKey(a, b, stamp, queue, keys); }
+                RING_BUTTON => { emitButton(a, b, stamp, queue, mouse); }
+                RING_MOTION => { emitMotion(a, b, stamp, queue, mouse); }
+                RING_WHEEL => {
+                    mouse.scroll(a as i32);
+                    queue.push(
+                        Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: a as i32 }
+                    );
+                }
+                RING_ENTER => {
+                    (*st).focused = 1;
+                    (*st).focusPending = 1;
+                }
+                RING_LEAVE => {
+                    (*st).focused = 0;
+                    (*st).focusPending = 1;
+                }
+                _ => {}
             }
         }
     }

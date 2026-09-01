@@ -92,16 +92,17 @@ class SysDrain {
                     continue;
                 }
 
-                if (kind == X_KEY_PRESS) {
-                    handleKey(scratch.at(), true, stamp, queue, keys, text, keysym);
-                } else if (kind == X_KEY_RELEASE) {
-                    handleKey(scratch.at(), false, stamp, queue, keys, text, keysym);
-                } else if (kind == X_BUTTON_PRESS) {
-                    handleButton(scratch.at(), true, stamp, queue, mouse);
-                } else if (kind == X_BUTTON_RELEASE) {
-                    handleButton(scratch.at(), false, stamp, queue, mouse);
-                } else if (kind == X_MOTION_NOTIFY) {
-                    handleMotion(scratch.at(), stamp, queue, mouse);
+                match kind {
+                    X_KEY_PRESS => {
+                        handleKey(scratch.at(), true, stamp, queue, keys, text, keysym);
+                    }
+                    X_KEY_RELEASE => {
+                        handleKey(scratch.at(), false, stamp, queue, keys, text, keysym);
+                    }
+                    X_BUTTON_PRESS => { handleButton(scratch.at(), true, stamp, queue, mouse); }
+                    X_BUTTON_RELEASE => { handleButton(scratch.at(), false, stamp, queue, mouse); }
+                    X_MOTION_NOTIFY => { handleMotion(scratch.at(), stamp, queue, mouse); }
+                    _ => {}
                 }
             }
         }
