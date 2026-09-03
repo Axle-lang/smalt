@@ -11,6 +11,15 @@
 // no stack pointing back here. Holding the address is the same fix the
 // framebuffer path uses.
 //
+// **The mixer takes its own lock.** A game plays a sound from whichever
+// thread simulated the thing that made it, and the device is topped up
+// from a thread of its own — so `play` and `pump` race over a fixed
+// voice array both write. Every public entry point that touches a voice
+// spins on one flag first; the critical sections are a handful of stores
+// or a single block's mix, which is why a spin beats a mutex here. Two
+// games built on this had each written the same six lines outside the
+// library, which is six lines and one race away from not having them.
+//
 // Positional voices attenuate against the listener EVERY block, not once
 // at play time, which is what makes a sound fade while it is still
 // playing as the player walks away. The curve is linear to zero at
@@ -20,6 +29,8 @@
 
 use crate::kernel::raw::Raw;
 use crate::audio::clip::Clip;
+use std::concurrent::AtomicBoolean;
+use std::sys::sleep;
 use crate::platform::audio_format::AUDIO_CHANNELS;
 use crate::platform::sys_audio::SysAudio;
 
@@ -71,6 +82,9 @@ pub class Mixer : Closeable {
     /** Simultaneous voices. Beyond this the oldest positional voice loses. */
     pub(file) static VOICES : i32 = 32;
 
+    /** Milliseconds `mixerLoop` sleeps between two pumps. */
+    pub(crate) static PUMP_SLEEP_MS : i32 = 4;
+
     /** Bytes per device sample. */
     pub(file) static SAMPLE_BYTES : i64 = 2;
 
@@ -83,6 +97,31 @@ pub class Mixer : Closeable {
     ly     : f64 = 0.0;
     lz     : f64 = 0.0;
 
+    /**
+     * The mixer's own lock.
+     *
+     * A game plays a sound from the thread that simulated the thing that
+     * made it, and the device is topped up from a thread of its own — so
+     * `play` and `pump` genuinely race, over a fixed voice array that
+     * both write. Without this, publishing `mixerLoop` would be
+     * publishing a data race with a convenient name.
+     *
+     * A spin rather than a mutex because every critical section here is
+     * a handful of stores or one block's mix, and the mutex would cost
+     * more than the work it guards. It is `pub(file)` so nothing outside
+     * can hold it across a call that takes it again.
+     */
+    lock   : AtomicBoolean = new AtomicBoolean(false);
+
+    /**
+     * Whether `mixerLoop` should keep going.
+     *
+     * Atomic because it is written by the thread that owns the mixer and
+     * read by the one pumping it, and a plain `bool` read across two
+     * threads is a read the optimiser may hoist out of the loop.
+     */
+    alive  : AtomicBoolean = new AtomicBoolean(true);
+
     /** Open the device and start with every voice idle. */
     constructor() {
         let i : i32 = 0;
@@ -90,6 +129,17 @@ pub class Mixer : Closeable {
             self.voices[i] = Voice { active: false };
             i = i + 1;
         }
+    }
+
+    /** Spin until this thread owns the lock. */
+    pub(file) fn acquire(self) : void {
+        while (!self.lock.compareAndSet(false, true)) {
+        }
+    }
+
+    /** Give the lock back. */
+    pub(file) fn release(self) : void {
+        self.lock.set(false);
     }
 
     /** Whether the device opened. Playing into a closed device is silent. */
@@ -104,9 +154,11 @@ pub class Mixer : Closeable {
      * is what lets a sound fade mid-playback.
      */
     pub fn setListener(mut self, x : f64, y : f64, z : f64) : void {
+        self.acquire();
         self.lx = x;
         self.ly = y;
         self.lz = z;
+        self.release();
     }
 
     /**
@@ -139,6 +191,7 @@ pub class Mixer : Closeable {
         if (!clip.loaded()) {
             return;
         }
+        self.acquire();
         let i : i32 = self.slot();
         self.voices[i] = Voice {
             base: clip.base(),
@@ -146,6 +199,7 @@ pub class Mixer : Closeable {
             gain: gain,
             active: true,
         };
+        self.release();
     }
 
     /** Start `clip` at a world position, fading to nothing at `range`. */
@@ -153,6 +207,7 @@ pub class Mixer : Closeable {
         if (!clip.loaded() || range <= 0.0) {
             return;
         }
+        self.acquire();
         let i : i32 = self.slot();
         self.voices[i] = Voice {
             base: clip.base(),
@@ -165,6 +220,7 @@ pub class Mixer : Closeable {
             range: range,
             active: true,
         };
+        self.release();
     }
 
     /** Voice `i`'s gain for this block, listener distance included. */
@@ -196,8 +252,10 @@ pub class Mixer : Closeable {
      * silence the device has already played.
      */
     pub fn pump(mut self) : bool {
+        self.acquire();
         let slot : i32 = self.audio.reclaim();
         if (slot < 0) {
+            self.release();
             return false;
         }
         let dst : ptr = Raw::at(self.audio.blockAddress(slot));
@@ -215,6 +273,7 @@ pub class Mixer : Closeable {
             v = v + 1;
         }
         self.audio.submit(slot);
+        self.release();
         return true;
     }
 
@@ -275,9 +334,68 @@ pub class Mixer : Closeable {
         }
     }
 
+    /**
+     * Whether a pump loop should keep going.
+     *
+     * Read by `mixerLoop`; a game with a loop of its own reads it for the
+     * same reason.
+     */
+    pub fn isRunning(self) : bool {
+        return self.alive.get();
+    }
+
+    /**
+     * Ask a pump loop to finish.
+     *
+     * Call it, then `join()` the task, then `close()` — in that order. A
+     * mixer closed while a thread is still pumping it is a thread reading
+     * a device that has been released.
+     */
+    pub fn requestStop(mut self) : void {
+        self.alive.set(false);
+    }
+
     /** Stop the device. The clips are the bank's to release. */
     pub fn close(self) : void {
         free(self.voices);
         self.audio.close();
     }
+}
+
+/**
+ * Pump `mx` on this thread until `requestStop` is called.
+ *
+ * The audio device wants a block far more often than a frame arrives: a
+ * block that comes free between two `pump` calls is silence it has
+ * already played, so a heavy frame — a chunk bake, a light pass, a
+ * garbage-collection pause in a different runtime — is a stutter the
+ * player hears. Pumping from a thread of its own removes the coupling
+ * entirely.
+ *
+ * ```
+ * let audio : Task<i32> = spawn mixerLoop(mixer);
+ * ...
+ * mixer.requestStop();
+ * audio.join();
+ * mixer.close();
+ * ```
+ *
+ * A free function rather than a `Mixer.startPump()`, because a `Task<T>`
+ * is a handle minted on the thread that spawned it and joined by that
+ * same thread — parking one in a field would put it where the thread
+ * that must join it cannot reach. The two lines above are the shape the
+ * language asks for, and both programs that needed this wrote the same
+ * thirty-line loop to get them.
+ *
+ * The sleep is what keeps the thread off a core it does not need: a
+ * block is milliseconds long and the queue is checked several times per
+ * block, which is enough to never miss one and cheap enough to be
+ * invisible in a profile.
+ */
+pub fn mixerLoop(mx : Mixer) : i32 {
+    while (mx.isRunning()) {
+        mx.pump();
+        sleep(Mixer::PUMP_SLEEP_MS);
+    }
+    return 0;
 }
