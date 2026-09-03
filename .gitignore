@@ -16,3 +16,6 @@ target/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Snapshots written by `--snap` / F12.
+*.bmp

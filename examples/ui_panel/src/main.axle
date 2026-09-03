@@ -1,0 +1,235 @@
+// ui_panel — the 2-D surface, in one program.
+//
+// A window that repaints when something changes and **sleeps otherwise**,
+// drawing a card, a rule, a rounded button, an anti-aliased line of text
+// and a live figure — with no font, no glyph blitter, no formatter and no
+// clip rectangle of its own.
+//
+// That is the point of it. Every one of those was, until now, something
+// each program on smalt wrote for itself: two of them ended up carrying
+// the same six hundred lines of glyph table, already drifting apart.
+//
+// It also exercises the three things a tool needs and a game does not:
+// `Events::wait` (idle at zero per cent of a core), `Scratch` (a figure
+// per repaint that allocates nothing), and `Bmp::write` (F12 puts the
+// window in a file).
+//
+// Controls: click the button, F12 writes `ui_panel.bmp`, Escape quits.
+//
+// `--snap` draws one frame, writes the BMP and leaves, so the layout can
+// be checked without anyone standing over the machine at the right
+// moment — and so this example is a test rather than only a demo.
+
+use smalt::{
+    Platform, PlatformError, WindowDesc, Clock, Events, EventKind, MouseButton, Scancode,
+    Surface, Frame, BitmapFont, Face, Scratch, Color, Rect, Bmp,
+};
+use std::sys::process::{argc, argAt};
+use std::lang::IndexOutOfBoundsException;
+
+/** Client width. */
+const VIEW_W : i32 = 720;
+
+/** Client height. */
+const VIEW_H : i32 = 360;
+
+/** Longest the loop sleeps with nothing to do — it still ticks the clock. */
+const IDLE_MS : i32 = 500;
+
+/** Page background. */
+const C_BG : i32 = 0x161A1F;
+
+/** Raised surface. */
+const C_CARD : i32 = 0x1F252C;
+
+/** Hairline. */
+const C_LINE : i32 = 0x333C46;
+
+/** Primary text. */
+const C_TEXT : i32 = 0xE6EAEE;
+
+/** Secondary text. */
+const C_DIM : i32 = 0x8A959F;
+
+/** Accent. */
+const C_ACCENT : i32 = 0x4CC2FF;
+
+fn main() : i32 {
+    try {
+        return run();
+    } catch e : PlatformError {
+        println(e.message);
+        return 1;
+    }
+}
+
+/** Where the button sits — one definition, drawn from and hit-tested with. */
+fn buttonRect() : Rect {
+    return Rect::make(32, VIEW_H - 78, 190, 40);
+}
+
+fn run() : i32 ! PlatformError {
+    let platform = new Platform()?;
+    defer platform.close();
+    let win = platform.open(
+        WindowDesc { title: "smalt — ui panel", w: VIEW_W, h: VIEW_H }
+    )?;
+    defer win.close();
+
+    let clock = new Clock();
+    defer clock.close();
+    let events = new Events();
+    defer events.close();
+    let screen = new Surface(VIEW_W, VIEW_H);
+    defer screen.close();
+
+    // Both faces are the library's. Built once and held: the tables are
+    // minted by the call, so a face per frame would be three allocations
+    // and a copy of the whole font every frame.
+    let ui = BitmapFont::baked(Face::Ui);
+    let big = BitmapFont::baked(Face::Headline);
+
+    // One block, reused for every figure drawn. Nothing on the repaint
+    // path allocates.
+    let scratch = new Scratch(256);
+    defer scratch.close();
+
+    let snapping = wantsSnap();
+    let clicks : i64 = 0;
+    let hovering = false;
+    let dirty = true;
+    let running = true;
+
+    while (running && win.isOpen()) {
+        // Blocks in the OS until something arrives. Idle, this program
+        // uses no measurable CPU at all — which a poll-and-sleep loop
+        // cannot say, whatever the sleep.
+        events.wait(win, clock, IDLE_MS);
+
+        while (events.hasNext()) {
+            let e = events.next();
+            match e.kind {
+                EventKind::Quit => { running = false; },
+                EventKind::KeyDown => {
+                    if (e.scancode == Scancode::Escape) {
+                        running = false;
+                    }
+                    if (e.scancode == Scancode::F12) {
+                        Bmp::write("ui_panel.bmp", screen.frame());
+                    }
+                },
+                EventKind::MouseMotion => {
+                    let over = buttonRect().contains(e.x, e.y);
+                    if (over != hovering) {
+                        hovering = over;
+                        dirty = true;
+                    }
+                },
+                EventKind::MouseButtonDown => {
+                    if (e.button == MouseButton::Left && buttonRect().contains(e.x, e.y)) {
+                        clicks += 1;
+                        dirty = true;
+                    }
+                },
+                EventKind::WindowResized => { dirty = true; },
+                _ => {},
+            }
+        }
+
+        if (dirty && !win.minimised()) {
+            paint(screen.frame(), ui, big, scratch, clicks, hovering, clock);
+            screen.present(win);
+            dirty = false;
+            if (snapping) {
+                if (!Bmp::write("ui_panel.bmp", screen.frame())) {
+                    println("could not write ui_panel.bmp");
+                    return 1;
+                }
+                println("wrote ui_panel.bmp");
+                running = false;
+            }
+        }
+    }
+    return 0;
+}
+
+/** Whether `--snap` was asked for: one frame, one file, then out. */
+fn wantsSnap() : bool {
+    let i : i32 = 1;
+    while (i < argc()) {
+        try {
+            if (argAt(i) == "--snap") {
+                return true;
+            }
+        } catch e : IndexOutOfBoundsException {
+            return false;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+/** One full repaint, back to front. */
+fn paint(
+    f : Frame,
+    ui : BitmapFont,
+    big : BitmapFont,
+    scratch : Scratch,
+    clicks : i64,
+    hovering : bool,
+    clock : Clock
+) : void {
+    f.fill(C_BG);
+
+    // The card, and everything inside it clipped to it — so a label that
+    // outgrew its box is cut at the edge rather than drawn over the page.
+    let card = Rect::make(24, 24, VIEW_W - 48, 128);
+    f.fillRound(card, 10, C_CARD);
+    f.roundBorder(card, 10, C_LINE);
+    let inner = f.clipped(card);
+
+    // The UI face draws prose; the headline face draws figures. That is
+    // not a style rule — the headline face carries only the characters a
+    // figure uses (digits, `.`, `,`, `%`, `/` and the unit letters), so a
+    // word handed to it loses the letters it does not have. `Face::Ui`
+    // covers printable ASCII.
+    ui.draw(inner, card.x + 18, card.y + 30, "CLICKS", C_DIM);
+
+    scratch.reset();
+    scratch.grouped(clicks);
+    let pen = big.drawBytes(inner, card.x + 18, card.y + 74, scratch.at(), 0, scratch.length(), C_TEXT);
+    ui.draw(inner, pen + 8, card.y + 74, "so far", C_DIM);
+
+    inner.hLine(card.x + 18, card.y + 92, card.w - 36, C_LINE);
+
+    // A second figure, formatted into the same block and drawn from its
+    // bytes — no `string` is minted, so the repaint allocates nothing.
+    scratch.reset();
+    scratch.literal("up ");
+    scratch.elapsed((clock.seconds() * 1000.0).round());
+    scratch.literal("   frame ");
+    scratch.decimal(VIEW_W as i64);
+    scratch.literal("x");
+    scratch.decimal(VIEW_H as i64);
+    ui.drawBytes(inner, card.x + 18, card.y + 114, scratch.at(), 0, scratch.length(), C_DIM);
+
+    // The button. `hovering` is the only thing that changes about it, so
+    // the two states differ by one blend rather than by two drawings.
+    let b = buttonRect();
+    let fill : i32 = Color::mix(C_CARD, C_ACCENT, 1, 4);
+    if (hovering) {
+        fill = Color::mix(C_CARD, C_ACCENT, 1, 2);
+    }
+    f.fillRound(b, 8, fill);
+    f.roundBorder(b, 8, C_ACCENT);
+    ui.drawCentred(f, b, "Click me", C_TEXT);
+
+    // The UI face at twice its stored size — an integer multiple, so the
+    // coverage levels survive and the letters keep their edges. This is
+    // what a HUD reaches for when one face has to serve two sizes.
+    ui.drawScaled(f, 32, ui.baselineFor(184, 2), "Scaled x2", 2, C_ACCENT);
+    ui.draw(f, 32, 232, "and the same face at x1", C_DIM);
+
+    ui.drawRight(f, VIEW_W - 32, VIEW_H - 52, "F12  write a BMP", C_DIM);
+    ui.drawRight(f, VIEW_W - 32, VIEW_H - 34, "Esc  quit", C_DIM);
+}
