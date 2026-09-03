@@ -17,9 +17,13 @@
 
 use crate::io::file::AssetFile;
 use crate::kernel::blob::Blob;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
 use crate::render::color::Color;
+use crate::render::frame::Frame;
 use crate::render::texture::Texture;
 use crate::sys::dib::BITMAPINFOHEADER;
+use std::ffi::libc::fs;
 
 /**
  * `BITMAPFILEHEADER` — the 14 bytes a `.bmp` opens with.
@@ -196,6 +200,114 @@ pub class Bmp {
             return Bmp::read(path)?;
         } catch e : IOException {
             return Bmp::missing();
+        }
+    }
+
+    /** Bytes per pixel written out — no alpha channel is stored. */
+    pub(file) static WRITE_BPP : i32 = 3;
+
+    /** Pixels per metre on both axes — 72 dpi, which every reader wants set. */
+    pub(file) static WRITE_PPM : i32 = 2835;
+
+    /** The mode a raster file is written with: write, binary. */
+    pub(file) static MODE_WRITE : string = "wb";
+
+    /**
+     * Write `f` to `path` as an uncompressed 24-bit BMP, answering
+     * whether it landed.
+     *
+     * The counterpart of `read`, and the reason it is here rather than in
+     * every program that wants a screenshot: the two things a hand-rolled
+     * BMP writer gets wrong are both properties of the format this file
+     * already declares. Rows run **bottom to top**, so row zero of the
+     * file is the last row of the frame; and each row is padded up to a
+     * four-byte boundary, which for a three-byte pixel means a width not
+     * divisible by four leaves a gap the header does not mention.
+     *
+     * The frame is written whole — its clip is a drawing restriction, not
+     * a crop, and a screenshot of what is on screen is what a caller
+     * means. Clip a copy and blit it into a `Surface` first to write a
+     * region.
+     *
+     * One row of bytes is built at a time: a whole-image buffer would be
+     * several megabytes for a file written once, on a path that may be
+     * reached when memory is already the reason someone is taking a
+     * capture.
+     */
+    pub static fn write(path : string, f : Frame) : bool {
+        let w : i32 = f.w;
+        let h : i32 = f.h;
+        if (w <= 0 || h <= 0) {
+            return false;
+        }
+        let stride : i32 = Bmp::stride(w, Bmp::WRITE_BPP);
+        let header : Blob = new Blob(sizeof<BMPHEADER>());
+        let row : Blob = new Blob(stride as i64);
+        let stream = fs::fopen(path, Bmp::MODE_WRITE);
+        if (Raw::isNil(stream)) {
+            header.close();
+            row.close();
+            return false;
+        }
+
+        Bmp::fillHeader(header, w, h, stride);
+        fs::fwrite(header.at(), 1, sizeof<BMPHEADER>(), stream);
+
+        let src : i64 = f.base();
+        let rowBase : i64 = Raw::addr(row.at());
+        let y : i32 = h - 1;
+        while (y >= 0) {
+            for (x of 0..w) {
+                let c : i32 = Mem::wordOf(src, (y as i64) * (w as i64) + (x as i64));
+                let at : i64 = (x * Bmp::WRITE_BPP) as i64;
+                // BMP stores its channels blue-first.
+                Mem::putByte(rowBase, at, Color::blue(c));
+                Mem::putByte(rowBase, at + 1, Color::green(c));
+                Mem::putByte(rowBase, at + 2, Color::red(c));
+            }
+            for (padByte of (w * Bmp::WRITE_BPP)..stride) {
+                Mem::putByte(rowBase, padByte as i64, 0);
+            }
+            fs::fwrite(row.at(), 1, stride as i64, stream);
+            y = y - 1;
+        }
+
+        fs::fclose(stream);
+        header.close();
+        row.close();
+        return true;
+    }
+
+    /**
+     * Stamp the two headers into `header`.
+     *
+     * Through the declared records rather than by offset, which is the
+     * point of `@packed` being on them: the writer and the reader compute
+     * every field position from the same declaration, so a layout that
+     * drifted would break both at once rather than producing files only
+     * this library can read.
+     */
+    pub(file) static fn fillHeader(header : Blob, w : i32, h : i32, stride : i32) : void {
+        let pixels : i32 = stride * h;
+        unsafe {
+            let p : ptr<BMPHEADER> = header.at() as ptr<BMPHEADER>;
+            (*p).file.bfType = Bmp::MAGIC as u16;
+            (*p).file.bfSize = ((sizeof<BMPHEADER>() as i32) + pixels) as u32;
+            (*p).file.bfReserved1 = 0;
+            (*p).file.bfReserved2 = 0;
+            (*p).file.bfOffBits = sizeof<BMPHEADER>() as u32;
+
+            (*p).info.biSize = sizeof<BITMAPINFOHEADER>() as u32;
+            (*p).info.biWidth = w;
+            (*p).info.biHeight = h;
+            (*p).info.biPlanes = 1;
+            (*p).info.biBitCount = 24;
+            (*p).info.biCompression = Bmp::UNCOMPRESSED as u32;
+            (*p).info.biSizeImage = pixels as u32;
+            (*p).info.biXPelsPerMeter = Bmp::WRITE_PPM;
+            (*p).info.biYPelsPerMeter = Bmp::WRITE_PPM;
+            (*p).info.biClrUsed = 0;
+            (*p).info.biClrImportant = 0;
         }
     }
 
