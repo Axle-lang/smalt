@@ -1,4 +1,4 @@
-// wide — UTF-8 (Axle's `string`) to UTF-16 (Win32's `W` APIs).
+// wide — UTF-8 (Axle's `string`) to UTF-16 (Win32's `W` APIs), as a Blob.
 //
 // The library calls `RegisterClassExW` / `CreateWindowExW` /
 // `SetWindowTextW` rather than their `A` twins, because the `A` family
@@ -6,12 +6,16 @@
 // user is likely to put in a window title. That means every string
 // crossing to Win32 becomes a NUL-terminated UTF-16 buffer first.
 //
-// The conversion is a real UTF-8 decode, not a byte widening: a
-// codepoint above the BMP is emitted as a surrogate pair, and a
-// malformed sequence degrades to U+FFFD rather than desynchronising the
-// rest of the string.
+// The **decode itself is `Mem::wideFrom`'s**, not this file's. This is
+// the shape the Win32 backend needs — an owned block whose address
+// outlives the call that takes it — and it is three lines over the
+// portable one. The split is deliberate: a second copy of a UTF-8
+// decoder is a second place for the surrogate arithmetic to be wrong,
+// and this file used to be that second place.
 
 use crate::kernel::blob::Blob;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
 
 /**
  * UTF-16 text handed to Win32.
@@ -22,80 +26,24 @@ use crate::kernel::blob::Blob;
  * process's lifetime rather than freeing it after `RegisterClassExW`.
  */
 class Wide {
-    /** The replacement character, for a byte sequence that does not decode. */
-    pub(file) static REPLACEMENT : i32 = 65533;
-
-    /** First codepoint needing a surrogate pair. */
-    pub(file) static SUPPLEMENTARY : i32 = 65536;
-
-    /** High-surrogate base, `0xD800`. */
-    pub(file) static HIGH_BASE : i32 = 55296;
-
-    /** Low-surrogate base, `0xDC00`. */
-    pub(file) static LOW_BASE : i32 = 56320;
-
-    /** The payload bits of the continuation byte at `i`. */
-    static fn tail(s : string, i : i32) : i32 {
-        return s.byteAt(i) & 0x3F;
-    }
-
     /**
      * `s` as a NUL-terminated UTF-16 buffer.
      *
-     * Sized from the byte length: a UTF-8 string never produces more
-     * UTF-16 code units than it has bytes (the 4-byte sequences that
-     * yield two units also consume four bytes), so `len + 1` units is
-     * always enough and the buffer is allocated once.
+     * Sized from the **byte** length: a UTF-8 string never produces more
+     * UTF-16 code units than it has bytes (the four-byte sequences that
+     * yield two units also consume four bytes), so `byteLength + 1` units
+     * is always enough and the buffer is allocated once.
+     *
+     * It used to be sized — and looped — from `s.length`, which counts
+     * *codepoints* while `byteAt` indexes *bytes*. Every title carrying a
+     * character outside ASCII therefore lost as many trailing characters
+     * as it had multi-byte ones, which is why the library's own
+     * `"smalt — hello"` came out a letter short.
      */
     pub(crate) static fn from(s : string) : Blob {
-        let bytes = s.length;
-        let out = new Blob(((bytes as i64) + 1) * 2);
-        let units : i64 = 0;
-        let i : i32 = 0;
-        while (i < bytes) {
-            let b0 = s.byteAt(i) & 0xFF;
-            let cp = Wide::REPLACEMENT;
-            let taken = 1;
-
-            // The lead byte's range is the length of the sequence — that
-            // is the whole of UTF-8's table, so it is written as one. The
-            // guard is the separate question of whether the string still
-            // holds the continuation bytes that range promises; a lead
-            // byte at the end of a truncated string falls through to the
-            // replacement character rather than reading past it.
-            match b0 {
-                0x00..=0x7F => { cp = b0; }
-                0xC2..=0xDF if i + 1 < bytes => {
-                    cp = ((b0 & 0x1F) << 6) | Wide::tail(s, i + 1);
-                    taken = 2;
-                }
-                0xE0..=0xEF if i + 2 < bytes => {
-                    cp = ((b0 & 0x0F) << 12) | (Wide::tail(s, i + 1) << 6) | Wide::tail(s, i + 2);
-                    taken = 3;
-                }
-                0xF0..=0xF4 if i + 3 < bytes => {
-                    cp = ((b0 & 0x07) << 18) | (Wide::tail(
-                        s,
-                        i + 1
-                    ) << 12) | (Wide::tail(s, i + 2) << 6) | Wide::tail(s, i + 3);
-                    taken = 4;
-                }
-                _ => {}
-            }
-
-            if (cp < Wide::SUPPLEMENTARY) {
-                out.setWord(units * 2, cp);
-                units += 1;
-            } else {
-                let rest = cp - Wide::SUPPLEMENTARY;
-                out.setWord(units * 2, Wide::HIGH_BASE + (rest >>> 10));
-                out.setWord((units + 1) * 2, Wide::LOW_BASE + (rest & 0x3FF));
-                units += 2;
-            }
-            i += taken;
-        }
-        // The blob was zeroed at construction, so the NUL terminator is
-        // already in place at `units`.
+        let units : i64 = s.byteLength + 1;
+        let out = new Blob(units * 2);
+        Mem::wideFrom(Raw::addr(out.at()), s, units as i32);
         return out;
     }
 }
