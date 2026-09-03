@@ -149,6 +149,15 @@ pub class FramePacer {
     /** The span a frame rate is averaged over before it is republished — one second. */
     pub(file) static RATE_WINDOW_US : i64 = 1000000;
 
+    /**
+     * How far behind the simulation may fall before it stops catching up.
+     *
+     * A stall longer than this leaves the world running slow for a frame,
+     * which is the failure a player forgives — chasing it with a hundred
+     * steps is the one that never catches up at all.
+     */
+    pub(file) static MAX_CATCHUP_STEPS : i64 = 8;
+
     periodUs     : i64 = 0;
     deadlineUs   : i64 = 0;
     lastUs       : i64 = 0;
@@ -156,6 +165,15 @@ pub class FramePacer {
     windowUs     : i64 = 0;
     windowFrames : i64 = 0;
     rate         : f64 = 0.0;
+
+    /** Microseconds one simulation step stands for; 0 leaves `steps` off. */
+    stepUs       : i64 = 0;
+
+    /** Whether `setTickRate` was called, so `setRate` stops following it. */
+    tickPinned   : bool = false;
+
+    /** Real time owed to the simulation and not yet handed out as steps. */
+    accUs        : i64 = 0;
 
     /**
      * A pacer targeting `fps` frames per second; `0` leaves it uncapped.
@@ -168,12 +186,98 @@ pub class FramePacer {
         self.setRate(fps);
     }
 
-    /** Retarget the loop; `0` uncaps it. Takes effect on the next tick. */
+    /**
+     * Retarget the loop; `0` uncaps it. Takes effect on the next tick.
+     *
+     * The simulation rate follows unless `setTickRate` pinned it, so a
+     * pacer built for 60 fps hands out 60 steps a second without being
+     * told twice — and a program that wants the two to differ says so
+     * once, in the call that says so.
+     */
     pub fn setRate(mut self, fps : i32) : void {
         self.periodUs = 0;
         if (fps > 0) {
             self.periodUs = Clock::US_PER_SEC / (fps as i64);
         }
+        if (!self.tickPinned) {
+            self.stepUs = self.periodUs;
+        }
+    }
+
+    /**
+     * How often the simulation steps, in steps per second — independent
+     * of how often the frame is drawn.
+     *
+     * `0` turns `steps` off, so a program that integrates against the
+     * variable `dt` from `tick` gets nothing it did not ask for.
+     */
+    pub fn setTickRate(mut self, hz : i32) : void {
+        self.tickPinned = true;
+        self.stepUs = 0;
+        if (hz > 0) {
+            self.stepUs = Clock::US_PER_SEC / (hz as i64);
+        }
+        self.accUs = 0;
+    }
+
+    /** Microseconds one simulation step stands for; `0` when off. */
+    pub fn step(self) : i64 {
+        return self.stepUs;
+    }
+
+    /**
+     * How many fixed simulation steps the last `tick` earned.
+     *
+     * The other half of the frame loop, and the one a game needs.
+     * Integrating against the variable `dt` makes a jump height depend on
+     * the frame rate; stepping a fixed amount however long the frame took
+     * does not:
+     *
+     * ```
+     * let dt = pacer.tick(clock);        // sleeps to the frame boundary
+     * for (i of 0..pacer.steps()) { world.step(); }
+     * world.draw(pacer.alpha());
+     * ```
+     *
+     * Reads no clock of its own: it drains the time `tick` measured, so
+     * the simulation and the frame share one timeline. Two timelines in
+     * one loop is a bug waiting for someone to subtract them.
+     *
+     * The accumulator is capped at `MAX_CATCHUP_STEPS`, so a stall leaves
+     * the world running slow for a frame rather than trying to catch up
+     * with a hundred steps it can never finish — the spiral of death,
+     * which is the failure a player does not forgive.
+     *
+     * Answers 0 when called twice for one tick: the time has already been
+     * handed out.
+     */
+    pub fn steps(mut self) : i32 {
+        if (self.stepUs <= 0) {
+            return 0;
+        }
+        let ceiling : i64 = self.stepUs * FramePacer::MAX_CATCHUP_STEPS;
+        if (self.accUs > ceiling) {
+            self.accUs = ceiling;
+        }
+        let n : i64 = self.accUs / self.stepUs;
+        self.accUs = self.accUs - n * self.stepUs;
+        return n as i32;
+    }
+
+    /**
+     * How far into the next step the leftover time reaches, 0..1.
+     *
+     * What a renderer interpolates with: drawing a body at the position
+     * its last completed step left it makes motion stutter whenever the
+     * frame rate and the tick rate are not multiples, and blending
+     * towards the next step by this is what removes it. `0` when `steps`
+     * is off.
+     */
+    pub fn alpha(self) : f64 {
+        if (self.stepUs <= 0) {
+            return 0.0;
+        }
+        return (self.accUs as f64) / (self.stepUs as f64);
     }
 
     /** The frame period being targeted, in microseconds; `0` when uncapped. */
@@ -233,6 +337,10 @@ pub class FramePacer {
         if (elapsed > FramePacer::MAX_DELTA_US) {
             elapsed = FramePacer::MAX_DELTA_US;
         }
+        // The same measurement feeds both halves of the loop: `steps`
+        // drains this, so the simulation cannot drift away from the
+        // frame it was measured against.
+        self.accUs = self.accUs + elapsed;
         return (elapsed as f64) / (Clock::US_PER_SEC as f64);
     }
 }
