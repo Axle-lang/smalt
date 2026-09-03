@@ -32,7 +32,7 @@
 // pulled into the build by the seam file that imports them, which is
 // what keeps this header from having to know they exist.
 
-use crate::kernel::{raw, blob, mem};
+use crate::kernel::{raw, blob, mem, store};
 
 use crate::sys::dib;
 

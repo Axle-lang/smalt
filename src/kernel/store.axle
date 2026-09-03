@@ -1,0 +1,345 @@
+// store — the two containers every repainting program builds by hand.
+//
+// Neither is a general-purpose collection. `std::collections` has those,
+// and a program that can afford them should use them. These are for the
+// path where it cannot: a surface that re-reads the machine every second
+// and repaints from what it read, where a `string` per name and a linear
+// scan per lookup are the two costs that grow with the session.
+//
+// # `BytePool` — the one place text lives
+//
+// A name held as a `string` in two containers is the shape that
+// double-frees. A name interned as bytes has one owner, no refcount, and
+// is drawn by `BitmapFont::drawBytes` without ever becoming a heap
+// object again. The pool is that: append-only bytes, referred to
+// afterwards by an `(offset, length)` pair.
+//
+// Append-only and never compacted, which is safe exactly when the things
+// being named are **stable identities** — an executable path, an address,
+// a hostname — each interned once for the life of the session, so the
+// pool grows with the number of distinct things seen rather than with
+// time. A pool over a set that churns wants `reset` between rebuilds
+// instead, which is why that is here and compaction is not.
+//
+// # `SlotIndex` — key to row, in one probe
+//
+// Folding a few hundred rows into a table of a few thousand every second
+// by linear scan is a few million comparisons a second for an answer a
+// hash gives in one probe — and it gets worse as the session runs,
+// because a journal only grows.
+//
+// Open addressing with linear probing, power-of-two capacity, **never
+// resized**: the table is minted at the capacity of the collection it
+// indexes, so it cannot fill past its load factor. There is no `remove`,
+// because removal under linear probing needs tombstones and every caller
+// this exists for rebuilds instead — `clear` is that rebuild.
+//
+// Both are `Closeable`. That is the point of putting them here: a raw
+// block held in a field is a release the author has to remember on every
+// path, and `Closeable` is the compiler remembering it instead (E0511).
+
+use crate::kernel::mem::Mem;
+
+/** Bytes a pool takes when the caller does not say. */
+const STORE_POOL_BYTES : i64 = 1048576;
+
+/** The empty sentinel of an index — no live entry may carry this key. */
+const STORE_EMPTY_KEY : i64 = 0;
+
+/** What a zero key is folded onto, so it cannot read as an empty slot. */
+const STORE_ZERO_ALIAS : i64 = -9223372036854775807;
+
+/** Smallest table an index will build. */
+const STORE_MIN_SLOTS : i32 = 16;
+
+/** The multiplier of the hash — a large odd constant, so low bits spread. */
+const STORE_HASH_MUL : i64 = 6364136223846793005;
+
+/** How far down the product the index is read from. */
+const STORE_HASH_SHIFT : i64 = 40;
+
+/**
+ * An append-only run of bytes, addressed by offset.
+ *
+ * Every failure answers `-1` rather than throwing: a name the pool could
+ * not hold is still a row worth showing, and a caller that gets `-1`
+ * draws the thing without its name. A pool whose allocation was refused
+ * behaves as one that is already full, so nothing downstream tests for
+ * two different failures.
+ */
+pub class BytePool : Closeable {
+    block : i64;
+    cap   : i64;
+    fill  : i64 = 0;
+
+    /** A pool of `capacity` bytes, or a default megabyte when that is not positive. */
+    constructor(capacity : i64) {
+        let n : i64 = capacity;
+        if (n <= 0) {
+            n = STORE_POOL_BYTES;
+        }
+        self.cap = n;
+        self.block = Mem::take(n);
+        if (self.block == 0) {
+            self.cap = 0;
+        }
+    }
+
+    /** The run's address — what `drawBytes` and `Mem` read through. */
+    pub fn base(self) : i64 {
+        return self.block;
+    }
+
+    /** Bytes interned so far. */
+    pub fn used(self) : i64 {
+        return self.fill;
+    }
+
+    /** Bytes the pool can still take. */
+    pub fn spare(self) : i64 {
+        return self.cap - self.fill;
+    }
+
+    /** Whether `n` more bytes fit. */
+    pub fn room(self, n : i64) : bool {
+        return self.block != 0 && n >= 0 && self.fill + n <= self.cap;
+    }
+
+    /**
+     * Forget everything interned.
+     *
+     * **Every offset handed out before this is now meaningless**, so it
+     * belongs at a rebuild that also rebuilds whatever held them — which
+     * is the only time it is safe.
+     */
+    pub fn reset(mut self) : void {
+        self.fill = 0;
+    }
+
+    /** Copy `n` bytes from `src`; answers the offset, or -1 when full. */
+    pub fn put(mut self, src : i64, n : i32) : i64 {
+        if (n <= 0 || src == 0 || !self.room(n as i64)) {
+            return -1;
+        }
+        let at : i64 = self.fill;
+        Mem::copy(self.block + at, src, n as i64);
+        self.fill = at + (n as i64);
+        return at;
+    }
+
+    /**
+     * Intern at most `max` of `s`'s UTF-8 bytes; answers the offset.
+     *
+     * The door a `string` takes into the pool. What survives the call is
+     * bytes; the `string` is the caller's to drop, and normally does so
+     * at the end of the statement that parsed it.
+     */
+    pub fn putString(mut self, s : string, max : i32) : i64 {
+        if (max <= 0 || !self.room(max as i64)) {
+            return -1;
+        }
+        let at : i64 = self.fill;
+        let n : i32 = Mem::internString(self.block, at, s, max);
+        self.fill = at + (n as i64);
+        return at;
+    }
+
+    /** How many bytes `putString` would have interned, for the length pair. */
+    pub fn measure(self, s : string, max : i32) : i32 {
+        let n : i64 = s.byteLength;
+        if (n > (max as i64)) {
+            return max;
+        }
+        return n as i32;
+    }
+
+    /** The byte at `offset`. */
+    pub fn byteAt(self, offset : i64) : i32 {
+        if (self.block == 0 || offset < 0 || offset >= self.fill) {
+            return 0;
+        }
+        return Mem::byteAt(self.block, offset);
+    }
+
+    /**
+     * Whether the `len` bytes at `offset` contain the `needle` run,
+     * compared case-insensitively over ASCII.
+     *
+     * The filter every one of these surfaces has: a reader types a few
+     * letters and the list narrows. Done here so it is one implementation
+     * over the pool rather than one per program, and case-insensitively
+     * because nobody typing a filter means the capital.
+     */
+    pub fn containsFold(self, offset : i64, len : i32, needle : i64, needleLen : i32) : bool {
+        if (needleLen <= 0) {
+            return true;
+        }
+        if (self.block == 0 || len < needleLen) {
+            return false;
+        }
+        for (start of 0..(len - needleLen + 1)) {
+            let hit : bool = true;
+            let i : i32 = 0;
+            while (i < needleLen && hit) {
+                let a : i32 = BytePool::fold(Mem::byteAt(self.block, offset + ((start + i) as i64)));
+                let b : i32 = BytePool::fold(Mem::byteAt(needle, i as i64));
+                if (a != b) {
+                    hit = false;
+                }
+                i = i + 1;
+            }
+            if (hit) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** An ASCII byte lowered to its lowercase form. */
+    pub(file) static fn fold(c : i32) : i32 {
+        if (c >= 65 && c <= 90) {
+            return c + 32;
+        }
+        return c;
+    }
+
+    /** Release the run. Every offset handed out is void after this. */
+    pub fn close(self) : void {
+        Mem::release(self.block);
+    }
+}
+
+/**
+ * A fixed-capacity map from an `i64` key to an `i32` slot.
+ *
+ * Build it at twice the number of entries that will be inserted, so
+ * probe runs stay short and an insert can always find a hole. Inserting
+ * past that fills the table and a later `put` is dropped rather than
+ * looping forever — the capacity is the contract, and a table that grew
+ * would be an allocation on the path this exists to keep allocation-free.
+ */
+pub class SlotIndex : Closeable {
+    keys  : i64;
+    slots : i64;
+    slotCount : i32;
+    mask  : i32;
+    fill  : i32 = 0;
+
+    /** A table sized to the next power of two at or above `capacity`. */
+    constructor(capacity : i32) {
+        let n : i32 = STORE_MIN_SLOTS;
+        while (n < capacity && n < 1073741824) {
+            n = n * 2;
+        }
+        self.slotCount = n;
+        self.mask = n - 1;
+        self.keys = Mem::takeZeroed((n as i64) * 8);
+        self.slots = Mem::take((n as i64) * 4);
+        if (self.keys == 0 || self.slots == 0) {
+            self.slotCount = 0;
+            self.mask = 0;
+        }
+    }
+
+    /** Entries the table can hold before it is full. */
+    pub fn capacity(self) : i32 {
+        return self.slotCount;
+    }
+
+    /** Entries inserted. */
+    pub fn size(self) : i32 {
+        return self.fill;
+    }
+
+    /**
+     * `key` as the table stores it.
+     *
+     * Zero is the empty sentinel, so a real zero key is folded onto a
+     * value no caller can produce — without it a genuine zero key would
+     * be invisible, and a lookup for it would read exactly like a key
+     * that was never inserted.
+     */
+    pub(file) static fn live(key : i64) : i64 {
+        if (key == STORE_EMPTY_KEY) {
+            return STORE_ZERO_ALIAS;
+        }
+        return key;
+    }
+
+    /** The first probe position for `key`. */
+    pub(file) fn start(self, key : i64) : i32 {
+        // The high bits of a multiply by a large odd constant, so keys
+        // differing only low down — a port, a pid, a chunk coordinate —
+        // still spread across the table.
+        return (((key * STORE_HASH_MUL) >> STORE_HASH_SHIFT) as i32) & self.mask;
+    }
+
+    /** The slot stored under `key`, or -1. */
+    pub fn get(self, key : i64) : i32 {
+        if (self.slotCount == 0) {
+            return -1;
+        }
+        let k : i64 = SlotIndex::live(key);
+        let at : i32 = self.start(k);
+        for (probe of 0..self.slotCount) {
+            let held : i64 = Mem::qwordOf(self.keys, at as i64);
+            if (held == STORE_EMPTY_KEY) {
+                return -1;
+            }
+            if (held == k) {
+                return Mem::wordOf(self.slots, at as i64);
+            }
+            at = (at + 1) & self.mask;
+        }
+        return -1;
+    }
+
+    /** Whether `key` has an entry. */
+    pub fn has(self, key : i64) : bool {
+        return self.get(key) >= 0;
+    }
+
+    /**
+     * Record `slot` under `key`, replacing any entry already there.
+     *
+     * A full table drops the insert. That is a table the caller
+     * undersized, and answering `false` lets them say so — a silent
+     * failure here is a row that exists and can never be found again.
+     */
+    pub fn put(mut self, key : i64, slot : i32) : bool {
+        if (self.slotCount == 0) {
+            return false;
+        }
+        let k : i64 = SlotIndex::live(key);
+        let at : i32 = self.start(k);
+        for (probe of 0..self.slotCount) {
+            let held : i64 = Mem::qwordOf(self.keys, at as i64);
+            if (held == STORE_EMPTY_KEY) {
+                Mem::putQwordOf(self.keys, at as i64, k);
+                Mem::putWordOf(self.slots, at as i64, slot);
+                self.fill = self.fill + 1;
+                return true;
+            }
+            if (held == k) {
+                Mem::putWordOf(self.slots, at as i64, slot);
+                return true;
+            }
+            at = (at + 1) & self.mask;
+        }
+        return false;
+    }
+
+    /** Empty the table, keeping its capacity — the rebuild. */
+    pub fn clear(mut self) : void {
+        if (self.slotCount != 0) {
+            Mem::clear(self.keys, (self.slotCount as i64) * 8);
+        }
+        self.fill = 0;
+    }
+
+    /** Release the two tables. */
+    pub fn close(self) : void {
+        Mem::release(self.keys);
+        Mem::release(self.slots);
+    }
+}
