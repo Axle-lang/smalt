@@ -2,7 +2,7 @@
 
 # 🪟 smalt
 
-### A window, an event queue, a clock, 3D maths and a complete software renderer — written entirely in [**Axle**](https://axle-lang.dev)
+### A window, an event queue, a clock, a 2-D drawing surface with text, 3D maths and a complete software renderer — written entirely in [**Axle**](https://axle-lang.dev)
 
 **Not a binding.** There is no `SDL2.dll` to copy, no vcpkg prefix to find, no `[link]` section to fill in. smalt speaks Win32, X11 and Wayland itself, and rasterises every triangle on the CPU.
 
@@ -53,9 +53,12 @@
 | **Platforms** | Windows (Win32: `kernel32`, `user32`, `gdi32`, `winmm`) and Linux, on X11 (`X11`, `asound`, `c`) or Wayland (`wayland-client`, `asound`, `c`) — one source tree, the target picks the backend and a feature picks between the two Linux ones |
 | **Scope** | What a 3D game needs — roughly SDL3 minus gamepads, plus the maths and the renderer SDL leaves to you |
 | **Rendering** | Software rasteriser on the CPU — near-plane clipping, back-face culling, depth buffer, perspective-correct interpolation, Blinn-Phong |
+| **2-D** | A clipped `Frame` over any surface: rectangles, rounded rectangles, rules, borders, rings, blends, traces — plus two baked anti-aliased faces and a formatter that writes figures as bytes, so a repaint allocates nothing |
+| **Idling** | `Events::wait` blocks in the OS until something happens. A program that repaints on change costs no measurable CPU between changes |
 | **Failure** | A subsystem that cannot start raises `PlatformError` **from its constructor** — there is no half-built object to test |
 | **Teardown** | Every handle-holding class is `Closeable`, so dropping one without `close()` is a compile error (**E0511**), not a leak found later |
 | **Portability** | The OS lives under the port directories `axle.toml` declares and nowhere else. Not one `use` in the portable half names a port; `tools/check_seam.sh` holds that, and `axle ports` holds the other half — every seam implemented for every port. A port's implementation is `pub(crate)`: smalt's own files reach it, a program that depends on smalt cannot name it. |
+| **Known limits** | Every one of them, with what it would take to lift it: [`LIMITATIONS.md`](LIMITATIONS.md) |
 | **`unsafe`** | Only where an OS record is laid out through a typed pointer — `kernel/raw` (the accessors every other site goes through), the platform backends, and `io/bmp`. Nothing above them contains one. |
 
 ## ✨ Highlights
@@ -65,6 +68,11 @@
 - 🔌 **A protocol with no library to call it** — `libwayland-client` exports interface *tables* and no request functions: every request is one `wl_proxy_marshal_flags` with an opcode, and an extension's tables are generated per project into C that a pure-Axle library does not have. So smalt builds xdg-shell's three and xdg-decoration's two itself, at startup, out of the same fields the generator emits.
 - 🎮 **SDL's event model, kept** — the queue is decoupled from the OS message pump, every event carries the same `kind` / `timestamp` prefix, and scancodes are physical positions, so `Scancode::W` is the key above `Scancode::S` on AZERTY too.
 - 📐 **The maths SDL never shipped** — `Vec2` `Vec3` `Vec4` `Mat4` `Quat` `Aabb` `Plane` `Frustum`, all value structs, all tested by a headless example.
+- 🖼️ **A 2-D surface, so a program does not have to bring one** — `Surface::frame()` hands back a `Frame`: a clip rectangle and the primitives every overlay is built from. `clipped()` answers a *copy*, so there is no `unclip` to forget and nesting can only narrow. It is also the shape that removes an aliasing hazard: a getter that hands back the colour buffer as an `i32[]` gives it two owners, and the second release is a fault on exit after everything has been drawn.
+- 🔤 **Text, without carrying a font** — two faces baked in, 2 bits of coverage per pixel so they are anti-aliased against whatever they land on. `draw` takes a `string` for a label; `drawBytes` takes an address for a figure, because formatting through `string` mints a few hundred allocations a second for text thrown away in the same frame. Three programs built on smalt each wrote this; two ended up with the same six hundred lines of glyph table, already drifting apart.
+- 🔢 **Figures straight to bytes** — `Fmt` and `Scratch` write a count, a percentage, a byte size, an elapsed span or a clock into a block you own and answer a length. A repaint allocates nothing at all.
+- 😴 **A loop that actually sleeps** — `Events::wait(win, clock, timeoutMs)` blocks in the OS until something arrives. A tool that repaints on change idles at no measurable CPU, instead of choosing between spinning a core and answering input late.
+- ⏱️ **Both halves of a frame loop** — `FramePacer` hands out a variable `dt` *and* fixed simulation steps (`steps()` / `alpha()`) drained from the same measurement, so the simulation and the frame cannot drift apart into two timelines.
 - 🎨 **A complete software 3D pipeline** — clip, project, cull, half-space fill with a reciprocal depth buffer, perspective-correct attributes, one directional light. No GPU touched, nothing to install.
 - 🔊 **Sound with no callback** — every low-latency audio API wants to call *you*, and Axle cannot hand out a function address. `waveOut` opened with `CALLBACK_NULL` reports a finished block as a flag you poll; ALSA's `snd_pcm_avail_update` answers the same question. One three-call cycle, both platforms.
 - 🧯 **Failure and teardown are the compiler's business** — constructors raise, `Closeable` is enforced, and `defer` covers the six ways out of `Bmp::read`.
@@ -82,7 +90,7 @@ smalt = { path = "../smalt" }
 ```
 
 ```axle
-use smalt::{Platform, PlatformError, Events, EventKind, Clock, FramePacer, SoftDevice, Camera, Color, WINDOW_RESIZABLE};
+use smalt::{Platform, PlatformError, WindowDesc, Events, EventKind, Clock, FramePacer, SoftDevice, Camera, Color};
 
 fn main() : i32 {
     try {
@@ -96,7 +104,9 @@ fn main() : i32 {
 fn run() : i32 ! PlatformError {
     let platform = new Platform()?;
     defer platform.close();
-    let win = platform.createWindow("game", 1280, 720, WINDOW_RESIZABLE)?;
+    let win = platform.open(
+        WindowDesc { title: "game", w: 1280, h: 720, resizable: true }
+    )?;
     defer win.close();
     let clock = new Clock();
     defer clock.close();
@@ -161,19 +171,22 @@ cd examples/spinning_cube && axle build -O 2 && ./target/spinning_cube.exe
 
 A textured cube on a tiled floor, lit and depth-tested, at a locked 60 fps. `WASD` to move, `Tab` to capture the mouse and look around, `Escape` to quit.
 
-**The six examples come in two kinds, and the split is the point.**
+**The examples come in three kinds, and the split is the point.**
 
 | Example | What it drives |
 |---|---|
 | `spinning_cube` | the full 3D pipeline — camera, meshes, textures, lights, the rasteriser |
+| `ui_panel` | the 2-D surface — a clipped card, rounded corners, anti-aliased text, a live figure, `Events::wait`, and `F12` to a BMP |
 | `donut3d` | **its own** renderer, over `SoftDevice::pixels()` — smalt is only the window |
 | `mario3d` | same: a game that already had a renderer and just wanted a framebuffer |
 | `hello_window` | the smallest thing that opens and closes cleanly |
-| `self_check` | asserts the maths and the frame pacer — runs headless, no display needed |
+| `self_check` | asserts the maths, the frame pacer, the clip, the glyph metrics, the formatters and the containers — runs headless, no display needed |
 | `audio_check` | asserts the WAV decode and the device's block cycle |
 | `proc_check` | asserts the window procedure — headless, under a second |
 
 A program that already has a renderer should not have to adopt one to get a window. smalt stays a framebuffer underneath, and says so by shipping two programs that use it that way.
+
+`ui_panel --snap` draws one frame, writes `ui_panel.bmp` and quits, so the layout can be checked without anyone standing over the machine at the right moment.
 
 ## 🗺️ Coming from SDL
 
@@ -181,11 +194,12 @@ A program that already has a renderer should not have to adopt one to get a wind
 |---|---|
 | `SDL_Init` / `SDL_Quit` | `new Platform()` / `platform.close()` |
 | `SDL_GetError` | `catch e : PlatformError` → `e.message` |
-| `SDL_CreateWindow` | `platform.createWindow(title, w, h, flags)` |
-| `SDL_WindowFlags` | `WINDOW_RESIZABLE` and friends, combined with `\|` |
+| `SDL_CreateWindow` | `platform.open(WindowDesc { … })`, or `createWindow(title, w, h, flags)` |
+| `SDL_WindowFlags` | `Window::RESIZABLE` and friends, combined with `\|` — or the named fields of `WindowDesc` |
 | `SDL_DestroyWindow` | `win.close()` |
 | `SDL_PumpEvents` | `events.pump(win, clock)` |
 | `SDL_PollEvent` | `events.hasNext()` / `events.next()` |
+| `SDL_WaitEventTimeout` | `events.wait(win, clock, timeoutMs)` — blocks in the OS, then pumps |
 | `SDL_Event` (a union) | `Event` — one flat struct + `EventKind` |
 | `SDL_GetKeyboardState` | `events.isKeyDown(Scancode::W)` |
 | `SDL_Scancode` | `Scancode` — same numbering, same meaning |
@@ -195,9 +209,16 @@ A program that already has a renderer should not have to adopt one to get a wind
 | `SDL_GetPerformanceCounter` | `clock.counter()` / `clock.frequency()` |
 | `SDL_Delay` / `SDL_DelayPrecise` | `clock.delay(ms)` / `clock.delayUntil(us)` |
 | *(SDL ships no frame pacer)* | `FramePacer` — `pacer.tick(clock)` sleeps and answers `dt` |
+| *(nor a fixed timestep)* | `pacer.steps()` / `pacer.alpha()`, drained from the same measurement |
 | `SDL_LoadBMP` | `Bmp::load(path)`; `Bmp::read` raises `IOException` |
+| `SDL_SaveBMP` | `Bmp::write(path, frame)` |
 | `SDL_LoadFile` | `AssetFile::readAll(path)` |
 | `SDL_Rect` | `Rect` |
+| `SDL_FillSurfaceRect` | `frame.fillRect(rect, packed)` — and `fillRound`, `border`, `shade`, `ring`, `spark` |
+| `SDL_SetClipRect` | `frame.clipped(rect)` — a *copy*, so there is no restore to forget |
+| *(SDL ships no font; SDL_ttf is a separate library and a C dependency)* | `BitmapFont::baked(Face::Ui)` — two faces baked in, anti-aliased; `draw` for a label, `drawBytes` for a figure, `fromTables` for a face of your own |
+| *(SDL ships no formatter)* | `Fmt` / `Scratch` — figures to bytes, so a repaint allocates nothing |
+| *(nor a byte pool or a slot index)* | `BytePool` / `SlotIndex`, both `Closeable` |
 | `SDL_GPUDevice` | `SoftDevice`, behind the `RenderDevice` trait |
 | `SDL_BeginGPURenderPass` … `SDL_SubmitGPUCommandBuffer` | `beginFrame` … `endFrame` |
 | `SDL_PushGPUVertexUniformData` (the MVP) | `setCamera` + a draw's `model` argument |
@@ -224,11 +245,12 @@ Layers, bottom to top. **A module never reaches upward.**
                                   │
    ┌──────────────────────────────▼──────────────────────────────────────┐
    │  render/   device (trait) · color · vertex · mesh · texture · camera │
+   │            frame (2-D) · glyphs · text · surface                     │
    │            soft/ target · present · raster · shade · device_soft     │
    ├─────────────────────────────────────────────────────────────────────┤
    │  audio/    clip (WAV) · mixer (voices) · bank (variants)             │
    ├─────────────────────────────────────────────────────────────────────┤
-   │  math/     vec · mat · quat · geom          io/  file · bmp          │
+   │  math/     vec · mat · quat · geom          io/  file · fmt · bmp    │
    ├─────────────────────────────────────────────────────────────────────┤
    │  video/    window · display · scancode_set1                          │
    │            SEAM  sys_window · sys_drain · sys_cursor                 │
@@ -257,7 +279,7 @@ Layers, bottom to top. **A module never reaches upward.**
    │                     wl_app · xdg_shell · xdg_decoration              │
    │            alsa/    alsa_lib          posix/  posix_time             │
    ├─────────────────────────────────────────────────────────────────────┤
-   │  kernel/   raw ← the pointer accessors · blob                        │
+   │  kernel/   raw ← the pointer accessors · blob · mem · store          │
    └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -461,6 +483,28 @@ round.
 | **No event injection** | There is no `XSendEvent` here, so `selfCheck` proves the two things a client *can* provoke — a `wl_display.sync` answered into a listener of ours, and the `xdg_surface.configure` that came back through the hand-built table — and claims nothing about the focus edges and the close, which only a person can cause. |
 | **No key repeat, no text yet** | A compositor sends no repeats: `repeat_info` asks the *client* to make them. And the character a key produces needs the keymap the compositor sends, which needs `xkbcommon`. Both are additions, not fixes; X11 gets the first from the server and the second from `XLookupString`. |
 
+### The 2-D surface
+
+`render/frame.axle` is the layer three programs built on smalt each wrote for themselves before it existed — a voxel game, a task manager, a network audit. Two of the three ended up with the same six hundred lines of glyph table, re-rasterised, already drifting apart. Four things carry it:
+
+- **A `Frame` is a view, not an owner.** It carries the *address* of a plane somebody else holds, plus the clip in force — four words, no allocation, so `clipped()` is cheap enough to call per widget. That also settles a real crash: a getter handing back the colour buffer as an `i32[]` gives it two owners, and the second release is a fault on exit after everything has been drawn and flushed. There is no array to store, so the mistake is not writable. The price is stated once — **a `Frame` is void after its surface is resized or closed** — and `Surface::frame()` is one call, so taking it at the top of every repaint is both the cheap shape and the correct one.
+
+- **`clipped()` answers a copy.** No `unclip`, nothing to restore on an early return, and nesting can only narrow — a widget handed a clipped frame cannot draw outside what its parent allowed it. That is what makes a list scroll: rows are drawn at their true position, one viewport clips them, and a row crossing the edge is cut mid-pixel rather than appearing whole.
+
+- **The bounds check is per row, not per pixel.** `plot` tests the clip, because a caller plotting one pixel usually cannot say where it lands. The span fillers intersect once and then write a run — four comparisons a row instead of four a pixel — which is why `fillRect` is the call to reach for and `plot` the one to reach for last.
+
+- **Text has two doors, because text has two sources.** `draw` takes a `string`, which is what a label is. `drawBytes` takes an address, which is what a *figure* is: every number on a repainting surface is formatted afresh each frame, and routing those through `string` mints a few hundred allocations a second for text thrown away in the same frame. `io::fmt` writes them as bytes and this draws straight from them, so the repaint path allocates nothing at all.
+
+Glyphs are stored at **2 bits of coverage per pixel**, so text is anti-aliased against whatever it lands on rather than punched out in one colour — at 14 px that is the difference between a UI you read and one you decipher. `drawScaled` multiplies a face by an integer and the coverage survives the multiply, so a scaled heading keeps its edges instead of turning into the staircase a 1-bit font gives you. A game whose pixel font is part of its look keeps it: `BitmapFont::fromTables` takes the same three arrays and hands back every draw method.
+
+### The event loop that sleeps
+
+`Events::wait(win, clock, timeoutMs)` blocks in the OS until something arrives, then pumps. It is one call per port and each one is the platform's own answer: `MsgWaitForMultipleObjects` with `QS_ALLINPUT` on Win32 — the mask covers *sent* messages too, which is where a resize, a focus change and a close arrive; `XPending`, then `XFlush`, then `poll` on `XConnectionNumber` on X11, in that order, because Xlib buffers events in user space and waiting on the socket with events in hand is a program that hangs with its input sitting in memory; and libwayland's prepare/flush/poll/read with the deadline handed to the poll in the middle of it.
+
+Without it a program that repaints on change has to choose between spinning a core and sleeping a fixed period — which answers input that much later and still wakes a hundred times a second to find nothing. Two real tools written on smalt ended their loops with `clock.delay(8)`, and both of their headers say, in as many words, that a tool measuring the machine should not be near the top of its own list.
+
+A frame-driven game should keep calling `pump` and pace with `FramePacer`: waiting for input in a loop that must draw the next frame anyway is a frame that arrives late.
+
 ### The rendering pipeline
 
 `render/soft/` is a complete rasteriser: near-plane clipping, perspective divide, viewport transform, back-face culling, half-space triangle fill with a depth buffer, perspective-correct attribute interpolation, and Blinn-Phong shading with one directional light. Three details carry it:
@@ -480,23 +524,25 @@ restoration after a hide, and fractional scaling. Each is an addition
 rather than a fix, and the [Wayland backend](#the-wayland-backend)
 section says which extension or library each one needs.
 
-The GPU one is a limit of the language rather than a choice. Modern OpenGL, Direct3D 11 and 12, and Vulkan all require calling a function address obtained at run time — `wglGetProcAddress` for GL above 1.1, a COM vtable slot for D3D — and Axle cannot call an address it did not link. **OpenGL 1.1 remains open**: its entry points are real named exports of `opengl32.dll`, so a `GlDevice` could be written against the existing `RenderDevice` trait with the FFI Axle has today.
+**The GPU one used to be described here as a limit of the language. That was true and is not any more, and the correction matters because it discouraged the work.** These pages said Axle could not call a function address obtained at run time, which would rule out modern OpenGL, Vulkan, D3D and Metal at a stroke. The C function-pointer cast has since landed — the compiler carries a passing test for the `GetProcAddress` round trip, and smalt already imports `GetProcAddress` — so a GPU backend is work nobody has done rather than work nobody can do. [`LIMITATIONS.md §1.1`](LIMITATIONS.md#11-no-gpu-backend) sets out what each API would actually cost; the short version is that **OpenGL 3.3 Core needs nothing further from the language**, and Vulkan needs only one small thing (no unions, so `VkClearValue` is a hand-laid record) plus a generator for its fifteen hundred declarations.
 
-Threads are blocked the same way: `CreateThread` needs a callback, and unlike `WNDCLASSEXW.lpfnWndProc` there is no OS-provided function that does the right thing. The library is single-threaded, which is what SDL requires for video and events anyway.
+Threads were described here as blocked for the same reason. They are not: `spawn` and `Task<T>` are the language's, and smalt uses them itself — `mixerLoop` pumps the audio device on a thread of its own, and `Mixer` takes its own lock so a game can play a sound from one thread while another pumps. Everything *else* here — the window, the event queue, the surfaces — still belongs to the thread that created the window, which is what both platforms' event paths require.
 
 Display enumeration covers the primary monitor only — `EnumDisplayMonitors` takes a callback; `EnumDisplayDevicesW` does not and would fit, but is not written.
+
+**Everything smalt does not do is written down in one place: [`LIMITATIONS.md`](LIMITATIONS.md).** It also records what is verified by running it, what is only type-checked on every port, and what is neither.
 
 ## 📝 Notes for anyone extending this
 
 Five language rules shape the signatures here:
 
 - **Every member sits on a visibility ladder**, fields and methods alike: unmarked means the declaring class's own, then `pub(derived)`, `pub(file)`, `pub(crate)`, `pub`. smalt writes the narrowest rung that compiles, so the marker is information: `KeyboardState::isDown` is `pub` and `KeyboardState::press` is `pub(crate)`, which says in the signature what the docs used to say in prose — the drain writes the input state and a game reads it. A seam class declares `pub(crate)` and so do its methods; an implementation helper is `pub(file)`.
-- **A constant is a `static` field when it belongs to a class, and a `pub const` when it crosses the crate boundary.** That is not a preference: a `static` field is class-scoped *inside the crate that declares it* and a program that depends on smalt cannot name one, so `Camera::PITCH_LIMIT` and `Raster::MIN_W` are fields while `WINDOW_RESIZABLE` and the four `AUDIO_*` numbers stay globals. Both take a literal, so a constant derived from another is a `static fn` — `AudioFormat::frameBytes()`.
+- **A constant is a `static` field on the class it belongs to.** This used to read the other way round: a `static` field did not cross a crate boundary, so a published constant had to be a `pub const` with the class spelled into its name — `WINDOW_RESIZABLE` rather than `Window::RESIZABLE`. Axle 0.12.1 fixed that, one day after the commit here that wrote the old rule down. So the flags are `Window::RESIZABLE` and friends now, and the prefix is the scope it was imitating. Both forms take a literal, so a constant derived from another is a `static fn` — `AudioFormat::frameBytes()`.
 - **A field's default belongs on the field.** `focusedNow : bool = true;` runs at every construction, so a constructor carries only what depends on an argument, and nine classes here have none at all.
 - **Storing a parameter into a field or an array element needs `own`** (**E0513** otherwise) when the parameter is a *reference* or a value that owns a resource. A plain value struct — `Vertex`, `Vec3`, `Event` — is copied into the slot and needs no keyword.
 - **`mut` on a class parameter is rejected as never-mutated** (**E0281**): calling a mutating method through it is not a mutation *of the binding*.
 
-One shape stays out of reach, and the code works around it on purpose: **a payload-bearing `enum` cannot carry another payload-bearing `enum`**. A variant payload takes a scalar, a payload-free `enum`, a `string`, an owning object, a `Shared`/`Weak` handle or a dynamic array — which is enough for `Event` to become a real tagged union whenever someone wants to do that work. It is a flat struct with a `kind` today (`core/event.axle`) because that is what it was written as.
+One shape stays out of reach: **a payload-bearing `enum` cannot carry another payload-bearing `enum`**. It is worth stating precisely, because it is usually read as ruling out more than it does — a variant payload takes a scalar, a **payload-free** `enum`, a `string`, an owning object, a `Shared`/`Weak` handle or a dynamic array. `Scancode` and `MouseButton` are payload-free, so `Event::KeyDown(Scancode, bool)` is writable **today**. `core/event.axle` is a flat struct with a `kind` tag because that is what the two decode tables were written against, not because the language refuses the tagged union.
 
 **Handing a `Closeable` out of a call reads as a transfer.** A getter that returned a field the object still owns — `Window::native()` did — makes the call site an owner with a release to write (**E0511**), because nothing distinguishes it from `AssetFile::readAll`, which really does hand back a fresh block. The field is exposed at `pub(crate)` instead and read as `win.sys`.
 
