@@ -1,0 +1,444 @@
+// frame — a surface's pixels, a clip rectangle, and everything that puts
+// one of them somewhere.
+//
+// This is the layer three programs built on smalt each wrote for
+// themselves before it existed. It is deliberately *not* the 3D
+// pipeline: no depth buffer, no camera, no mesh. It is the answer to
+// "I have a window and I want to draw a rounded card with a line of text
+// in it", which is what a tool, a HUD and a menu all are.
+//
+// # Why a `struct` and not a class
+//
+// A `Frame` is a **view**, not an owner. It carries the address of a
+// plane somebody else holds — a `Surface`, a `RenderTarget` — plus the
+// clip in force. Copying one is four words and no allocation, which is
+// what makes `clipped` cheap enough to call per widget.
+//
+// It also settles a hazard that cost a real program a crash. A getter
+// that hands back the colour buffer as an `i32[]` gives it two owners:
+// the surface that allocated it and whatever stored the array in a
+// field. Both release it, and the second release is a fault on exit,
+// after everything has been drawn and flushed, with nothing left in the
+// program to point at. A `Frame` cannot be that mistake — there is no
+// array to store, and the address it carries is not an owner.
+//
+// The cost is stated once: **a `Frame` is void after the surface it came
+// from is resized or closed.** Take it again. `Surface::frame` is one
+// call and no allocation, so taking it at the top of every repaint is
+// the shape to write.
+//
+// # The clip is the point
+//
+// Every primitive here honours it, so no caller bounds-checks what it
+// draws. That is what makes a list scroll: rows are drawn at their true
+// position, one viewport clips them, and a row crossing the edge is cut
+// mid-pixel instead of appearing whole.
+//
+// `clipped` answers a **copy** rather than narrowing in place, so there
+// is no `unclip` to forget and no restore to get wrong on an early
+// return:
+//
+// ```
+// let body = f.clipped(viewport);
+// for (row of 0..rows) { drawRow(body, row); }   // `f` is untouched
+// ```
+//
+// # Where the bounds check went
+//
+// `plot` tests the clip, because a caller plotting one pixel usually
+// cannot say where it lands. The span fillers do not: they intersect the
+// rectangle with the clip **once** and then write a run, which is the
+// difference between four comparisons per pixel and four per row. That
+// is why `fillRect` is the call to reach for and `plot` the one to reach
+// for last.
+
+use crate::kernel::mem::Mem;
+use crate::math::geom::Rect;
+use crate::render::color::Color;
+use std::numeric::math;
+
+/** Coverage denominator of the anti-aliased primitives — four levels, 0..3. */
+const FRAME_COVERAGE : i32 = 3;
+
+/** Points sampled around a circle when stroking one. */
+const FRAME_RING_STEPS : i32 = 64;
+
+/**
+ * A plane of packed pixels, and the rectangle drawing is confined to.
+ *
+ * Obtained from `Surface::frame` or `SoftDevice::frame`, never built by
+ * hand — the address has to come from a live buffer, and those two are
+ * the places that have one.
+ */
+pub struct Frame {
+    /** Address of the plane's first pixel. Not an owner. */
+    px  : i64;
+
+    /** Plane width, in pixels — the row stride. */
+    pub w : i32;
+
+    /** Plane height, in pixels. */
+    pub h : i32;
+
+    /** Clip left, already inside the plane. */
+    cx0 : i32 = 0;
+
+    /** Clip top. */
+    cy0 : i32 = 0;
+
+    /** Clip right, exclusive. */
+    cx1 : i32 = 0;
+
+    /** Clip bottom, exclusive. */
+    cy1 : i32 = 0;
+
+    /**
+     * A frame over the `w` by `h` plane at `base`, clipped to all of it.
+     *
+     * `pub(crate)` on purpose: the two callers that have a live plane are
+     * in this library, and a frame built over an address a program
+     * computed itself is the aliasing hazard this type exists to remove.
+     */
+    pub(crate) static fn over(base : i64, w : i32, h : i32) : Frame {
+        return Frame { px: base, w: w, h: h, cx1: w, cy1: h };
+    }
+
+    /** The rectangle drawing is currently confined to. */
+    pub fn clipRect(self) : Rect {
+        return Rect::make(self.cx0, self.cy0, self.cx1 - self.cx0, self.cy1 - self.cy0);
+    }
+
+    /** Whether the clip encloses any pixel at all. */
+    pub fn isEmpty(self) : bool {
+        return self.cx0 >= self.cx1 || self.cy0 >= self.cy1;
+    }
+
+    /**
+     * A copy of this frame confined to `r`, intersected with the clip
+     * already in force.
+     *
+     * Nesting narrows and never widens, so a widget handed a clipped
+     * frame cannot draw outside what its parent allowed it.
+     */
+    pub fn clipped(self, r : Rect) : Frame {
+        return Frame {
+            px: self.px,
+            w: self.w,
+            h: self.h,
+            cx0: self.cx0.max(r.x),
+            cy0: self.cy0.max(r.y),
+            cx1: self.cx1.min(r.x + r.w),
+            cy1: self.cy1.min(r.y + r.h),
+        };
+    }
+
+    /** A copy with the clip released back to the whole plane. */
+    pub fn whole(self) : Frame {
+        return Frame::over(self.px, self.w, self.h);
+    }
+
+    /** Whether (`x`, `y`) is inside the clip. */
+    pub fn holds(self, x : i32, y : i32) : bool {
+        return x >= self.cx0 && x < self.cx1 && y >= self.cy0 && y < self.cy1;
+    }
+
+    /** The pixel at (`x`, `y`), or 0 outside the clip. */
+    pub fn at(self, x : i32, y : i32) : i32 {
+        if (!self.holds(x, y)) {
+            return 0;
+        }
+        return Mem::wordOf(self.px, (y as i64) * (self.w as i64) + (x as i64));
+    }
+
+    /** Write `packed` at (`x`, `y`), or nothing if the clip refuses it. */
+    pub fn plot(self, x : i32, y : i32, packed : i32) : void {
+        if (!self.holds(x, y)) {
+            return;
+        }
+        Mem::putWordOf(self.px, (y as i64) * (self.w as i64) + (x as i64), packed);
+    }
+
+    /**
+     * Write `packed` at (`x`, `y`) mixed `num`/`den` into what is there.
+     *
+     * The anti-aliasing primitive: a glyph edge at coverage 2 of 3, the
+     * one column of a rounded corner that lands between two pixels.
+     */
+    pub fn blend(self, x : i32, y : i32, packed : i32, num : i32, den : i32) : void {
+        if (!self.holds(x, y)) {
+            return;
+        }
+        if (num >= den) {
+            self.plot(x, y, packed);
+            return;
+        }
+        let idx : i64 = (y as i64) * (self.w as i64) + (x as i64);
+        Mem::putWordOf(
+            self.px,
+            idx,
+            Color::mix(Mem::wordOf(self.px, idx), packed, num, den)
+        );
+    }
+
+    /** `r` intersected with the clip — where a span filler actually writes. */
+    pub(file) fn span(self, r : Rect) : Rect {
+        let x0 = self.cx0.max(r.x);
+        let y0 = self.cy0.max(r.y);
+        let x1 = self.cx1.min(r.x + r.w);
+        let y1 = self.cy1.min(r.y + r.h);
+        return Rect::make(x0, y0, x1 - x0, y1 - y0);
+    }
+
+    /**
+     * Fill `r` with `packed`.
+     *
+     * The clip is intersected once and the rows are written as runs — no
+     * per-pixel test, which is the whole reason to reach for this rather
+     * than a loop over `plot`.
+     */
+    pub fn fillRect(self, r : Rect, packed : i32) : void {
+        let s = self.span(r);
+        if (s.isEmpty()) {
+            return;
+        }
+        let stride : i64 = self.w as i64;
+        for (y of s.y..(s.y + s.h)) {
+            let at : i64 = (y as i64) * stride + (s.x as i64);
+            for (i of 0..s.w) {
+                Mem::putWordOf(self.px, at + (i as i64), packed);
+            }
+        }
+    }
+
+    /** Fill everything the clip admits with `packed`. */
+    pub fn fill(self, packed : i32) : void {
+        self.fillRect(self.clipRect(), packed);
+    }
+
+    /** A one-pixel horizontal rule. */
+    pub fn hLine(self, x : i32, y : i32, w : i32, packed : i32) : void {
+        self.fillRect(Rect::make(x, y, w, 1), packed);
+    }
+
+    /** A one-pixel vertical rule. */
+    pub fn vLine(self, x : i32, y : i32, h : i32, packed : i32) : void {
+        self.fillRect(Rect::make(x, y, 1, h), packed);
+    }
+
+    /** A one-pixel outline just inside `r`. */
+    pub fn border(self, r : Rect, packed : i32) : void {
+        if (r.isEmpty()) {
+            return;
+        }
+        self.hLine(r.x, r.y, r.w, packed);
+        self.hLine(r.x, r.y + r.h - 1, r.w, packed);
+        self.vLine(r.x, r.y + 1, r.h - 2, packed);
+        self.vLine(r.x + r.w - 1, r.y + 1, r.h - 2, packed);
+    }
+
+    /**
+     * Push everything `r` admits `num`/`den` of the way towards `packed`.
+     *
+     * A modal's dimmed backdrop, a disabled row, a hover tint — anything
+     * that darkens what is already drawn rather than replacing it.
+     */
+    pub fn shade(self, r : Rect, packed : i32, num : i32, den : i32) : void {
+        let s = self.span(r);
+        if (s.isEmpty() || den <= 0 || num <= 0) {
+            return;
+        }
+        let stride : i64 = self.w as i64;
+        for (y of s.y..(s.y + s.h)) {
+            let at : i64 = (y as i64) * stride + (s.x as i64);
+            for (i of 0..s.w) {
+                let idx : i64 = at + (i as i64);
+                Mem::putWordOf(
+                    self.px,
+                    idx,
+                    Color::mix(Mem::wordOf(self.px, idx), packed, num, den)
+                );
+            }
+        }
+    }
+
+    /**
+     * The horizontal inset a corner circle of radius `rr` gives up at
+     * row `dy`, and the coverage of the pixel the inset lands between.
+     *
+     * Split out because the filled and the stroked rounded rectangle both
+     * need it and must agree to the pixel, or a card and its outline sit
+     * a column apart at the corners.
+     */
+    pub(file) static fn cornerInset(rr : i32, dy : i32) : (inset: i32, cover: i32) {
+        let d : f64 = (rr as f64) - 0.5 - (dy as f64);
+        let span : f64 = ((rr as f64) * (rr as f64) - d * d).sqrt();
+        let whole : i32 = span.floorToInt() as i32;
+        let cover : i32 = ((span - (whole as f64)) * (FRAME_COVERAGE as f64)).floorToInt() as i32;
+        return (rr - whole, cover);
+    }
+
+    /**
+     * A filled rectangle with corners of radius `radius`.
+     *
+     * Each row is inset by the span its corner circle gives up at that
+     * height, and the one pixel where the inset lands between two columns
+     * is blended — enough to keep a corner from reading as a staircase at
+     * the radii a UI uses. A radius of zero, or one larger than half the
+     * box, degrades to a plain rectangle rather than being refused.
+     */
+    pub fn fillRound(self, r : Rect, radius : i32, packed : i32) : void {
+        if (r.isEmpty()) {
+            return;
+        }
+        let rr : i32 = radius.min(r.w / 2).min(r.h / 2);
+        if (rr <= 0) {
+            self.fillRect(r, packed);
+            return;
+        }
+        self.fillRect(Rect::make(r.x, r.y + rr, r.w, r.h - 2 * rr), packed);
+        for (dy of 0..rr) {
+            let (inset, cover) = Frame::cornerInset(rr, dy);
+            let run : i32 = r.w - 2 * inset;
+            self.fillRect(Rect::make(r.x + inset, r.y + dy, run, 1), packed);
+            self.fillRect(Rect::make(r.x + inset, r.y + r.h - 1 - dy, run, 1), packed);
+            if (cover > 0) {
+                let left : i32 = r.x + inset - 1;
+                let right : i32 = r.x + r.w - inset;
+                self.blend(left, r.y + dy, packed, cover, FRAME_COVERAGE);
+                self.blend(right, r.y + dy, packed, cover, FRAME_COVERAGE);
+                self.blend(left, r.y + r.h - 1 - dy, packed, cover, FRAME_COVERAGE);
+                self.blend(right, r.y + r.h - 1 - dy, packed, cover, FRAME_COVERAGE);
+            }
+        }
+    }
+
+    /** A one-pixel outline that follows `fillRound`'s corners. */
+    pub fn roundBorder(self, r : Rect, radius : i32, packed : i32) : void {
+        if (r.isEmpty()) {
+            return;
+        }
+        let rr : i32 = radius.min(r.w / 2).min(r.h / 2);
+        if (rr <= 0) {
+            self.border(r, packed);
+            return;
+        }
+        self.hLine(r.x + rr, r.y, r.w - 2 * rr, packed);
+        self.hLine(r.x + rr, r.y + r.h - 1, r.w - 2 * rr, packed);
+        self.vLine(r.x, r.y + rr, r.h - 2 * rr, packed);
+        self.vLine(r.x + r.w - 1, r.y + rr, r.h - 2 * rr, packed);
+        for (i of 0..rr) {
+            let (inset, cover) = Frame::cornerInset(rr, i);
+            let left : i32 = r.x + inset;
+            let right : i32 = r.x + r.w - 1 - inset;
+            self.plot(left, r.y + i, packed);
+            self.plot(right, r.y + i, packed);
+            self.plot(left, r.y + r.h - 1 - i, packed);
+            self.plot(right, r.y + r.h - 1 - i, packed);
+        }
+    }
+
+    /** A one-pixel circle outline of radius `radius` centred on (`cx`, `cy`). */
+    pub fn ring(self, cx : i32, cy : i32, radius : i32, packed : i32) : void {
+        if (radius <= 0) {
+            self.plot(cx, cy, packed);
+            return;
+        }
+        let step : f64 = 2.0 * math::pi() / (FRAME_RING_STEPS as f64);
+        for (i of 0..FRAME_RING_STEPS) {
+            let th : f64 = (i as f64) * step;
+            self.plot(
+                cx + ((th.cos() * (radius as f64)).round() as i32),
+                cy + ((th.sin() * (radius as f64)).round() as i32),
+                packed
+            );
+        }
+    }
+
+    /** A filled disc of radius `radius` centred on (`cx`, `cy`). */
+    pub fn disc(self, cx : i32, cy : i32, radius : i32, packed : i32) : void {
+        let d : i32 = radius * 2;
+        self.fillRound(Rect::make(cx - radius, cy - radius, d, d), radius, packed);
+    }
+
+    /**
+     * A filled trace of `count` samples across `r`, newest at the right
+     * edge, with `lo`..`hi` mapped to the box's full height.
+     *
+     * The vertical band is the caller's because it is a *reading*
+     * decision, not a drawing one: zero-to-peak is right for a percentage
+     * and wrong for a figure that sits near a hundred and sixty and
+     * wobbles by four, where the shape that matters is four pixels tall
+     * at the top of forty.
+     *
+     * Columns are mapped to samples rather than the reverse, so the trace
+     * fills the width whatever the sample count is — including the first
+     * seconds after launch, when there are three.
+     *
+     * `fill` is the body under the line and is the caller's, not read back
+     * off the frame. Deriving it from what is already drawn would be
+     * wrong the moment the trace crosses a boundary in its own background
+     * — and outside the clip there is nothing to read at all. A tenth of
+     * the way from the surface towards `ink` is the usual choice:
+     * `Color::mix(surface, ink, 1, 6)`.
+     */
+    pub fn spark(
+        self,
+        r : Rect,
+        samples : i32[],
+        count : i32,
+        lo : i32,
+        hi : i32,
+        ink : i32,
+        fill : i32
+    ) : void {
+        if (count < 2 || r.w < 2 || r.h < 3 || hi <= lo) {
+            return;
+        }
+        let span : i32 = hi - lo;
+        for (col of 0..r.w) {
+            let idx : i32 = count - 1 - (((r.w - 1 - col) * (count - 1)) / (r.w - 1));
+            let v : i32 = samples[idx as i64];
+            let up : i32 = (r.h - 1 - ((v - lo) * (r.h - 1)) / span).max(0).min(r.h - 1);
+            self.fillRect(Rect::make(r.x + col, r.y + up, 1, r.h - up), fill);
+            self.plot(r.x + col, r.y + up, ink);
+        }
+    }
+
+    /**
+     * Copy a `srcW` by `srcH` plane at `src` so its top-left lands at
+     * (`x`, `y`).
+     *
+     * The one call that puts an image on the frame — an icon, a tile out
+     * of an atlas, a previously captured region. Both planes are packed
+     * words, so this is a run copy per row and no conversion.
+     */
+    pub fn blit(self, x : i32, y : i32, src : i64, srcW : i32, srcH : i32) : void {
+        let s = self.span(Rect::make(x, y, srcW, srcH));
+        if (s.isEmpty() || src == 0) {
+            return;
+        }
+        let stride : i64 = self.w as i64;
+        for (row of 0..s.h) {
+            let dy : i32 = s.y + row;
+            let sy : i32 = dy - y;
+            let dstAt : i64 = (dy as i64) * stride + (s.x as i64);
+            let srcAt : i64 = (sy as i64) * (srcW as i64) + ((s.x - x) as i64);
+            for (i of 0..s.w) {
+                Mem::putWordOf(self.px, dstAt + (i as i64), Mem::wordOf(src, srcAt + (i as i64)));
+            }
+        }
+    }
+
+    /**
+     * The plane's address, for an inner loop that has proved its index.
+     *
+     * The escape hatch, and the only one: a rasteriser that walks spans
+     * it computed itself pays neither the clip test nor the multiply.
+     * Everything the address is good for is in `Mem`, and the clip is
+     * this frame's knowledge, not the address's — a caller that takes it
+     * is taking the bounds check with it.
+     */
+    pub fn base(self) : i64 {
+        return self.px;
+    }
+}

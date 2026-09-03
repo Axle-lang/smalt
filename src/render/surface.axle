@@ -11,22 +11,27 @@
 // taken apart into pixels you write yourself*. A `Surface` is those
 // pixels, the blit that puts them on a window, and nothing else.
 //
-// # Two ways to reach the pixels, and when to use which
+// # Three ways to reach the pixels, and when to use which
 //
-//   * `pixels()` — the `i32[]`, bounds-checked, `y * width + x`. This is
-//     the one to use.
+//   * `frame()` — a `Frame`: the clip rectangle and every 2-D primitive.
+//     **This is the one to use.** It owns nothing, costs no allocation,
+//     and is what a repaint should take afresh each time.
+//   * `pixels()` — the `i32[]`, bounds-checked, `y * width + x`, for a
+//     program that *is* the renderer and wants to walk the array itself.
+//     Pass it; do not store it (see its own note).
 //   * `base()` — the same buffer's address, for the inner loop of a
 //     renderer that has already proved its index and does not want the
 //     check. Everything the address is good for is in `Mem`.
 //
-// The second is why `resize` frees by hand: handing the buffer out — as
-// an array or as an address — is what stops the compiler reclaiming it
+// The last two are why `resize` frees by hand: handing the buffer out —
+// as an array or as an address — is what stops the compiler reclaiming it
 // on reassignment, because it can no longer prove nobody else is holding
 // it. `resize` knows what the compiler cannot: a resize is drained from
 // the event queue *before* the frame that blits, so the buffer the last
 // blit read is dead by the time this runs.
 
 use crate::kernel::mem::Mem;
+use crate::render::frame::Frame;
 use crate::render::soft::present::Presenter;
 use crate::video::window::Window;
 
@@ -59,7 +64,17 @@ pub class Surface : Closeable {
         return (self.w as i64) * self.h;
     }
 
-    /** The pixels, addressed `y * width + x`. */
+    /**
+     * The pixels, addressed `y * width + x`.
+     *
+     * **Passing what this returns is safe; storing it is not.** The array
+     * is the surface's, and a field that holds it makes the buffer's
+     * second owner — both release it, and the second release is a fault
+     * on exit, after everything has been drawn. `frame()` is the shape
+     * that cannot be that mistake, and is what a caller wanting to *draw*
+     * should take. This is for a caller with a renderer of its own, which
+     * hands the array straight to it and keeps nothing.
+     */
     pub fn pixels(self) : i32[] {
         return self.colour;
     }
@@ -73,6 +88,20 @@ pub class Surface : Closeable {
      */
     pub fn base(self) : i64 {
         return Mem::addressOf(self.colour);
+    }
+
+    /**
+     * A drawing view of these pixels, clipped to all of them.
+     *
+     * The call to reach for. It is the same address `base()` answers,
+     * wrapped in the clip and the primitives, and it costs no allocation
+     * — so taking it at the top of every repaint is the shape to write,
+     * which is also what keeps it correct across a `resize`.
+     *
+     * **Void after the next `resize` or `close`.** Take it again.
+     */
+    pub fn frame(self) : Frame {
+        return Frame::over(self.base(), self.w, self.h);
     }
 
     /**

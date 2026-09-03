@@ -11,9 +11,11 @@
 // area, and until it is, `Presenter` scales the old framebuffer so no
 // frame is dropped for want of a buffer.
 
+use crate::kernel::mem::Mem;
 use crate::math::mat::Mat4;
 use crate::math::vec::{Vec3, Vec4};
 use crate::render::camera::Camera;
+use crate::render::frame::Frame;
 use crate::render::color::Color;
 use crate::render::device::RenderDevice;
 use crate::render::mesh::Mesh;
@@ -100,9 +102,32 @@ pub class SoftDevice : RenderDevice, Closeable {
      *
      * The array aliases the framebuffer: writes land in the next
      * `endFrame`. It is invalidated by `resize`, so re-read it after one.
+     *
+     * **Passing what this returns is safe; storing it is not.** The array
+     * is the surface's, and a field that holds it makes the buffer's
+     * second owner — both release it, and the second release is a fault
+     * on exit, after everything has been drawn. `frame()` is the shape
+     * that cannot be that mistake, and is what a caller wanting to *draw*
+     * should take. This is for a caller with a renderer of its own, which
+     * hands the array straight to it and keeps nothing.
      */
     pub fn pixels(mut self) : i32[] {
         return self.target.pixels();
+    }
+
+    /**
+     * A 2-D drawing view of the colour buffer, clipped to all of it.
+     *
+     * What a HUD, a menu or a debug overlay draws through, after the 3-D
+     * pass has filled the frame. It shares the buffer `endFrame` blits,
+     * so there is no upload step and no second copy of the window's worth
+     * of pixels — and unlike `pixels()` it hands out no array, so it
+     * cannot be stored in a field and released a second time.
+     *
+     * **Void after the next `resize`.** Take it again.
+     */
+    pub fn frame(mut self) : Frame {
+        return Frame::over(Mem::addressOf(self.target.pixels()), self.width(), self.height());
     }
 
     /** Write `c` at (`x`, `y`) with no depth test — overlays and diagnostics. */
