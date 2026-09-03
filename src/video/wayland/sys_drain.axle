@@ -39,6 +39,30 @@ class SysDrain {
     }
 
     /**
+     * Sleep until the compositor has sent something, or `timeoutMs`
+     * elapses; answers whether anything was read.
+     *
+     * The same sequence `drain` runs, with the deadline handed to the
+     * `poll` in the middle of it rather than a zero — which is why the
+     * read lives in `wl_input` and takes the timeout, instead of this
+     * port growing a second copy of libwayland's ordering rules.
+     *
+     * What arrived is left on the ring for the next `drain` to turn into
+     * events. Answering "something is there" and decoding it in the
+     * ordinary place is what keeps one path through the callbacks.
+     *
+     * A negative `timeoutMs` waits indefinitely.
+     */
+    pub(crate) static fn waitReady(scratch : Blob, win : SysWindow, timeoutMs : i32) : bool {
+        unsafe {
+            let st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
+            let before = (*st).head;
+            readAvailable(scratch, st, timeoutMs);
+            return (*st).head != before || (*st).closePending != 0;
+        }
+    }
+
+    /**
      * Read whatever the compositor has sent, then turn the ring the
      * callbacks filled into events.
      */
@@ -53,7 +77,7 @@ class SysDrain {
         unsafe {
             let st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
             bindInput(winApp(win) as ptr<WlApp>, st);
-            readAvailable(scratch, st);
+            readAvailable(scratch, st, 0);
             drainRing(st, stamp, queue, keys, mouse);
         }
     }

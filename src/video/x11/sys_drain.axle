@@ -44,7 +44,7 @@ use crate::core::keyboard::{KeyboardState, Scancode};
 use crate::core::mouse::{MouseButton, MouseState};
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
-use crate::sys::x11_lib::{XNextEvent, XPending};
+use crate::sys::x11_lib::{poll, PollFd, POLL_IN, XConnectionNumber, XFlush, XNextEvent, XPending};
 use crate::sys::x11_types::{XAnyEvent, XButtonEvent, XKeyEvent, XMotionEvent};
 use crate::sys::x11_const::{X_BUTTON_MIDDLE, X_BUTTON_PRESS, X_BUTTON_RELEASE, X_BUTTON_RIGHT, X_BUTTON_WHEEL_DOWN, X_BUTTON_WHEEL_UP, X_EVENT_BYTES, X_KEY_PRESS, X_KEY_RELEASE, X_MOTION_NOTIFY};
 use crate::video::sys_window::SysWindow;
@@ -56,6 +56,40 @@ class SysDrain {
     /** A block sized for exactly one `XEvent`. */
     pub(crate) static fn newScratch() : Blob {
         return new Blob(X_EVENT_BYTES);
+    }
+
+    /**
+     * Sleep until the connection has something for this window, or
+     * `timeoutMs` elapses; answers whether something arrived.
+     *
+     * Three steps, and each is load-bearing. **`XPending` first**,
+     * because Xlib buffers events in user space and a descriptor with
+     * nothing left to read says nothing about the queue already in the
+     * library — waiting on the socket with events in hand is a program
+     * that hangs with its input sitting in memory. **`XFlush` next**, so
+     * the requests this frame made are on the wire before anything waits
+     * for their answers. **Then `poll`**, which is `XNextEvent`'s block
+     * with a deadline on it.
+     *
+     * `scratch` is the caller's `XEvent` block, borrowed for the
+     * `pollfd` — it is far larger than one and is not read again until
+     * the next `drain` fills it.
+     *
+     * A negative `timeoutMs` waits indefinitely.
+     */
+    pub(crate) static fn waitReady(scratch : Blob, win : SysWindow, timeoutMs : i32) : bool {
+        let display = connection(win);
+        if (XPending(display) > 0) {
+            return true;
+        }
+        XFlush(display);
+        unsafe {
+            let fds : ptr<PollFd> = scratch.at() as ptr<PollFd>;
+            (*fds).fd = XConnectionNumber(display);
+            (*fds).events = POLL_IN;
+            (*fds).revents = 0;
+            return poll(scratch.at(), 1, timeoutMs) > 0;
+        }
     }
 
     /**

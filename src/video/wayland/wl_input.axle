@@ -273,14 +273,22 @@ pub(crate) fn bindInput(app : ptr<WlApp>, st : ptr<WlWinState>) : void {
 }
 
 /**
- * libwayland's non-blocking read, in the order it must happen.
+ * libwayland's read, in the order it must happen, waiting at most
+ * `timeoutMs` for the socket.
+ *
+ * A `timeoutMs` of zero is the non-blocking read a frame loop does every
+ * frame; a positive one is the sleep an event-driven loop does instead
+ * of polling; a negative one waits indefinitely. The sequence is
+ * unchanged either way — announce the intent to read, flush what is
+ * queued to send, ask the kernel, then either read it or say the read is
+ * off — because it is the *order* libwayland requires, not the deadline.
  *
  * A connection that has failed is reported as a close: a protocol error
  * is not recoverable — every proxy on it is void — so the honest thing
  * to hand a frame loop is the same signal a user's close gives it,
  * rather than a loop that spins on a dead socket.
  */
-pub(crate) fn readAvailable(scratch : Blob, st : ptr<WlWinState>) : void {
+pub(crate) fn readAvailable(scratch : Blob, st : ptr<WlWinState>, timeoutMs : i32) : void {
     unsafe {
         let display = (*st).display;
         if (Raw::isNil(display)) {
@@ -297,7 +305,7 @@ pub(crate) fn readAvailable(scratch : Blob, st : ptr<WlWinState>) : void {
         (*fds).fd = wl_display_get_fd(display);
         (*fds).events = POLL_IN;
         (*fds).revents = 0;
-        if (poll(scratch.at(), 1, 0) > 0) {
+        if (poll(scratch.at(), 1, timeoutMs) > 0) {
             wl_display_read_events(display);
         } else {
             wl_display_cancel_read(display);

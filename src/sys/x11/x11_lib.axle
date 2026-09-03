@@ -100,6 +100,18 @@ extern "C" from "X11" {
     fn XPending(display : ptr) : i32;
 
     /**
+     * `int XConnectionNumber(Display *)` — the socket the server talks on.
+     *
+     * What makes an event-driven loop possible without `XNextEvent`'s
+     * unconditional block: the descriptor can be handed to `poll` with a
+     * deadline, so a program can wait for input *and* wake on its own
+     * schedule. `XPending` still has to be asked first — Xlib buffers
+     * events in user space, and a descriptor with nothing left to read
+     * says nothing about the queue already sitting in the library.
+     */
+    fn XConnectionNumber(display : ptr) : i32;
+
+    /**
      * `int XNextEvent(Display *, XEvent *)`.
      *
      * **Blocks** when the queue is empty, which is why every call is
@@ -263,4 +275,38 @@ extern "C" from "X11" {
      * and "was it already down" is a question the held state answers.
      */
     fn XkbSetDetectableAutoRepeat(display : ptr, detectable : i32, supported : ptr<i32>) : i32;
+}
+
+/**
+ * `struct pollfd` — the record the kernel is handed to wait on a
+ * descriptor.
+ *
+ * Declared in this port rather than shared with the Wayland one: only
+ * one port is active in a build, and a second declaration of a libc
+ * symbol in the same compilation unit is two distinct declarations of
+ * one name. The Wayland port has its own in `sys::wl_libc`, for the same
+ * reason and with the same layout.
+ */
+pub extern "C" struct PollFd {
+    /** The descriptor to watch. */
+    pub fd : i32;
+
+    /** What to watch for. */
+    pub events : i16;
+
+    /** What happened, filled by the kernel. */
+    pub revents : i16;
+}
+
+/** `POLLIN` — there is something to read. */
+pub(crate) const POLL_IN : i16 = 1;
+
+extern "C" from "c" {
+    /**
+     * `int poll(struct pollfd *, nfds_t, int timeout)`.
+     *
+     * A negative timeout waits indefinitely; zero returns at once.
+     * Answers how many descriptors have something to report.
+     */
+    fn poll(fds : ptr, nfds : i64, timeout : i32) : i32;
 }

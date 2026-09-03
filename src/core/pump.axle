@@ -129,6 +129,47 @@ pub class Events : Closeable {
     }
 
     /**
+     * Sleep until something happens, then collect it — the event-driven
+     * loop's one call.
+     *
+     * A program that repaints on **change** rather than on a clock — a
+     * tool, an editor, a menu, anything whose window is still when the
+     * user is — has no reason to run sixty times a second. Without this
+     * its loop has to choose between spinning a core on `pump` and
+     * sleeping a fixed period, which answers input that much later and
+     * still wakes a hundred times a second to find nothing. This blocks
+     * in the OS until there is something, and costs nothing until then.
+     *
+     * ```
+     * while (running) {
+     *     events.wait(win, clock, 250);      // idle: 0% of a core
+     *     while (events.hasNext()) { ... }
+     *     if (dirty) { repaint(); }
+     * }
+     * ```
+     *
+     * `timeoutMs` is the longest it will sleep, so a loop that also has
+     * its own periodic work — re-reading the machine every second,
+     * advancing an animation — passes the time until that work is due.
+     * A **negative** timeout waits indefinitely, which is right only for
+     * a program with nothing else to do.
+     *
+     * Answers whether the OS reported anything. That is not the same
+     * question as `hasNext`: a message may arrive that produces no
+     * event, and a pump always latches the window edges whether or not
+     * the queue grew.
+     *
+     * A frame-driven game should keep calling `pump` and pace with
+     * `FramePacer` — waiting for input in a loop that must draw the next
+     * frame anyway is a frame that arrives late.
+     */
+    pub fn wait(mut self, win : Window, clock : Clock, timeoutMs : i32) : bool {
+        let arrived = SysDrain::waitReady(self.msg, win.sys, timeoutMs);
+        self.pump(win, clock);
+        return arrived;
+    }
+
+    /**
      * Collect everything that happened since the previous call.
      *
      * The clock is read once, so a frame's events share one timestamp

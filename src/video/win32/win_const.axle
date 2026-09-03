@@ -150,3 +150,16 @@ const GWLP_USERDATA : i32 = -21;
 
 /** `SIZE_MINIMIZED` (1) — the `wParam` of a `WM_SIZE` that minimised. */
 const SIZE_MINIMIZED : i32 = 1;
+
+/**
+ * `QS_ALLINPUT` — every class of message a wait can be woken by.
+ *
+ * Posted input, and also `QS_SENDMESSAGE`: on Windows a resize, a focus
+ * change and a close are *sent* straight to the window procedure rather
+ * than posted, so a mask that covered only input would sleep through
+ * exactly the events the frame loop most needs to see.
+ */
+pub(crate) const QS_ALLINPUT : i32 = 1279;
+
+/** `WAIT_TIMEOUT` — the wait expired with nothing to report. */
+pub(crate) const WAIT_TIMEOUT : i32 = 258;

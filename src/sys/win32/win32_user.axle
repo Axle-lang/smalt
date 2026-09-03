@@ -67,6 +67,26 @@ extern "C" from "user32" {
         remove : i32
     ) : i32;
 
+    /**
+     * `DWORD MsgWaitForMultipleObjects(DWORD, const HANDLE *, BOOL, DWORD, DWORD)`.
+     *
+     * The one call that lets a message loop **sleep**. `PeekMessageW`
+     * answers immediately whether or not anything arrived, so a loop
+     * built on it alone either spins a core or sleeps a fixed period and
+     * answers input that much later. This blocks until the queue has
+     * something the wake mask covers, or the timeout expires.
+     *
+     * With a count of zero and a null handle array it waits on nothing
+     * but the queue, which is what an event-driven program wants.
+     */
+    fn MsgWaitForMultipleObjects(
+        count : i32,
+        handles : ptr,
+        waitAll : i32,
+        millis : i32,
+        wakeMask : i32
+    ) : i32;
+
     /** `BOOL TranslateMessage(const MSG *)` — synthesises `WM_CHAR`. */
     fn TranslateMessage(msg : ptr<MSG>) : i32;
 
