@@ -22,28 +22,40 @@ use crate::core::error::PlatformError;
 use crate::video::sys_window::SysWindow;
 
 /**
- * Window creation flags, as `SDL_WindowFlags` would spell them.
+ * How a window is asked for.
  *
- * A `pub const` and not a `static` field of `Window`, which is where a
- * flag would otherwise belong: a `static` field is class-scoped inside
- * the crate that declares it and does not cross the crate boundary, so
- * writing these there would put them out of reach of every program that
- * needs them. They combine with `|` exactly like SDL's flag word.
+ * A record with defaults rather than four positional arguments, because
+ * `createWindow("game", 1280, 720, 1)` says nothing about which of the
+ * three numbers is which, and the flag word says nothing at all. A
+ * literal names only what it means and the rest take the values here:
  *
  * ```
- * platform.createWindow("game", 1280, 720, WINDOW_RESIZABLE | WINDOW_HIDDEN);
+ * let win = platform.open(WindowDesc { title: "game", w: 1280, h: 720, resizable: true })?;
  * ```
+ *
+ * The size is the **client area**, which is the thing a renderer sizes
+ * its framebuffer to — not the outer frame, which differs by desktop and
+ * by theme.
  */
-pub const WINDOW_NONE : i32 = 0;
+pub struct WindowDesc {
+    /** Caption text. */
+    pub title      : string = "smalt";
 
-/** The user may resize the window; the framebuffer follows. */
-pub const WINDOW_RESIZABLE : i32 = 1;
+    /** Client-area width, in pixels. */
+    pub w          : i32 = 1280;
 
-/** No caption, no border — the shape a fullscreen-ish game wants. */
-pub const WINDOW_BORDERLESS : i32 = 2;
+    /** Client-area height, in pixels. */
+    pub h          : i32 = 720;
 
-/** Create the window hidden; `show()` reveals it. */
-pub const WINDOW_HIDDEN : i32 = 4;
+    /** Whether the user may resize it; the framebuffer follows. */
+    pub resizable  : bool = false;
+
+    /** No caption, no border — the shape a fullscreen-ish game wants. */
+    pub borderless : bool = false;
+
+    /** Create it hidden; `show()` reveals it. */
+    pub hidden     : bool = false;
+}
 
 /**
  * An on-screen window and its drawing surface.
@@ -52,6 +64,47 @@ pub const WINDOW_HIDDEN : i32 = 4;
  * reclaim — the `Closeable` contract is what releases it.
  */
 pub class Window : Closeable {
+    /**
+     * Window creation flags, as `SDL_WindowFlags` would spell them, and
+     * combined the same way: `Window::RESIZABLE | Window::HIDDEN`.
+     *
+     * Class-scoped `static` fields rather than the prefixed `pub const`
+     * globals they used to be. That was not a preference either way — a
+     * `static` field did not cross a crate boundary before Axle 0.12.1,
+     * so a published constant had to be a global and the class it
+     * belonged to had to be spelled into its name. It reaches a
+     * dependent crate now, so the prefix becomes the scope it was
+     * imitating.
+     *
+     * `WindowDesc` is the form to prefer; these are for a program that
+     * genuinely wants to compute a flag word.
+     */
+    pub static NONE : i32 = 0;
+
+    /** The user may resize the window; the framebuffer follows. */
+    pub static RESIZABLE : i32 = 1;
+
+    /** No caption, no border. */
+    pub static BORDERLESS : i32 = 2;
+
+    /** Create the window hidden; `show()` reveals it. */
+    pub static HIDDEN : i32 = 4;
+
+    /** The flag word `desc` asks for. */
+    pub static fn flagsOf(desc : WindowDesc) : i32 {
+        let flags : i32 = Window::NONE;
+        if (desc.resizable) {
+            flags |= Window::RESIZABLE;
+        }
+        if (desc.borderless) {
+            flags |= Window::BORDERLESS;
+        }
+        if (desc.hidden) {
+            flags |= Window::HIDDEN;
+        }
+        return flags;
+    }
+
     /**
      * The native window.
      *
@@ -80,9 +133,9 @@ pub class Window : Closeable {
             title,
             w,
             h,
-            (flags & WINDOW_RESIZABLE) != 0,
-            (flags & WINDOW_BORDERLESS) != 0,
-            (flags & WINDOW_HIDDEN) != 0
+            (flags & Window::RESIZABLE) != 0,
+            (flags & Window::BORDERLESS) != 0,
+            (flags & Window::HIDDEN) != 0
         )?;
     }
 

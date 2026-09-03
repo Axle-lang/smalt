@@ -4,7 +4,7 @@
 // pipeline: initialisation, a window, the polled event path, the clock,
 // and a framebuffer blitted to the screen every frame.
 
-use smalt::{Platform, PlatformError, Window, Clock, FramePacer, Events, EventKind, Scancode, Color, SoftDevice, WINDOW_RESIZABLE};
+use smalt::{Platform, PlatformError, WindowDesc, Clock, FramePacer, Events, EventKind, Scancode, Color, SoftDevice};
 
 /** Client width at startup. */
 const VIEW_W : i32 = 960;
@@ -28,7 +28,9 @@ fn main() : i32 {
 fn run() : i32 ! PlatformError {
     let platform = new Platform()?;
     defer platform.close();
-    let win = platform.createWindow("smalt — hello", VIEW_W, VIEW_H, WINDOW_RESIZABLE)?;
+    let win = platform.open(
+        WindowDesc { title: "smalt — hello", w: VIEW_W, h: VIEW_H, resizable: true }
+    )?;
     defer win.close();
 
     let clock = new Clock();

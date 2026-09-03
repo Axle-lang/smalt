@@ -16,7 +16,7 @@
 // no user dragging) are precisely what the polling this replaced could
 // never have seen.
 
-use smalt::{Platform, PlatformError, Window, Clock, Events, EventKind, Bmp, WINDOW_HIDDEN};
+use smalt::{Platform, PlatformError, Window, Clock, Events, EventKind, Bmp};
 
 /** Client size at startup. */
 const VIEW_W : i32 = 320;
@@ -62,7 +62,7 @@ fn run() : i32 ! PlatformError {
 
     let platform = new Platform()?;
     defer platform.close();
-    let win = platform.createWindow("proc_check", VIEW_W, VIEW_H, WINDOW_HIDDEN)?;
+    let win = platform.createWindow("proc_check", VIEW_W, VIEW_H, Window::HIDDEN)?;
     defer win.close();
     let clock = new Clock();
     defer clock.close();

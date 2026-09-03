@@ -14,7 +14,7 @@
 //
 // Build & run:  axle run            (nothing to ship — smalt is Win32)
 
-use smalt::{Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode, SoftDevice, WINDOW_NONE};
+use smalt::{Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode, SoftDevice};
 use game::World;
 use render::render;
 use config::screenW;
@@ -36,7 +36,7 @@ fn run() : i32 ! PlatformError {
 
     let platform = new Platform()?;
     defer platform.close();
-    let win = platform.createWindow("Axle Mario", w, h, WINDOW_NONE)?;
+    let win = platform.createWindow("Axle Mario", w, h, Window::NONE)?;
     defer win.close();
     let device = new SoftDevice(w, h);
     defer device.close();

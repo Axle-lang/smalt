@@ -24,7 +24,7 @@
 
 use crate::core::error::PlatformError;
 use crate::platform::sys_app::SysApp;
-use crate::video::window::Window;
+use crate::video::window::{Window, WindowDesc};
 
 /**
  * The initialised library.
@@ -65,7 +65,33 @@ pub class Platform : Closeable {
         self.timerRaised = SysApp::raiseTimerRes();
     }
 
-    /** Open a window with a `w` by `h` client area. */
+    /**
+     * Open the window `desc` describes.
+     *
+     * The form to prefer. A literal names only the fields it means and
+     * the rest take `WindowDesc`'s defaults, so the call says what each
+     * value is rather than relying on four positions and a flag word:
+     *
+     * ```
+     * let win = platform.open(WindowDesc { title: "game", w: 1280, h: 720, resizable: true })?;
+     * ```
+     */
+    pub fn open(self, desc : WindowDesc) : Window ! PlatformError {
+        return new Window(
+            self.instance,
+            desc.title,
+            desc.w,
+            desc.h,
+            Window::flagsOf(desc)
+        )?;
+    }
+
+    /**
+     * Open a window with a `w` by `h` client area and an explicit flag
+     * word — the positional form, for a caller that computes its flags.
+     *
+     * `open` is the one to reach for.
+     */
     pub fn createWindow(self, title : string, w : i32, h : i32, flags : i32) : Window ! PlatformError {
         return new Window(self.instance, title, w, h, flags)?;
     }

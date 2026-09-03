@@ -7,7 +7,7 @@
 // Controls: WASD to move, Space and Shift for up and down, Tab to
 // capture the mouse and look around, Escape to quit.
 
-use smalt::{Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode, Color, SoftDevice, Camera, Mesh, Primitives, Texture, Material, DirectionalLight, Mat4, Vec3, WINDOW_RESIZABLE};
+use smalt::{Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode, Color, SoftDevice, Camera, Mesh, Primitives, Texture, Material, DirectionalLight, Mat4, Vec3};
 
 /** Client width at startup. */
 const VIEW_W : i32 = 1024;
@@ -40,7 +40,7 @@ fn main() : i32 {
 fn run() : i32 ! PlatformError {
     let platform = new Platform()?;
     defer platform.close();
-    let win = platform.createWindow("smalt — cube", VIEW_W, VIEW_H, WINDOW_RESIZABLE)?;
+    let win = platform.createWindow("smalt — cube", VIEW_W, VIEW_H, Window::RESIZABLE)?;
     defer win.close();
 
     let clock = new Clock();
