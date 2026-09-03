@@ -55,5 +55,5 @@ use crate::render::soft::{shade, raster};
 
 use crate::math::{quat, geom};
 
-use crate::io::{file, bmp};
+use crate::io::{file, fmt, bmp};
 use std::numeric::math;

@@ -1,0 +1,585 @@
+// fmt — numbers to ASCII bytes, into a block the caller owns.
+//
+// Every figure on a repainting surface is rendered afresh each frame.
+// Formatting one through `string` mints and frees a few hundred
+// allocations a second for text that is thrown away in the same frame,
+// and on a software renderer that cost lands on the same core doing the
+// drawing. These write bytes and answer a length; `render::text`'s
+// `drawBytes` renders straight from them, and the repaint path allocates
+// nothing at all.
+//
+// # Two surfaces, one behaviour
+//
+// `Fmt`'s statics write at `base + off` and answer the byte count, so
+// they compose by adding: `off + n`. That is the shape for a caller that
+// already owns a block — a struct's scratch field, a row of a table.
+//
+// `Scratch` is that block plus the cursor, so the same sequence is
+// `s.reset(); s.decimal(v); s.literal(" MB");` and the offsets are the
+// object's business. It is the one to reach for; the statics are what it
+// is built out of, and what a caller with its own storage uses.
+//
+// # What is not here
+//
+// A width, a fill and an alignment. Right-alignment on a proportional
+// face is `drawBytesRight`, not a padded string: padding aligns to a
+// character count, and no two characters of a proportional font are the
+// same width. `pad` exists for the one case where the alignment really is
+// by character — a fixed-pitch column of digits.
+//
+// Nothing here throws, and nothing here writes past the end. The bound
+// comes from two different places depending on the figure, which is worth
+// stating because getting it wrong is an overflow rather than a wrong
+// number:
+//
+//   * A figure bounded by its own **type** — a decimal, a hex, a byte
+//     count — can need at most `FMT_FIGURE_BYTES`. `Scratch` keeps that
+//     much free at all times, so appending one never has to measure.
+//   * `literal` and `pad` are as long as the **caller** made them, so
+//     both take an explicit bound and truncate to it.
+
+use crate::kernel::mem::Mem;
+
+/** ASCII `0`. */
+const FMT_DIGIT0 : i32 = 48;
+
+/** ASCII `-`. */
+const FMT_MINUS : i32 = 45;
+
+/** ASCII `.`. */
+const FMT_DOT : i32 = 46;
+
+/** ASCII `a` — the first lowercase hex letter. */
+const FMT_LOWER_A : i32 = 97;
+
+/** The thousands separator — a thin space is not in the baked faces. */
+const FMT_GROUP_SEP : i32 = 32;
+
+/** Digits between two separators. */
+const FMT_GROUP_SIZE : i32 = 3;
+
+/** Bytes in a kibibyte. */
+const FMT_KIB : i64 = 1024;
+
+/** Bytes in a mebibyte. */
+const FMT_MIB : i64 = 1048576;
+
+/** Bytes in a gibibyte. */
+const FMT_GIB : i64 = 1073741824;
+
+/** Bytes in a tebibyte. */
+const FMT_TIB : i64 = 1099511627776;
+
+/** Milliseconds in a second. */
+const FMT_MS_SEC : i64 = 1000;
+
+/** Milliseconds in a minute. */
+const FMT_MS_MIN : i64 = 60000;
+
+/** Milliseconds in an hour. */
+const FMT_MS_HOUR : i64 = 3600000;
+
+/** Milliseconds in a day. */
+const FMT_MS_DAY : i64 = 86400000;
+
+/** Digits an `i64` can need, sign included. */
+const FMT_MAX_DIGITS : i32 = 20;
+
+/** Bytes the longest unit suffix here takes — ` min`, plus room. */
+const FMT_UNIT_BYTES : i32 = 8;
+
+/**
+ * The most bytes any **self-bounded** figure here can write.
+ *
+ * The worst case is `grouped` of the most negative `i64`: a sign,
+ * nineteen digits and six separators. `fixed` at six places is a byte
+ * under it. `literal` and `pad` are excluded on purpose — their length
+ * is the caller's, which is why they take a bound.
+ *
+ * `Scratch` keeps this much free at all times, so every appending method
+ * that is not `literal` or `pad` can write without measuring first.
+ */
+pub(file) const FMT_FIGURE_BYTES : i32 = 32;
+
+/** Formatting into a raw block. Every entry point answers the bytes written. */
+pub class Fmt {
+    /** Reverse the `n` bytes at `base + off` — digits are emitted low-first. */
+    pub(file) static fn reverse(base : i64, off : i64, n : i32) : void {
+        let i : i32 = 0;
+        let j : i32 = n - 1;
+        while (i < j) {
+            let a : i32 = Mem::byteAt(base, off + (i as i64));
+            let b : i32 = Mem::byteAt(base, off + (j as i64));
+            Mem::putByte(base, off + (i as i64), b);
+            Mem::putByte(base, off + (j as i64), a);
+            i = i + 1;
+            j = j - 1;
+        }
+    }
+
+    /** One ASCII byte. */
+    pub static fn ch(base : i64, off : i64, c : i32) : i32 {
+        Mem::putByte(base, off, c);
+        return 1;
+    }
+
+    /**
+     * `n` copies of the byte `c` — the fill of a fixed-pitch column.
+     */
+    pub static fn pad(base : i64, off : i64, n : i32, c : i32) : i32 {
+        for (i of 0..n) {
+            Mem::putByte(base, off + (i as i64), c);
+        }
+        return n.max(0);
+    }
+
+    /**
+     * At most `cap` of the UTF-8 bytes of the literal `s`.
+     *
+     * The units and separators of this file are spelled as Axle strings
+     * because that is what a reader can check against the screen. The
+     * bytes are copied out once per call and no `string` survives it.
+     *
+     * `cap` is not optional and not a default, because this is the one
+     * entry point here whose length the caller controls: every other
+     * figure is bounded by its own type — twenty digits for an `i64`,
+     * sixteen for a `hex`. A bound that lived in this file rather than at
+     * the call site would be a number that fits some callers' blocks and
+     * runs past others'.
+     */
+    pub static fn literal(base : i64, off : i64, s : string, cap : i32) : i32 {
+        return Mem::internString(base, off, s, cap);
+    }
+
+    /**
+     * The decimal digits of `v`, with a leading `-` when it is negative.
+     *
+     * Zero renders as `0`, not as nothing. The most negative `i64` has no
+     * positive counterpart, so it is rendered from its own digits rather
+     * than negated — a negation there would wrap and print a positive
+     * number.
+     */
+    pub static fn decimal(base : i64, off : i64, v : i64) : i32 {
+        if (v == 0) {
+            return Fmt::ch(base, off, FMT_DIGIT0);
+        }
+        let at : i64 = off;
+        let sign : i32 = 0;
+        if (v < 0) {
+            sign = Fmt::ch(base, at, FMT_MINUS);
+            at = at + 1;
+        }
+        let n : i32 = 0;
+        let x : i64 = v;
+        while (x != 0) {
+            // `%` on a negative operand answers a negative remainder, so
+            // the digit is negated rather than the value — which is what
+            // keeps the most negative `i64` printable.
+            let d : i64 = x % 10;
+            if (d < 0) {
+                d = -d;
+            }
+            Mem::putByte(base, at + (n as i64), FMT_DIGIT0 + (d as i32));
+            x = x / 10;
+            n = n + 1;
+        }
+        Fmt::reverse(base, at, n);
+        return sign + n;
+    }
+
+    /**
+     * `v` with a separator every three digits — `1 234 567`.
+     *
+     * For a figure a reader compares at a glance: an unseparated seven
+     * digit count and an eight digit one are the same shape on screen.
+     */
+    pub static fn grouped(base : i64, off : i64, v : i64) : i32 {
+        if (v == 0) {
+            return Fmt::ch(base, off, FMT_DIGIT0);
+        }
+        let at : i64 = off;
+        let sign : i32 = 0;
+        if (v < 0) {
+            sign = Fmt::ch(base, at, FMT_MINUS);
+            at = at + 1;
+        }
+        let n : i32 = 0;
+        let digits : i32 = 0;
+        let x : i64 = v;
+        while (x != 0) {
+            if (digits == FMT_GROUP_SIZE) {
+                Mem::putByte(base, at + (n as i64), FMT_GROUP_SEP);
+                n = n + 1;
+                digits = 0;
+            }
+            let d : i64 = x % 10;
+            if (d < 0) {
+                d = -d;
+            }
+            Mem::putByte(base, at + (n as i64), FMT_DIGIT0 + (d as i32));
+            x = x / 10;
+            n = n + 1;
+            digits = digits + 1;
+        }
+        Fmt::reverse(base, at, n);
+        return sign + n;
+    }
+
+    /** `v` scaled by ten, rendered with one decimal — `123` becomes `12.3`. */
+    pub static fn tenths(base : i64, off : i64, v : i64) : i32 {
+        let whole : i64 = v / 10;
+        let frac : i64 = v % 10;
+        if (frac < 0) {
+            frac = -frac;
+        }
+        let n : i32 = Fmt::decimal(base, off, whole);
+        Mem::putByte(base, off + (n as i64), FMT_DOT);
+        Mem::putByte(base, off + (n as i64) + 1, FMT_DIGIT0 + (frac as i32));
+        return n + 2;
+    }
+
+    /** `v` scaled by a hundred, rendered with two decimals. */
+    pub static fn hundredths(base : i64, off : i64, v : i64) : i32 {
+        let whole : i64 = v / 100;
+        let frac : i64 = v % 100;
+        if (frac < 0) {
+            frac = -frac;
+        }
+        let n : i32 = Fmt::decimal(base, off, whole);
+        Mem::putByte(base, off + (n as i64), FMT_DOT);
+        Mem::putByte(base, off + (n as i64) + 1, FMT_DIGIT0 + ((frac / 10) as i32));
+        Mem::putByte(base, off + (n as i64) + 2, FMT_DIGIT0 + ((frac % 10) as i32));
+        return n + 3;
+    }
+
+    /**
+     * A percentage held in tenths of a percent — `537` becomes `53.7`.
+     *
+     * The `%` is not written: it is almost always drawn in a different
+     * ink from the figure, and a caller that wants it appends it.
+     */
+    pub static fn percent(base : i64, off : i64, tenthsOfPct : i64) : i32 {
+        return Fmt::tenths(base, off, tenthsOfPct);
+    }
+
+    /**
+     * `v` with `decimals` places, from an `f64`.
+     *
+     * The one entry point that takes a real. Everything else here works
+     * in scaled integers, because a figure a program computed as a count
+     * should not acquire a rounding error on its way to the screen.
+     * `decimals` is clamped to 0..6.
+     */
+    pub static fn fixed(base : i64, off : i64, v : f64, decimals : i32) : i32 {
+        let places : i32 = decimals.max(0).min(6);
+        let scale : i64 = 1;
+        for (i of 0..places) {
+            scale = scale * 10;
+        }
+        let scaled : i64 = (v * (scale as f64)).round();
+        if (places == 0) {
+            return Fmt::decimal(base, off, scaled);
+        }
+        let whole : i64 = scaled / scale;
+        let frac : i64 = scaled % scale;
+        if (frac < 0) {
+            frac = -frac;
+        }
+        let n : i32 = Fmt::decimal(base, off, whole);
+        Mem::putByte(base, off + (n as i64), FMT_DOT);
+        n = n + 1;
+        // Leading zeros of the fraction are significant — `.05` is not `.5`.
+        let divisor : i64 = scale / 10;
+        while (divisor > 0) {
+            Mem::putByte(base, off + (n as i64), FMT_DIGIT0 + ((frac / divisor) as i32));
+            frac = frac % divisor;
+            divisor = divisor / 10;
+            n = n + 1;
+        }
+        return n;
+    }
+
+    /** One lowercase hex digit of `v`'s low nibble. */
+    pub(file) static fn hexDigit(v : i32) : i32 {
+        if (v < 10) {
+            return FMT_DIGIT0 + v;
+        }
+        return FMT_LOWER_A + v - 10;
+    }
+
+    /**
+     * `v` in lowercase hexadecimal, `digits` wide, zero-padded.
+     *
+     * Fixed width rather than minimal, because hexadecimal is read as a
+     * *field* — an address, a flag word, a colour — and a field that
+     * changes width when its top nibble goes to zero cannot be compared
+     * down a column. `digits` is clamped to 1..16.
+     */
+    pub static fn hex(base : i64, off : i64, v : i64, digits : i32) : i32 {
+        let n : i32 = digits.max(1).min(16);
+        for (i of 0..n) {
+            let shift : i64 = ((n - 1 - i) * 4) as i64;
+            Mem::putByte(base, off + (i as i64), Fmt::hexDigit(((v >> shift) & 0xF) as i32));
+        }
+        return n;
+    }
+
+    /**
+     * A byte count in the unit it is actually read in: bare below a
+     * kibibyte, then `KB`, `MB`, `GB`, `TB` with one decimal.
+     *
+     * Zero renders as a bare `0`, because a column of `0.0 B` reads as
+     * measurement noise rather than as nothing happening.
+     */
+    pub static fn byteCount(base : i64, off : i64, n : i64) : i32 {
+        if (n <= 0) {
+            return Fmt::ch(base, off, FMT_DIGIT0);
+        }
+        if (n < FMT_KIB) {
+            let d : i32 = Fmt::decimal(base, off, n);
+            return d + Fmt::literal(base, off + (d as i64), " B", FMT_UNIT_BYTES);
+        }
+        let unit : i64 = FMT_KIB;
+        let suffix : string = " KB";
+        if (n >= FMT_TIB) {
+            unit = FMT_TIB;
+            suffix = " TB";
+        } else if (n >= FMT_GIB) {
+            unit = FMT_GIB;
+            suffix = " GB";
+        } else if (n >= FMT_MIB) {
+            unit = FMT_MIB;
+            suffix = " MB";
+        }
+        // Scaled before the divide, so the tenth is the figure's own and
+        // not a second rounding of an already-rounded whole.
+        let len : i32 = Fmt::tenths(base, off, (n * 10) / unit);
+        return len + Fmt::literal(base, off + (len as i64), suffix, FMT_UNIT_BYTES);
+    }
+
+    /** A byte count per second — `byteCount` with `/s` after it. */
+    pub static fn rate(base : i64, off : i64, n : i64) : i32 {
+        let len : i32 = Fmt::byteCount(base, off, n);
+        return len + Fmt::literal(base, off + (len as i64), "/s", FMT_UNIT_BYTES);
+    }
+
+    /**
+     * An elapsed span in milliseconds, at the coarsest unit that still
+     * says something: `340 ms`, `12 s`, `4 min`, `2 h`, `3 d`.
+     *
+     * A reader reads "last seen 4 min ago". Nobody reads "last seen
+     * 271843 ms ago".
+     */
+    pub static fn elapsed(base : i64, off : i64, ms : i64) : i32 {
+        let value : i64 = ms;
+        let suffix : string = " ms";
+        if (ms >= FMT_MS_DAY) {
+            value = ms / FMT_MS_DAY;
+            suffix = " d";
+        } else if (ms >= FMT_MS_HOUR) {
+            value = ms / FMT_MS_HOUR;
+            suffix = " h";
+        } else if (ms >= FMT_MS_MIN) {
+            value = ms / FMT_MS_MIN;
+            suffix = " min";
+        } else if (ms >= FMT_MS_SEC) {
+            value = ms / FMT_MS_SEC;
+            suffix = " s";
+        }
+        let d : i32 = Fmt::decimal(base, off, value);
+        return d + Fmt::literal(base, off + (d as i64), suffix, FMT_UNIT_BYTES);
+    }
+
+    /** A clock span as `h:mm:ss`, for a duration a reader tracks rather than skims. */
+    pub static fn clock(base : i64, off : i64, ms : i64) : i32 {
+        let total : i64 = ms / FMT_MS_SEC;
+        if (total < 0) {
+            total = 0;
+        }
+        let n : i32 = Fmt::decimal(base, off, total / 3600);
+        Mem::putByte(base, off + (n as i64), 58);
+        n = n + 1;
+        let mins : i64 = (total % 3600) / 60;
+        Mem::putByte(base, off + (n as i64), FMT_DIGIT0 + ((mins / 10) as i32));
+        Mem::putByte(base, off + (n as i64) + 1, FMT_DIGIT0 + ((mins % 10) as i32));
+        n = n + 2;
+        Mem::putByte(base, off + (n as i64), 58);
+        n = n + 1;
+        let secs : i64 = total % 60;
+        Mem::putByte(base, off + (n as i64), FMT_DIGIT0 + ((secs / 10) as i32));
+        Mem::putByte(base, off + (n as i64) + 1, FMT_DIGIT0 + ((secs % 10) as i32));
+        return n + 2;
+    }
+}
+
+/**
+ * A block to format into, and the cursor into it.
+ *
+ * The shape a repaint wants: `reset`, a few appends, then hand
+ * `at()`/`length()` to `BitmapFont::drawBytes`. The offsets are this
+ * object's business, so the `off + n` arithmetic that `Fmt`'s statics
+ * compose by never reaches the call site.
+ *
+ * One per surface that draws figures, held for the life of the program.
+ * `Closeable`, so the compiler refuses a path that drops one (E0511).
+ *
+ * A write that would pass the end is refused rather than truncated
+ * mid-figure: `length()` stops growing and what is there stays readable,
+ * which is what a caller sees on screen if they undersized the block.
+ */
+pub class Scratch : Closeable {
+    /** Bytes a scratch takes when the caller does not say. */
+    pub(file) static DEFAULT_BYTES : i32 = 256;
+
+
+    block : i64;
+    cap   : i32;
+    used  : i32 = 0;
+
+    /** A scratch of `bytes`, or the default when that is not positive. */
+    constructor(bytes : i32) {
+        let n : i32 = bytes;
+        if (n < FMT_FIGURE_BYTES) {
+            n = Scratch::DEFAULT_BYTES;
+        }
+        self.cap = n;
+        self.block = Mem::takeZeroed(n as i64);
+    }
+
+    /** The block's address — what `drawBytes` reads from. */
+    pub fn at(self) : i64 {
+        return self.block;
+    }
+
+    /** Bytes written since the last `reset`. */
+    pub fn length(self) : i32 {
+        return self.used;
+    }
+
+    /** Start again from the beginning. Nothing is cleared; the length is. */
+    pub fn reset(mut self) : void {
+        self.used = 0;
+    }
+
+    /** Bytes still free. */
+    pub fn remaining(self) : i32 {
+        if (self.block == 0) {
+            return 0;
+        }
+        return self.cap - self.used;
+    }
+
+    /** Whether a self-bounded figure is guaranteed to fit. */
+    pub(file) fn room(self) : bool {
+        return self.block != 0 && self.remaining() >= FMT_FIGURE_BYTES;
+    }
+
+    /** Where the next append lands. */
+    pub(file) fn cursor(self) : i64 {
+        return self.used as i64;
+    }
+
+    /** Append one ASCII byte. */
+    pub fn ch(mut self, c : i32) : void {
+        if (self.room()) {
+            self.used = self.used + Fmt::ch(self.block, self.cursor(), c);
+        }
+    }
+
+    /** Append `n` copies of `c`, or as many as still fit. */
+    pub fn pad(mut self, n : i32, c : i32) : void {
+        let count : i32 = n.min(self.remaining());
+        if (count > 0) {
+            self.used = self.used + Fmt::pad(self.block, self.cursor(), count, c);
+        }
+    }
+
+    /**
+     * Append `s`, truncated to whatever room is left.
+     *
+     * Bounded by `remaining()` and not by the headroom: a literal is as
+     * long as the caller wrote it, and a headroom big enough for the
+     * longest figure is not big enough for an arbitrary string.
+     */
+    pub fn literal(mut self, s : string) : void {
+        let cap : i32 = self.remaining();
+        if (cap > 0) {
+            self.used = self.used + Fmt::literal(self.block, self.cursor(), s, cap);
+        }
+    }
+
+    /** Append `v` in decimal. */
+    pub fn decimal(mut self, v : i64) : void {
+        if (self.room()) {
+            self.used = self.used + Fmt::decimal(self.block, self.cursor(), v);
+        }
+    }
+
+    /** Append `v` with a separator every three digits. */
+    pub fn grouped(mut self, v : i64) : void {
+        if (self.room()) {
+            self.used = self.used + Fmt::grouped(self.block, self.cursor(), v);
+        }
+    }
+
+    /** Append `v`, scaled by ten, with one decimal. */
+    pub fn tenths(mut self, v : i64) : void {
+        if (self.room()) {
+            self.used = self.used + Fmt::tenths(self.block, self.cursor(), v);
+        }
+    }
+
+    /** Append `v`, scaled by a hundred, with two decimals. */
+    pub fn hundredths(mut self, v : i64) : void {
+        if (self.room()) {
+            self.used = self.used + Fmt::hundredths(self.block, self.cursor(), v);
+        }
+    }
+
+    /** Append `v` with `decimals` places. */
+    pub fn fixed(mut self, v : f64, decimals : i32) : void {
+        if (self.room()) {
+            self.used = self.used + Fmt::fixed(self.block, self.cursor(), v, decimals);
+        }
+    }
+
+    /** Append `v` as `digits` lowercase hex digits. */
+    pub fn hex(mut self, v : i64, digits : i32) : void {
+        if (self.room()) {
+            self.used = self.used + Fmt::hex(self.block, self.cursor(), v, digits);
+        }
+    }
+
+    /** Append a byte count with its unit. */
+    pub fn byteCount(mut self, n : i64) : void {
+        if (self.room()) {
+            self.used = self.used + Fmt::byteCount(self.block, self.cursor(), n);
+        }
+    }
+
+    /** Append a byte count per second. */
+    pub fn rate(mut self, n : i64) : void {
+        if (self.room()) {
+            self.used = self.used + Fmt::rate(self.block, self.cursor(), n);
+        }
+    }
+
+    /** Append an elapsed span at its coarsest useful unit. */
+    pub fn elapsed(mut self, ms : i64) : void {
+        if (self.room()) {
+            self.used = self.used + Fmt::elapsed(self.block, self.cursor(), ms);
+        }
+    }
+
+    /** Append a duration as `h:mm:ss`. */
+    pub fn clock(mut self, ms : i64) : void {
+        if (self.room()) {
+            self.used = self.used + Fmt::clock(self.block, self.cursor(), ms);
+        }
+    }
+
+    /** Release the block. */
+    pub fn close(self) : void {
+        Mem::release(self.block);
+    }
+}
