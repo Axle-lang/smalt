@@ -1,0 +1,511 @@
+// text — a bitmap face, and the four ways to put one on a frame.
+//
+// The gap this closes is the one three programs fell into: smalt gave
+// them a window and a plane of pixels, and drawing one legible word into
+// it meant carrying a rasterised font, a glyph blitter, a pen-advance
+// table and a truncation rule. Each wrote all four. Two of them ended up
+// with the same six hundred lines of glyph table, re-rasterised, already
+// drifting apart.
+//
+// # Two draw calls, because text has two sources
+//
+// `draw` takes a `string`, which is what a label is: a literal, written
+// once, living for the life of the program.
+//
+// `drawBytes` takes an address, a length and an offset, which is what a
+// **figure** is. Every number on a repainting surface is formatted afresh
+// each frame, and routing those through `string` mints and frees a few
+// hundred allocations a second for text thrown away in the same frame.
+// `io::fmt` writes them as bytes into a scratch block and this draws
+// straight from it — no allocation on the repaint path at all. The same
+// door takes an interned name out of a `kernel::store::BytePool`.
+//
+// Neither is the "real" one. A UI that draws only literals never needs
+// the second; a table of figures never needs the first.
+//
+// # What a face is
+//
+// Rows of two-bit coverage (`render::glyphs` says why two), a pen advance
+// per glyph, and a 128-slot ASCII map so a draw is a table read rather
+// than a range test. The map is what lets a face carry an arbitrary
+// subset — the headline face has twenty-six glyphs, not ninety-five —
+// without every caller knowing which.
+//
+// A code the face does not carry draws nothing and advances nothing. That
+// is deliberate: a missing glyph should leave a hole a reader notices, not
+// a box that looks like a character the font *does* have.
+
+use crate::kernel::mem::Mem;
+use crate::render::frame::Frame;
+use crate::render::glyphs;
+use crate::math::geom::Rect;
+
+/** Pixels one glyph-row word carries — see `render::glyphs`. */
+const TEXT_WORD_PIXELS : i32 = 14;
+
+/** Coverage levels a glyph pixel has, less one — the blend denominator. */
+const TEXT_COVERAGE : i32 = 3;
+
+/** Slots in a face's ASCII map. */
+const TEXT_MAP_SLOTS : i64 = 128;
+
+/** The map entry of a code the face does not carry. */
+const TEXT_ABSENT : i32 = -1;
+
+/** ASCII `.` — what a truncated run ends with, three times. */
+const TEXT_DOT : i32 = 46;
+
+/** Which of the baked faces `BitmapFont::baked` builds. */
+pub enum Face : i32 {
+    /** Segoe UI 14 — every label, column and row. Printable ASCII. */
+    Ui = 0,
+
+    /** Segoe UI Bold 22 — headline figures, over a subset of ASCII. */
+    Headline = 1,
+}
+
+/**
+ * A loaded face: the glyph rows, the pen advances, and the ASCII map.
+ *
+ * Built through `BitmapFont::baked` for a baked face or
+ * `BitmapFont::fromTables` for your own — the constructor is the low
+ * level both go through, and takes the tables rather than a name so that
+ * there is one of it. (Axle gives a class one constructor and no
+ * overloads, so a `Face`-taking one and a table-taking one cannot both
+ * exist; making the tables the primitive is what keeps `baked` from being
+ * a call with three ignored arguments.)
+ *
+ * Not `Closeable`: the three arrays are `T[]`, which the synthesised
+ * destructor reclaims. Build one per face at startup and hold it — the
+ * baked tables are minted by the call, so building one per frame would be
+ * three allocations and a copy of the whole face every frame.
+ */
+pub class BitmapFont {
+    glyphs : i32[];
+    widths : i32[];
+    map    : i32[] = malloc<i32>(TEXT_MAP_SLOTS);
+    rows   : i32;
+    top    : i32;
+
+    /**
+     * A face over `glyphs` and `widths`, covering `widths.length` codes
+     * from `first`.
+     *
+     * `glyphs` is `rows` rows per glyph, two `i32` of fourteen 2-bit
+     * coverage values each (see `render::glyphs` for why two bits and why
+     * fourteen), glyph `g` starting at `g * rows * 2`. `top` is row 0's
+     * offset from the baseline, so it is **negative** for a face whose
+     * glyphs sit above the line — which is all of them.
+     *
+     * The arrays are `own`: this face is their only reader for the rest
+     * of the program, and a caller keeping a second reference would be
+     * holding storage the face's destructor reclaims.
+     */
+    constructor(own glyphs : i32[], own widths : i32[], rows : i32, top : i32, first : i32) {
+        self.glyphs = glyphs;
+        self.widths = widths;
+        self.rows = rows.max(1);
+        self.top = top;
+        for (i of 0..TEXT_MAP_SLOTS) {
+            self.map[i] = TEXT_ABSENT;
+        }
+        let count : i32 = self.widths.length as i32;
+        let last : i32 = (first + count - 1).min((TEXT_MAP_SLOTS as i32) - 1);
+        for (c of first.max(0)..=last) {
+            self.map[c as i64] = c - first;
+        }
+    }
+
+    /** Point `code` at glyph `slot`, or at nothing when `slot` is negative. */
+    pub(file) fn mapCode(mut self, code : i32, slot : i32) : void {
+        if (code >= 0 && code < (TEXT_MAP_SLOTS as i32)) {
+            self.map[code as i64] = slot;
+        }
+    }
+
+    /** One of the baked faces. */
+    pub static fn baked(face : Face) : BitmapFont {
+        return match face {
+            Face::Headline => BitmapFont::headline(),
+            Face::Ui => new BitmapFont(
+                glyphs::uiGlyphs(),
+                glyphs::uiWidths(),
+                glyphs::UI_H,
+                glyphs::UI_TOP,
+                glyphs::UI_FIRST
+            ),
+        };
+    }
+
+    /**
+     * The headline face.
+     *
+     * Its own factory because its map is **sparse** — it carries the
+     * twenty-six characters a figure uses and not a contiguous range, so
+     * the dense map the constructor builds is overwritten with
+     * `bigIndex`'s.
+     */
+    pub(file) static fn headline() : BitmapFont {
+        let f = new BitmapFont(
+            glyphs::bigGlyphs(),
+            glyphs::bigWidths(),
+            glyphs::BIG_H,
+            glyphs::BIG_TOP,
+            0
+        );
+        for (c of 0..(TEXT_MAP_SLOTS as i32)) {
+            f.mapCode(c, TEXT_ABSENT);
+        }
+        for (c of 32..(TEXT_MAP_SLOTS as i32)) {
+            f.mapCode(c, glyphs::bigIndex(c));
+        }
+        return f;
+    }
+
+    /**
+     * A face from tables of your own.
+     *
+     * The escape hatch from "two baked faces": a game whose pixel font is
+     * part of its look, or a program needing a range the baked faces do
+     * not carry, supplies the same arrays and gets every draw method for
+     * free. A face with holes in its range builds a dense one here and
+     * closes the holes with its own `mapCode`-shaped pass — or maps its
+     * codes into a dense table before calling, which is cheaper.
+     */
+    pub static fn fromTables(
+        own glyphs : i32[],
+        own widths : i32[],
+        rows : i32,
+        top : i32,
+        first : i32
+    ) : BitmapFont {
+        return new BitmapFont(glyphs, widths, rows, top, first);
+    }
+
+    /**
+     * Rows a glyph of this face occupies.
+     *
+     * The line pitch a caller lays out with is its own decision — this is
+     * the ink, not the leading.
+     */
+    pub fn height(self) : i32 {
+        return self.rows;
+    }
+
+    /** How far above the baseline the tallest glyph reaches. */
+    pub fn ascent(self) : i32 {
+        return -self.top;
+    }
+
+    /** The glyph slot `code` maps to, or -1 when the face has none. */
+    pub(file) fn slotOf(self, code : i32) : i32 {
+        if (code < 0 || code >= (TEXT_MAP_SLOTS as i32)) {
+            return TEXT_ABSENT;
+        }
+        return self.map[code as i64];
+    }
+
+    /** Pen advance of `code`, or 0 when the face does not carry it. */
+    pub fn advance(self, code : i32) : i32 {
+        let g = self.slotOf(code);
+        if (g < 0) {
+            return 0;
+        }
+        return self.widths[g as i64];
+    }
+
+    /**
+     * Blit one glyph with its left edge at `x` and its baseline at
+     * `baseline`, answering the pen advance.
+     *
+     * Empty rows and the blank tail of each row are skipped, so a narrow
+     * glyph costs a fraction of a wide one — which is what makes drawing
+     * a screen of text per frame affordable on the CPU.
+     */
+    pub fn glyph(self, f : Frame, x : i32, baseline : i32, code : i32, ink : i32) : i32 {
+        let g = self.slotOf(code);
+        if (g < 0) {
+            return 0;
+        }
+        let clip = f.clipRect();
+        let top = clip.y;
+        let bottom = clip.y + clip.h;
+        for (row of 0..self.rows) {
+            let y : i32 = baseline + self.top + row;
+            if (y >= top && y < bottom) {
+                let word : i64 = ((g * self.rows + row) * 2) as i64;
+                for (half of 0..2) {
+                    let rest : i32 = self.glyphs[word + (half as i64)];
+                    let col : i32 = x + half * TEXT_WORD_PIXELS;
+                    while (rest != 0) {
+                        let cover : i32 = rest & 3;
+                        if (cover != 0) {
+                            f.blend(col, y, ink, cover, TEXT_COVERAGE);
+                        }
+                        rest = rest >>> 2;
+                        col = col + 1;
+                    }
+                }
+            }
+        }
+        return self.widths[g as i64];
+    }
+
+    /**
+     * The same glyph with every stored pixel drawn as a `scale` by
+     * `scale` block, answering the scaled pen advance.
+     *
+     * A face is one size, and a HUD wants two or three. Rasterising a
+     * second face is several thousand rows of table; multiplying this one
+     * is an integer and looks deliberate — the coverage levels survive
+     * the multiply, so a scaled glyph keeps its anti-aliased edge rather
+     * than turning into the staircase a 1-bit font gives you.
+     *
+     * A `scale` below 1 is treated as 1.
+     */
+    pub fn glyphScaled(
+        self,
+        f : Frame,
+        x : i32,
+        baseline : i32,
+        code : i32,
+        scale : i32,
+        ink : i32
+    ) : i32 {
+        let k : i32 = scale.max(1);
+        if (k == 1) {
+            return self.glyph(f, x, baseline, code, ink);
+        }
+        let g = self.slotOf(code);
+        if (g < 0) {
+            return 0;
+        }
+        let clip = f.clipRect();
+        let top = clip.y;
+        let bottom = clip.y + clip.h;
+        for (row of 0..self.rows) {
+            let y : i32 = baseline + (self.top + row) * k;
+            if (y + k > top && y < bottom) {
+                let word : i64 = ((g * self.rows + row) * 2) as i64;
+                for (half of 0..2) {
+                    let rest : i32 = self.glyphs[word + (half as i64)];
+                    let col : i32 = x + half * TEXT_WORD_PIXELS * k;
+                    while (rest != 0) {
+                        let cover : i32 = rest & 3;
+                        if (cover != 0) {
+                            self.block(f, col, y, k, ink, cover);
+                        }
+                        rest = rest >>> 2;
+                        col = col + k;
+                    }
+                }
+            }
+        }
+        return self.widths[g as i64] * k;
+    }
+
+    /** One scaled glyph pixel: a `k` by `k` block at the coverage it carries. */
+    pub(file) fn block(self, f : Frame, x : i32, y : i32, k : i32, ink : i32, cover : i32) : void {
+        if (cover >= TEXT_COVERAGE) {
+            f.fillRect(Rect::make(x, y, k, k), ink);
+            return;
+        }
+        for (dy of 0..k) {
+            for (dx of 0..k) {
+                f.blend(x + dx, y + dy, ink, cover, TEXT_COVERAGE);
+            }
+        }
+    }
+
+    /** `s` at `scale` times its stored size, from `x`, on `baseline`. */
+    pub fn drawScaled(
+        self,
+        f : Frame,
+        x : i32,
+        baseline : i32,
+        s : string,
+        scale : i32,
+        ink : i32
+    ) : i32 {
+        let pen : i32 = x;
+        let n : i64 = s.byteLength;
+        for (i of 0..n) {
+            pen = pen + self.glyphScaled(f, pen, baseline, s.byteAt(i), scale, ink);
+        }
+        return pen;
+    }
+
+    /** The width `s` would occupy at `scale`, without drawing it. */
+    pub fn widthScaled(self, s : string, scale : i32) : i32 {
+        return self.width(s) * scale.max(1);
+    }
+
+    /**
+     * The baseline that puts a `scale`d line's ink top at `top`.
+     *
+     * The conversion a caller laying out by the top edge of the text —
+     * which is most of them — would otherwise get subtly wrong, and get
+     * wrong differently at each scale.
+     */
+    pub fn baselineFor(self, top : i32, scale : i32) : i32 {
+        return top + self.ascent() * scale.max(1);
+    }
+
+    /** The pen after drawing `s` from `x` with its baseline at `baseline`. */
+    pub fn draw(self, f : Frame, x : i32, baseline : i32, s : string, ink : i32) : i32 {
+        let pen : i32 = x;
+        let n : i64 = s.byteLength;
+        for (i of 0..n) {
+            pen = pen + self.glyph(f, pen, baseline, s.byteAt(i), ink);
+        }
+        return pen;
+    }
+
+    /** The width `s` would occupy, without drawing it. */
+    pub fn width(self, s : string) : i32 {
+        let w : i32 = 0;
+        let n : i64 = s.byteLength;
+        for (i of 0..n) {
+            w = w + self.advance(s.byteAt(i));
+        }
+        return w;
+    }
+
+    /** `s`, ending at `right` rather than starting at `x`. */
+    pub fn drawRight(self, f : Frame, right : i32, baseline : i32, s : string, ink : i32) : i32 {
+        return self.draw(f, right - self.width(s), baseline, s, ink);
+    }
+
+    /**
+     * `s` centred in `r`, vertically on the face's own metrics.
+     *
+     * The baseline a caller would otherwise compute from `ascent` and the
+     * row height, got right once — a button label sitting a pixel high is
+     * the most-repeated mistake in a hand-rolled UI.
+     */
+    pub fn drawCentred(self, f : Frame, r : Rect, s : string, ink : i32) : i32 {
+        let x : i32 = r.x + (r.w - self.width(s)) / 2;
+        let baseline : i32 = r.y + (r.h + self.rows) / 2 - (self.rows + self.top);
+        return self.draw(f, x, baseline, s, ink);
+    }
+
+    /**
+     * `len` bytes of the raw block at `buf + off`, from `x`.
+     *
+     * The repaint path: a figure `io::fmt` has just written, a name
+     * interned in a `BytePool`. Neither is ever a `string`, so neither
+     * allocates.
+     */
+    pub fn drawBytes(
+        self,
+        f : Frame,
+        x : i32,
+        baseline : i32,
+        buf : i64,
+        off : i64,
+        len : i32,
+        ink : i32
+    ) : i32 {
+        let pen : i32 = x;
+        for (i of 0..len) {
+            pen = pen + self.glyph(f, pen, baseline, Mem::byteAt(buf, off + (i as i64)), ink);
+        }
+        return pen;
+    }
+
+    /** The width those bytes would occupy, without drawing them. */
+    pub fn widthBytes(self, buf : i64, off : i64, len : i32) : i32 {
+        let w : i32 = 0;
+        for (i of 0..len) {
+            w = w + self.advance(Mem::byteAt(buf, off + (i as i64)));
+        }
+        return w;
+    }
+
+    /** Those bytes, ending at `right`. */
+    pub fn drawBytesRight(
+        self,
+        f : Frame,
+        right : i32,
+        baseline : i32,
+        buf : i64,
+        off : i64,
+        len : i32,
+        ink : i32
+    ) : i32 {
+        return self.drawBytes(f, right - self.widthBytes(buf, off, len), baseline, buf, off, len, ink);
+    }
+
+    /**
+     * The longest prefix of those bytes that fits `limit` pixels, with an
+     * ellipsis when it does not.
+     *
+     * A name is truncated rather than allowed to run under the next
+     * column. The room for the three dots is reserved *before* the fit is
+     * measured, so the ellipsis never pushes the run over the limit it was
+     * added to respect.
+     */
+    pub fn drawBytesElided(
+        self,
+        f : Frame,
+        x : i32,
+        baseline : i32,
+        buf : i64,
+        off : i64,
+        len : i32,
+        limit : i32,
+        ink : i32
+    ) : i32 {
+        if (self.widthBytes(buf, off, len) <= limit) {
+            return self.drawBytes(f, x, baseline, buf, off, len, ink);
+        }
+        let dots : i32 = self.advance(TEXT_DOT) * 3;
+        let pen : i32 = x;
+        let i : i32 = 0;
+        while (i < len) {
+            let c : i32 = Mem::byteAt(buf, off + (i as i64));
+            if (pen + self.advance(c) + dots > x + limit) {
+                i = len;
+            } else {
+                pen = pen + self.glyph(f, pen, baseline, c, ink);
+                i = i + 1;
+            }
+        }
+        for (d of 0..3) {
+            pen = pen + self.glyph(f, pen, baseline, TEXT_DOT, ink);
+        }
+        return pen;
+    }
+
+    /** `s`, truncated to `limit` pixels with an ellipsis. */
+    pub fn drawElided(
+        self,
+        f : Frame,
+        x : i32,
+        baseline : i32,
+        s : string,
+        limit : i32,
+        ink : i32
+    ) : i32 {
+        if (self.width(s) <= limit) {
+            return self.draw(f, x, baseline, s, ink);
+        }
+        let dots : i32 = self.advance(TEXT_DOT) * 3;
+        let pen : i32 = x;
+        let n : i64 = s.byteLength;
+        let i : i64 = 0;
+        while (i < n) {
+            let c : i32 = s.byteAt(i);
+            if (pen + self.advance(c) + dots > x + limit) {
+                i = n;
+            } else {
+                pen = pen + self.glyph(f, pen, baseline, c, ink);
+                i = i + 1;
+            }
+        }
+        for (d of 0..3) {
+            pen = pen + self.glyph(f, pen, baseline, TEXT_DOT, ink);
+        }
+        return pen;
+    }
+}

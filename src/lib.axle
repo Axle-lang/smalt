@@ -50,7 +50,7 @@ use crate::render::soft::{target, present, device_soft};
 
 use crate::math::{vec, mat};
 
-use crate::render::{device, vertex, texture, mesh, camera, frame, surface};
+use crate::render::{device, vertex, texture, mesh, camera, frame, glyphs, text, surface};
 use crate::render::soft::{shade, raster};
 
 use crate::math::{quat, geom};
