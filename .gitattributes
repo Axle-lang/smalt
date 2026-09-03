@@ -1,0 +1,2 @@
+# .axle files are Rust-like: use Rust for diff hunk headers and GitHub syntax highlighting
+*.axle diff=rust linguist-language=Rust
