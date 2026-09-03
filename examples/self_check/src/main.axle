@@ -16,7 +16,10 @@
 // Headless, so unlike the graphical examples this one can run
 // unattended. Exit code is the number of failures; zero means green.
 
-use smalt::{Vec3, Mat4, Quat, Aabb, Frustum, Camera, Clock, FramePacer};
+use smalt::{
+    Vec3, Mat4, Quat, Aabb, Frustum, Camera, Clock, FramePacer,
+    Surface, Rect, Color, BitmapFont, Face, Scratch, Mem, BytePool, SlotIndex,
+};
 
 /** The rate the pacing assertions run at — 5 ms a frame. */
 const CHECK_RATE : i32 = 200;
@@ -131,6 +134,24 @@ fn main() : i32 {
         fails += 1;
     }
 
+    // A rotation's transpose is its inverse, which is the one property
+    // that catches a swapped pair in `transposed` — and the one a table
+    // of sixteen positional arguments used to be able to hide.
+    let rot = Mat4::rotationAxis(axis, angle);
+    let there = rot.applyPoint(v);
+    if (!sameVec(rot.transposed().applyPoint(there), v)) {
+        println("FAIL a rotation's transpose is not its inverse");
+        fails += 1;
+    }
+
+    // And composing with the identity leaves a matrix alone, in both
+    // orders — which pins `mul`'s row/column convention.
+    if (!sameVec(rot.mul(Mat4::identity()).applyPoint(v), there)
+        || !sameVec(Mat4::identity().mul(rot).applyPoint(v), there)) {
+        println("FAIL multiplying by the identity is not a no-op");
+        fails += 1;
+    }
+
     // A degenerate projection must not trap on the divide.
     let bad = Mat4::perspective(0.0, 0.0, 1.0, 1.0);
     if (!sameVec(bad.applyPoint(v), v)) {
@@ -139,6 +160,11 @@ fn main() : i32 {
     }
 
     fails += checkPacer();
+    fails += checkFrame();
+    fails += checkFmt();
+    fails += checkStore();
+    fails += checkTicks();
+    fails += checkWide();
 
     println("failures: ${fails}");
     return fails;
@@ -223,5 +249,472 @@ fn checkPacer() : i32 {
         fails += 1;
     }
 
+    return fails;
+}
+
+/**
+ * The 2-D surface: the clip, the span fillers, the blend, and the fact
+ * that a nested clip narrows and never widens.
+ *
+ * A picture proves none of this — a rectangle drawn one pixel too wide
+ * still looks like a rectangle. These read the pixels back.
+ */
+fn checkFrame() : i32 {
+    let fails : i32 = 0;
+    let s = new Surface(16, 8);
+    let f = s.frame();
+
+    f.fill(0x000000);
+    f.fillRect(Rect::make(2, 2, 4, 3), 0x112233);
+    if (f.at(2, 2) != 0x112233 || f.at(5, 4) != 0x112233) {
+        println("FAIL fillRect does not cover its own rectangle");
+        fails += 1;
+    }
+    // Exclusive on the far edge, or every adjacent pair of boxes overlaps.
+    if (f.at(6, 2) != 0x000000 || f.at(2, 5) != 0x000000) {
+        println("FAIL fillRect covers one past its extent");
+        fails += 1;
+    }
+
+    // A nested clip narrows. Writing outside it must land nowhere.
+    f.fill(0x000000);
+    let inner = f.clipped(Rect::make(8, 0, 4, 8));
+    inner.fillRect(Rect::make(0, 0, 16, 8), 0x445566);
+    if (f.at(7, 0) != 0x000000 || f.at(12, 0) != 0x000000) {
+        println("FAIL a nested clip does not confine drawing");
+        fails += 1;
+    }
+    if (f.at(8, 0) != 0x445566 || f.at(11, 7) != 0x445566) {
+        println("FAIL a nested clip refuses what it should admit");
+        fails += 1;
+    }
+    // …and it cannot widen: clipping outwards from a narrow frame stays narrow.
+    let wider = inner.clipped(Rect::make(0, 0, 16, 8));
+    wider.fillRect(Rect::make(0, 0, 16, 8), 0x778899);
+    if (f.at(7, 0) != 0x000000) {
+        println("FAIL a nested clip widened");
+        fails += 1;
+    }
+
+    // Blend: halfway between black and white is mid grey, in every channel.
+    f.fill(0x000000);
+    f.whole().blend(1, 1, 0xFFFFFF, 1, 2);
+    if (f.at(1, 1) != 0x7F7F7F) {
+        println("FAIL blend is not the midpoint");
+        fails += 1;
+    }
+
+    // The primitives nothing else in the tree calls yet, so that
+    // "published" and "exercised" stay the same set.
+    f.fill(0x000000);
+    f.disc(8, 4, 3, 0x223344);
+    if (f.at(8, 4) != 0x223344 || f.at(0, 0) != 0x000000) {
+        println("FAIL disc did not fill its centre, or leaked outside");
+        fails += 1;
+    }
+
+    // A blit from a two-pixel source, landing partly off the left edge:
+    // the clipped column must come from the right column of the source.
+    let src = new Surface(2, 1);
+    let sf = src.frame();
+    sf.plot(0, 0, 0x111111);
+    sf.plot(1, 0, 0x222222);
+    f.fill(0x000000);
+    f.blit(-1, 2, sf.base(), 2, 1);
+    if (f.at(0, 2) != 0x222222) {
+        println("FAIL a partly clipped blit took the wrong source column");
+        fails += 1;
+    }
+    src.close();
+
+    // A trace of a flat run draws its ink at one height across the box.
+    let hist : i32[] = [5, 5, 5, 5];
+    f.fill(0x000000);
+    f.spark(Rect::make(0, 0, 4, 4), hist, 4, 0, 10, 0xFFFFFF, 0x080808);
+    if (f.at(0, 2) != 0xFFFFFF || f.at(3, 2) != 0xFFFFFF) {
+        println("FAIL spark did not draw a flat run flat");
+        fails += 1;
+    }
+    if (f.at(0, 0) != 0x000000) {
+        println("FAIL spark painted above its own line");
+        fails += 1;
+    }
+
+    if (Color::add(0x804020, 0x804020) != 0xFF8040) {
+        println("FAIL Color::add does not clamp channel-wise");
+        fails += 1;
+    }
+    if (Color::modulate(0xFFFFFF, 0x804020) != 0x804020) {
+        println("FAIL Color::modulate is not identity against white");
+        fails += 1;
+    }
+    if (Color::scale(0x804020, 1, 2) != 0x402010) {
+        println("FAIL Color::scale is not a halving");
+        fails += 1;
+    }
+
+    // The packed colour helpers, against the channels they claim.
+    if (Color::red(0x123456) != 0x12 || Color::green(0x123456) != 0x34
+        || Color::blue(0x123456) != 0x56) {
+        println("FAIL packed channel accessors");
+        fails += 1;
+    }
+    if (Color::mix(0x000000, 0xFFFFFF, 0, 3) != 0x000000) {
+        println("FAIL mix at zero is not the destination");
+        fails += 1;
+    }
+    if (Color::mix(0x000000, 0xFFFFFF, 3, 3) != 0xFFFFFF) {
+        println("FAIL mix at full is not the source");
+        fails += 1;
+    }
+
+    // A glyph must put ink somewhere and advance the pen by its own width.
+    let ui = BitmapFont::baked(Face::Ui);
+    f.fill(0x000000);
+    let pen = ui.draw(f, 1, 7, "M", 0xFFFFFF);
+    if (pen <= 1) {
+        println("FAIL a drawn glyph did not advance the pen");
+        fails += 1;
+    }
+    if (ui.width("M") != pen - 1) {
+        println("FAIL measured width disagrees with the pen");
+        fails += 1;
+    }
+    let inked : i32 = 0;
+    for (y of 0..8) {
+        for (x of 0..16) {
+            if (f.at(x, y) != 0x000000) {
+                inked += 1;
+            }
+        }
+    }
+    if (inked == 0) {
+        println("FAIL a drawn glyph left no ink");
+        fails += 1;
+    }
+    // A code the face does not carry draws nothing and advances nothing.
+    if (ui.advance(7) != 0) {
+        println("FAIL an absent glyph has an advance");
+        fails += 1;
+    }
+
+    // The headline face is a SUBSET, and that has to stay true: it must
+    // carry a digit and must not carry an arbitrary letter, or a caller
+    // handing it a word gets a silent hole rather than the documented one.
+    let big = BitmapFont::baked(Face::Headline);
+    if (big.advance(48) <= 0) {
+        println("FAIL the headline face lost its digits");
+        fails += 1;
+    }
+    if (big.advance(68) != 0) {
+        println("FAIL the headline face claims a glyph it has no table for");
+        fails += 1;
+    }
+
+    // A face from a caller's own tables. Two glyphs, three rows, one word
+    // pair a row — the smallest thing that proves the door is open.
+    // Bound to `i32[]` first: an array literal in argument position is a
+    // fixed `i32[N]`, and the two do not coerce there — only through a
+    // `let` with the type written, or a `return`.
+    let myGlyphs : i32[] = [3, 0, 3, 0, 3, 0, 0, 0, 0, 0, 0, 0];  // 'A' lit, 'B' blank
+    let myWidths : i32[] = [5, 7];
+    let mine = BitmapFont::fromTables(myGlyphs, myWidths, 3, -3, 65);
+    if (mine.advance(65) != 5 || mine.advance(66) != 7) {
+        println("FAIL a custom face lost its advances");
+        fails += 1;
+    }
+    if (mine.advance(67) != 0) {
+        println("FAIL a custom face claims a code past its table");
+        fails += 1;
+    }
+    if (mine.height() != 3 || mine.ascent() != 3) {
+        println("FAIL a custom face lost its metrics");
+        fails += 1;
+    }
+    f.fill(0x000000);
+    mine.draw(f, 0, 3, "A", 0xFFFFFF);
+    if (f.at(0, 0) != 0xFFFFFF) {
+        println("FAIL a custom face drew no ink");
+        fails += 1;
+    }
+
+    // Scaled: the same glyph at x2 must be twice as wide, and its ink must
+    // cover a block rather than a pixel.
+    f.fill(0x000000);
+    let scaledPen = mine.drawScaled(f, 0, mine.baselineFor(0, 2), "A", 2, 0xFFFFFF);
+    if (scaledPen != 10) {
+        println("FAIL drawScaled advanced ${scaledPen}, wanted 10");
+        fails += 1;
+    }
+    if (f.at(0, 0) != 0xFFFFFF || f.at(1, 1) != 0xFFFFFF) {
+        println("FAIL drawScaled did not fill a 2x2 block");
+        fails += 1;
+    }
+    if (mine.widthScaled("A", 2) != 10) {
+        println("FAIL widthScaled disagrees with drawScaled");
+        fails += 1;
+    }
+
+    s.close();
+    return fails;
+}
+
+/** The formatters, against the text they are meant to produce. */
+fn checkFmt() : i32 {
+    let fails : i32 = 0;
+    let sc = new Scratch(256);
+
+    fails += expectFmt(sc, "0", 1);
+    fails += expectFmt(sc, "-1", 2);
+    fails += expectFmt(sc, "1 234 567", 3);
+    fails += expectFmt(sc, "12.3", 4);
+    fails += expectFmt(sc, "1.0 KB", 5);
+    fails += expectFmt(sc, "4 min", 6);
+    fails += expectFmt(sc, "00ff", 7);
+    fails += expectFmt(sc, "3.14", 8);
+    fails += expectFmt(sc, "0:02:05", 9);
+
+    // Appends must compose rather than overwrite.
+    sc.reset();
+    sc.decimal(12);
+    sc.literal("/");
+    sc.decimal(34);
+    if (!sameBytes(sc, "12/34")) {
+        println("FAIL appends do not compose");
+        fails += 1;
+    }
+    // A reset starts over rather than continuing.
+    sc.reset();
+    sc.decimal(7);
+    if (!sameBytes(sc, "7")) {
+        println("FAIL reset did not clear the length");
+        fails += 1;
+    }
+    sc.close();
+
+    // A literal longer than the room left must be TRUNCATED, not written
+    // past the end. This is the one bound the caller controls, so it is
+    // the one that overflows if the block trusts a fixed headroom.
+    let tiny = new Scratch(48);
+    tiny.reset();
+    tiny.literal("0123456789012345678901234567890123456789012345678901234567890123456789");
+    if (tiny.length() > 48) {
+        println("FAIL a long literal ran past the block (${tiny.length()} of 48)");
+        fails += 1;
+    }
+    // And an append onto a full block must add nothing rather than wrap.
+    let was : i32 = tiny.length();
+    tiny.literal("more");
+    tiny.decimal(1234);
+    if (tiny.length() > 48 || tiny.length() < was) {
+        println("FAIL appends past a full block are not refused");
+        fails += 1;
+    }
+    tiny.close();
+    return fails;
+}
+
+/** Fill `sc` with case `n` and compare it against `want`. */
+fn expectFmt(sc : Scratch, want : string, n : i32) : i32 {
+    sc.reset();
+    match n {
+        1 => { sc.decimal(0); },
+        2 => { sc.decimal(-1); },
+        3 => { sc.grouped(1234567); },
+        4 => { sc.tenths(123); },
+        5 => { sc.byteCount(1024); },
+        6 => { sc.elapsed(250000); },
+        7 => { sc.hex(255, 4); },
+        8 => { sc.fixed(3.14159, 2); },
+        _ => { sc.clock(125000); },
+    }
+    if (sameBytes(sc, want)) {
+        return 0;
+    }
+    println("FAIL fmt case ${n}: wanted ${want}");
+    return 1;
+}
+
+/** Whether the scratch holds exactly `want`'s bytes. */
+fn sameBytes(sc : Scratch, want : string) : bool {
+    if ((sc.length() as i64) != want.byteLength) {
+        return false;
+    }
+    for (i of 0..want.byteLength) {
+        if (Mem::byteAt(sc.at(), i) != want.byteAt(i)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** The pool and the index, including the sentinel that bites. */
+fn checkStore() : i32 {
+    let fails : i32 = 0;
+
+    let pool = new BytePool(1024);
+    let a = pool.putString("chrome.exe", 32);
+    let b = pool.putString("Discord.exe", 32);
+    if (a != 0 || b != 10) {
+        println("FAIL pool offsets are not sequential");
+        fails += 1;
+    }
+    if (pool.byteAt(b) != 68) {
+        println("FAIL pool did not intern the second name");
+        fails += 1;
+    }
+    // The filter, folded — a reader typing lower case means either.
+    let needle = new Scratch(64);
+    needle.literal("CHROME");
+    if (!pool.containsFold(a, 10, needle.at(), needle.length())) {
+        println("FAIL containsFold missed a case-different match");
+        fails += 1;
+    }
+    needle.reset();
+    needle.literal("firefox");
+    if (pool.containsFold(a, 10, needle.at(), needle.length())) {
+        println("FAIL containsFold matched what is not there");
+        fails += 1;
+    }
+    needle.close();
+    pool.close();
+
+    let idx = new SlotIndex(64);
+    idx.put(1234, 7);
+    // Zero is the empty sentinel, so a genuine zero key is the one that
+    // would silently vanish. It must not.
+    idx.put(0, 9);
+    if (idx.get(1234) != 7) {
+        println("FAIL index lost an ordinary key");
+        fails += 1;
+    }
+    if (idx.get(0) != 9) {
+        println("FAIL index lost the zero key");
+        fails += 1;
+    }
+    if (idx.get(5678) != -1) {
+        println("FAIL index invented a key");
+        fails += 1;
+    }
+    idx.put(1234, 8);
+    if (idx.get(1234) != 8 || idx.size() != 2) {
+        println("FAIL index did not replace in place");
+        fails += 1;
+    }
+    idx.clear();
+    if (idx.get(1234) != -1 || idx.size() != 0) {
+        println("FAIL index survived a clear");
+        fails += 1;
+    }
+    idx.close();
+    return fails;
+}
+
+/**
+ * The fixed-timestep half of the pacer.
+ *
+ * The assertions are bounds rather than equalities for the same reason
+ * `checkPacer`'s are: a sleep returns late by however much the scheduler
+ * feels like. What is being checked is that elapsed time becomes the
+ * right *number* of steps, that the remainder is kept rather than
+ * handed out twice, and that a stall is capped rather than chased.
+ */
+fn checkTicks() : i32 {
+    let fails : i32 = 0;
+    let clock = new Clock();
+    let pacer = new FramePacer(0);
+    pacer.setTickRate(100);              // 10 ms a step
+
+    // The first tick is the origin and earns nothing.
+    pacer.tick(clock);
+    if (pacer.steps() != 0) {
+        println("FAIL the first tick earned steps");
+        fails += 1;
+    }
+    if (pacer.step() != 10000) {
+        println("FAIL the step period is not the tick rate's");
+        fails += 1;
+    }
+
+    clock.delay(35);
+    pacer.tick(clock);
+    let n = pacer.steps();
+    if (n < 2 || n > 6) {
+        println("FAIL 35 ms did not earn about three 10 ms steps (got ${n})");
+        fails += 1;
+    }
+    // The time has been handed out; asking again earns nothing.
+    if (pacer.steps() != 0) {
+        println("FAIL steps handed the same time out twice");
+        fails += 1;
+    }
+    if (pacer.alpha() < 0.0 || pacer.alpha() >= 1.0) {
+        println("FAIL alpha is outside its range");
+        fails += 1;
+    }
+
+    // A stall must be capped rather than chased.
+    clock.delay(400);
+    pacer.tick(clock);
+    if (pacer.steps() > 8) {
+        println("FAIL a stall was chased past the catch-up ceiling");
+        fails += 1;
+    }
+    clock.close();
+    return fails;
+}
+
+/**
+ * The UTF-8 to UTF-16 transcode every wide OS call is fed from.
+ *
+ * Headless, and worth being so: the only place it shows on screen is a
+ * window title, where a dropped character reads as a typo rather than as
+ * a bug. It was one — the loop was bounded by `s.length`, which counts
+ * codepoints, while `byteAt` indexes bytes, so every title with a
+ * character outside ASCII lost its tail.
+ */
+fn checkWide() : i32 {
+    let fails : i32 = 0;
+    let block : i64 = Mem::takeZeroed(64);
+
+    // "café" — four codepoints in five bytes. The bug dropped the last.
+    let n : i64 = Mem::wideFrom(block, "café", 32);
+    if (n != 10) {
+        println("FAIL wideFrom wrote ${n} bytes for 4 chars + NUL, wanted 10");
+        fails += 1;
+    }
+    if (Mem::wordAt(block, 0) != 99 || Mem::wordAt(block, 2) != 97
+        || Mem::wordAt(block, 4) != 102 || Mem::wordAt(block, 6) != 233) {
+        println("FAIL wideFrom did not transcode café");
+        fails += 1;
+    }
+    if (Mem::wordAt(block, 8) != 0) {
+        println("FAIL wideFrom did not terminate");
+        fails += 1;
+    }
+
+    // An em dash, which is what the library's own window titles carry.
+    let m : i64 = Mem::wideFrom(block, "a — b", 32);
+    if (m != 12 || Mem::wordAt(block, 4) != 8212) {
+        println("FAIL wideFrom lost an em dash (${m} bytes)");
+        fails += 1;
+    }
+
+    // Above the BMP: one codepoint, two units, and it must be a pair.
+    let k : i64 = Mem::wideFrom(block, "😀", 32);
+    if (k != 6 || Mem::wordAt(block, 0) != 55357 || Mem::wordAt(block, 2) != 56832) {
+        println("FAIL wideFrom did not emit a surrogate pair (${k} bytes)");
+        fails += 1;
+    }
+
+    // A block too small truncates and still terminates — it never writes
+    // past what the caller declared.
+    let t : i64 = Mem::wideFrom(block, "abcdef", 4);
+    if (t != 8 || Mem::wordAt(block, 6) != 0) {
+        println("FAIL wideFrom did not respect capChars (${t} bytes)");
+        fails += 1;
+    }
+
+    Mem::release(block);
     return fails;
 }
