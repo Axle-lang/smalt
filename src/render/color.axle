@@ -110,4 +110,105 @@ pub struct Color {
     pub fn times(self, o : Color) : Color {
         return Color { r: self.r * o.r, g: self.g * o.g, b: self.b * o.b };
     }
+
+    // ─── The packed form, without unpacking ──────────────────────
+    //
+    // Everything below takes and answers a framebuffer word. That is not
+    // a convenience over the struct above, it is the other half of the
+    // type: a renderer blending a glyph edge, a UI tinting a row, a HUD
+    // dimming a backdrop all work in 0..255 integers, and routing them
+    // through three `f64` divisions and three multiplications per pixel
+    // is the cost this avoids. The struct is for light, which is
+    // unbounded and belongs in floating point; these are for pixels,
+    // which are bytes.
+
+    /** `v` held inside 0..255. */
+    pub static fn clamp8(v : i32) : i32 {
+        return v.max(0).min(255);
+    }
+
+    /** The red channel of a packed word. */
+    pub static fn red(packed : i32) : i32 {
+        return (packed >>> COLOR_RED_SHIFT) & 0xFF;
+    }
+
+    /** The green channel of a packed word. */
+    pub static fn green(packed : i32) : i32 {
+        return (packed >>> COLOR_GREEN_SHIFT) & 0xFF;
+    }
+
+    /** The blue channel of a packed word. */
+    pub static fn blue(packed : i32) : i32 {
+        return packed & 0xFF;
+    }
+
+    /**
+     * `dst` moved `num`/`den` of the way towards `src`, per channel.
+     *
+     * The one mixing rule: an anti-aliased glyph edge at coverage 2 of 3,
+     * a rounded corner's last column, a modal backdrop at 3 of 5, a chip's
+     * fill at 1 of 4. A `den` of zero answers `dst`, so a caller computing
+     * the denominator cannot trap the process on an empty range.
+     */
+    pub static fn mix(dst : i32, src : i32, num : i32, den : i32) : i32 {
+        if (den <= 0 || num <= 0) {
+            return dst;
+        }
+        if (num >= den) {
+            return src;
+        }
+        let dr : i32 = Color::red(dst);
+        let dg : i32 = Color::green(dst);
+        let db : i32 = Color::blue(dst);
+        return Color::packBytes(
+            dr + ((Color::red(src) - dr) * num) / den,
+            dg + ((Color::green(src) - dg) * num) / den,
+            db + ((Color::blue(src) - db) * num) / den
+        );
+    }
+
+    /** Every channel of `packed` scaled by `num`/`den`, clamped. */
+    pub static fn scale(packed : i32, num : i32, den : i32) : i32 {
+        if (den <= 0) {
+            return packed;
+        }
+        return Color::packBytes(
+            Color::clamp8((Color::red(packed) * num) / den),
+            Color::clamp8((Color::green(packed) * num) / den),
+            Color::clamp8((Color::blue(packed) * num) / den)
+        );
+    }
+
+    /**
+     * `packed` scaled by a real factor, clamped.
+     *
+     * The form a lighting term takes — a Lambert cosine, a distance
+     * falloff — where the ratio is not two integers the caller already
+     * has.
+     */
+    pub static fn scaleBy(packed : i32, k : f64) : i32 {
+        return Color::packBytes(
+            Color::clamp8(((Color::red(packed) as f64) * k).floorToInt() as i32),
+            Color::clamp8(((Color::green(packed) as f64) * k).floorToInt() as i32),
+            Color::clamp8(((Color::blue(packed) as f64) * k).floorToInt() as i32)
+        );
+    }
+
+    /** Two packed words added channel-wise, clamped — accumulating light. */
+    pub static fn add(a : i32, b : i32) : i32 {
+        return Color::packBytes(
+            Color::clamp8(Color::red(a) + Color::red(b)),
+            Color::clamp8(Color::green(a) + Color::green(b)),
+            Color::clamp8(Color::blue(a) + Color::blue(b))
+        );
+    }
+
+    /** Two packed words multiplied channel-wise — a texel times a tint. */
+    pub static fn modulate(a : i32, b : i32) : i32 {
+        return Color::packBytes(
+            (Color::red(a) * Color::red(b)) / 255,
+            (Color::green(a) * Color::green(b)) / 255,
+            (Color::blue(a) * Color::blue(b)) / 255
+        );
+    }
 }
