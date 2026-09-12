@@ -40,23 +40,30 @@ use crate::video::evdev_keymap::EvdevKeymap;
 use crate::video::wayland::wl_win_state::{WlWinState, WL_RING_STRIDE, WL_RING_WORDS};
 
 /** Ring record kinds. */
-const RING_KEY : i64 = 1;
-const RING_BUTTON : i64 = 2;
-const RING_MOTION : i64 = 3;
-const RING_WHEEL : i64 = 4;
-const RING_ENTER : i64 = 5;
-const RING_LEAVE : i64 = 6;
+const RING_KEY : i32 = 1;
+const RING_BUTTON : i32 = 2;
+const RING_MOTION : i32 = 3;
+const RING_WHEEL : i32 = 4;
+const RING_ENTER : i32 = 5;
+const RING_LEAVE : i32 = 6;
 
 /** `wl_keyboard.key`'s state: pressed, as against released. */
-const KEY_PRESSED : i64 = 1;
+const KEY_PRESSED : i32 = 1;
 
 /** evdev button codes, which is what a `wl_pointer.button` carries. */
-const BTN_LEFT : i64 = 272;
-const BTN_RIGHT : i64 = 273;
-const BTN_MIDDLE : i64 = 274;
+const BTN_LEFT : i32 = 272;
+const BTN_RIGHT : i32 = 273;
+const BTN_MIDDLE : i32 = 274;
 
-/** `wl_pointer.axis` — the vertical scroll axis. */
-const AXIS_VERTICAL : i64 = 0;
+/**
+ * `wl_pointer.axis` — the vertical scroll axis.
+ *
+ * The protocol field is a `u32` and this is an `i32`, which is not an
+ * oversight: a top-level `const` cannot be given an unsigned type — Axle reads
+ * the initialiser as `integer` and refuses the declaration — so the conversion
+ * lives at the comparison instead. The value is zero either way.
+ */
+const AXIS_VERTICAL : i32 = 0;
 
 /** One wheel notch, as the rest of the library counts them. */
 const WHEEL_NOTCH : i32 = 1;
@@ -65,7 +72,7 @@ const WHEEL_NOTCH : i32 = 1;
  * `wl_fixed_t` is a 24.8 fixed-point number; a surface-local coordinate
  * arrives as one and a pixel is what the caller wants.
  */
-const FIXED_SHIFT : i64 = 8;
+const FIXED_SHIFT : i32 = 8;
 
 /** `struct wl_keyboard_listener` — six slots, the last for a v4 binding. */
 pub extern "C" struct KeyboardListener {
@@ -130,7 +137,7 @@ pub(crate) fn onKeyLeave(data : ptr, keyboard : ptr, serial : u32, surface : ptr
 
 pub(crate) fn onKey(data : ptr, keyboard : ptr, serial : u32, time : u32, key : u32, state : u32) : void {
     unsafe {
-        push(data as ptr<WlWinState>, RING_KEY, state as i64, key as i64);
+        push(data as ptr<WlWinState>, RING_KEY, state as i32, key as i32);
     }
 }
 
@@ -168,7 +175,7 @@ pub(crate) fn onPointerEnter(
     unsafe {
         let st : ptr<WlWinState> = data as ptr<WlWinState>;
         (*st).pointerSerial = serial;
-        push(st, RING_MOTION, (x as i64) >> FIXED_SHIFT, (y as i64) >> FIXED_SHIFT);
+        push(st, RING_MOTION, x >> FIXED_SHIFT, y >> FIXED_SHIFT);
     }
 }
 
@@ -180,8 +187,8 @@ pub(crate) fn onPointerMotion(data : ptr, pointer : ptr, time : u32, x : i32, y 
         push(
             data as ptr<WlWinState>,
             RING_MOTION,
-            (x as i64) >> FIXED_SHIFT,
-            (y as i64) >> FIXED_SHIFT
+            x >> FIXED_SHIFT,
+            y >> FIXED_SHIFT
         );
     }
 }
@@ -195,7 +202,7 @@ pub(crate) fn onPointerButton(
     state : u32
 ) : void {
     unsafe {
-        push(data as ptr<WlWinState>, RING_BUTTON, state as i64, button as i64);
+        push(data as ptr<WlWinState>, RING_BUTTON, state as i32, button as i32);
     }
 }
 
@@ -208,14 +215,14 @@ pub(crate) fn onPointerButton(
  */
 pub(crate) fn onPointerAxis(data : ptr, pointer : ptr, time : u32, axis : u32, value : i32) : void {
     unsafe {
-        if ((axis as i64) != AXIS_VERTICAL || value == 0) {
+        if ((axis as i32) != AXIS_VERTICAL || value == 0) {
             return;
         }
         let notches = 0 - WHEEL_NOTCH;
         if (value < 0) {
             notches = WHEEL_NOTCH;
         }
-        push(data as ptr<WlWinState>, RING_WHEEL, notches as i64, 0);
+        push(data as ptr<WlWinState>, RING_WHEEL, notches, 0);
     }
 }
 
@@ -339,9 +346,9 @@ pub(crate) fn drainRing(
                 RING_BUTTON => { emitButton(a, b, stamp, queue, mouse); }
                 RING_MOTION => { emitMotion(a, b, stamp, queue, mouse); }
                 RING_WHEEL => {
-                    mouse.scroll(a as i32);
+                    mouse.scroll(a);
                     queue.push(
-                        Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: a as i32 }
+                        Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: a }
                     );
                 }
                 RING_ENTER => {
@@ -359,7 +366,7 @@ pub(crate) fn drainRing(
 }
 
 /** Push one record onto the window's ring, dropping it when full. */
-fn push(st : ptr<WlWinState>, kind : i64, a : i64, b : i64) : void {
+fn push(st : ptr<WlWinState>, kind : i32, a : i32, b : i32) : void {
     unsafe {
         let head = (*st).head as i64;
         let next = (head + WL_RING_STRIDE) % WL_RING_WORDS;
@@ -377,8 +384,8 @@ fn push(st : ptr<WlWinState>, kind : i64, a : i64, b : i64) : void {
 }
 
 /** A key record: pressed or released, and the evdev code. */
-fn emitKey(state : i64, code : i64, stamp : i64, queue : EventQueue, keys : KeyboardState) : void {
-    let sc = EvdevKeymap::lookup(code as i32);
+fn emitKey(state : i32, code : i32, stamp : i64, queue : EventQueue, keys : KeyboardState) : void {
+    let sc = EvdevKeymap::lookup(code);
     if (state != KEY_PRESSED) {
         keys.release(sc);
         queue.push(Event { kind: EventKind::KeyUp, timestamp: stamp, scancode: sc });
@@ -399,7 +406,7 @@ fn emitKey(state : i64, code : i64, stamp : i64, queue : EventQueue, keys : Keyb
  * a `wl_pointer.button` carries no coordinates, because the motion that
  * put the pointer there was its own event.
  */
-fn emitButton(state : i64, code : i64, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
+fn emitButton(state : i32, code : i32, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
     let b = buttonOf(code);
     let x = mouse.posX();
     let y = mouse.posY();
@@ -417,15 +424,13 @@ fn emitButton(state : i64, code : i64, stamp : i64, queue : EventQueue, mouse : 
 }
 
 /** A motion record: a surface-local position in whole pixels. */
-fn emitMotion(x : i64, y : i64, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
-    let nx = x as i32;
-    let ny = y as i32;
-    mouse.moveTo(nx, ny);
-    queue.push(Event { kind: EventKind::MouseMotion, timestamp: stamp, x: nx, y: ny });
+fn emitMotion(x : i32, y : i32, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
+    mouse.moveTo(x, y);
+    queue.push(Event { kind: EventKind::MouseMotion, timestamp: stamp, x: x, y: y });
 }
 
 /** The evdev button code a `wl_pointer.button` carries. */
-fn buttonOf(code : i64) : MouseButton {
+fn buttonOf(code : i32) : MouseButton {
     return match code {
         BTN_RIGHT => MouseButton::Right,
         BTN_MIDDLE => MouseButton::Middle,

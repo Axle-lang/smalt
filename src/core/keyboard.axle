@@ -17,7 +17,7 @@
  * A key the library does not model maps to `Unknown`, which is never
  * reported as down.
  */
-pub enum Scancode : i32 {
+pub enum Scancode : i16 {
     Unknown = 0,
     A = 4,
     B = 5,

@@ -13,7 +13,7 @@
 // mechanism inside the polled model the library is built on.
 
 /** Buttons, numbered as the OS numbers them: 1 is the left one. */
-pub enum MouseButton : i32 {
+pub enum MouseButton : i8 {
     Left = 1,
     Middle = 2,
     Right = 3,

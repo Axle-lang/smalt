@@ -21,6 +21,14 @@
 // space, so this is the value the rasteriser can step per pixel, and
 // keeping the buffer in the same units means the test is a comparison
 // rather than a division per fragment.
+//
+// It is a buffer of `f32`, while the rasteriser interpolates and
+// compares in `f64`. The reciprocal is what makes that enough: it
+// spends its precision near the camera, where geometry is close
+// together on screen, and the range it has to cover — `1/MIN_W` down to
+// `MIN_INV_W` — is nowhere near either end of `f32`. A depth plane per
+// pixel is the largest thing this library allocates, twice the colour
+// buffer beside it at `f64`, and no hardware z-buffer is wider.
 
 /**
  * A colour buffer and its depth buffer.
@@ -30,10 +38,10 @@
  */
 pub class RenderTarget {
     /** The reciprocal depth of an empty pixel — nothing is further than this. */
-    pub(file) static DEPTH_CLEARED : f64 = 0.0;
+    pub(file) static DEPTH_CLEARED : f32 = 0.0;
 
     color : i32[];
-    depth : f64[];
+    depth : f32[];
     w     : i32;
     h     : i32;
 
@@ -43,7 +51,7 @@ pub class RenderTarget {
         self.h = h;
         let count = (w as i64) * h;
         self.color = malloc<i32>(count);
-        self.depth = malloc<f64>(count);
+        self.depth = malloc<f32>(count);
     }
 
     /** Frame width, in pixels. */
@@ -91,7 +99,7 @@ pub class RenderTarget {
         let count = (w as i64) * h;
         free(self.color);
         self.color = malloc<i32>(count);
-        self.depth = malloc<f64>(count);
+        self.depth = malloc<f32>(count);
     }
 
     /** Fill the colour buffer with `packed` and empty the depth buffer. */
@@ -115,10 +123,10 @@ pub class RenderTarget {
             return false;
         }
         let idx = (y as i64) * self.w + x;
-        if (invDepth <= self.depth[idx]) {
+        if (invDepth <= (self.depth[idx] as f64)) {
             return false;
         }
-        self.depth[idx] = invDepth;
+        self.depth[idx] = invDepth as f32;
         self.color[idx] = packed;
         return true;
     }
@@ -134,8 +142,8 @@ pub class RenderTarget {
     /** The reciprocal depth recorded at (`x`, `y`), or 0 outside the frame. */
     pub fn depthAt(self, x : i32, y : i32) : f64 {
         if (x < 0 || y < 0 || x >= self.w || y >= self.h) {
-            return RenderTarget::DEPTH_CLEARED;
+            return RenderTarget::DEPTH_CLEARED as f64;
         }
-        return self.depth[(y as i64) * self.w + x];
+        return self.depth[(y as i64) * self.w + x] as f64;
     }
 }

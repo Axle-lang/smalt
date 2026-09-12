@@ -88,7 +88,13 @@ pub extern "C" struct WlWinState {
     // ── What the seat's callbacks leave for the drain ─────────────
     pub head : i32;
     pub tail : i32;
-    pub ring : i64[512];
+
+    /**
+     * The records themselves. Every word is a 32-bit protocol field: an
+     * evdev key or button code, a `wl_fixed_t` motion shifted down to
+     * pixels, a notch count, a pressed / released flag.
+     */
+    pub ring : i32[512];
 }
 
 /** `struct xdg_surface_listener`. */

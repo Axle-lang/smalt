@@ -26,7 +26,7 @@ use crate::core::keyboard::Scancode;
 use crate::core::mouse::MouseButton;
 
 /** What happened — the tag that says which fields below are meaningful. */
-pub enum EventKind : i32 {
+pub enum EventKind : i8 {
     /** The queue was empty — never delivered by `next()`. */
     None = 0,
 
