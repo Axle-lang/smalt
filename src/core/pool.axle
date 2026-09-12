@@ -1,0 +1,280 @@
+// pool — worker threads that outlive the pass they run.
+//
+// `spawn` is a thread, not a task: it asks the kernel for a stack and a
+// scheduling entity and hands both back when the function returns. That is the
+// right shape for a thread that lives as long as the program — an audio pump, a
+// light bake — and the wrong one for a frame, which fans out and rejoins a
+// handful of times and then does it all again a sixtieth of a second later.
+//
+// Measured, a fan-out of twelve and the join after it:
+//
+//     a fresh thread each time   490 us
+//     a pool already standing     10 us
+//
+// Forty-nine times, and it is the CALLING thread that pays most of it, in the
+// middle of a frame, between the work either side of it.
+//
+// The pool sleeps between passes rather than spinning for them. A spin would
+// hand back the microseconds and take a core to do it, which is the trade this
+// is trying to stop making: the gap between one frame's last pass and the next
+// frame's first is milliseconds long, and twelve threads spinning through it
+// would cost more than every fan-out in the frame put together. Two semaphores
+// park the workers instead, and the kernel wakes them.
+//
+// A pass is ATTACHED once and run by the handle that returns. That is not a
+// convenience — a borrowed reference cannot be stored past the call that
+// carried it, so a pool handed its work afresh every frame could only take
+// ownership of it every frame, which means allocating one. Attaching says what
+// is true: the passes a frame runs are the same passes every frame.
+
+use std::concurrent::{ AtomicBoolean, AtomicI32, Semaphore };
+
+/**
+ * Workers one pool may hold.
+ *
+ * A literal, and mirrored by the `Task` array below, because a fixed-array size
+ * must be one. It is a ceiling, not a size: a pool holds what it was asked for.
+ */
+const POOL_MAX : i32 = 31;
+
+/** Distinct passes one pool may carry. */
+const POOL_JOBS : i32 = 16;
+
+/**
+ * One pass of parallel work, cut into shares.
+ *
+ * The pool knows how to run a pass and nothing about what the pass does; this
+ * is the seam between them. `run` is called once per share, on a different
+ * thread each time and concurrently, so an implementation is only safe if its
+ * shares write disjoint things — separate output rows, separate columns,
+ * separate slots. The pool enforces no such thing and cannot.
+ */
+pub trait Job {
+    fn run(mut self, share : i32, shares : i32) : void;
+}
+
+/**
+ * The pass an unattached slot holds: none.
+ *
+ * Every slot carries one from construction, so a handle that was never given
+ * out cannot reach uninitialised memory even if a caller invents one. It is
+ * also the trait's implementor inside this crate, which a trait needs before it
+ * can be a value type here at all.
+ */
+class IdlePass : Job {
+    fn run(mut self, share : i32, shares : i32) : void {
+    }
+}
+
+/**
+ * A crew of threads, started once, that a caller hands passes to.
+ *
+ * The caller runs share 0 ITSELF and the crew takes 1 upward, so a pass of `n`
+ * shares occupies the calling thread as well as `n - 1` workers. That is not a
+ * detail of the implementation but the point of it: the thread that would
+ * otherwise sit in a join is the one doing the first share.
+ *
+ * ```
+ * let pool = new WorkerPool(11);
+ * let rows = pool.attach(new RowPass(target));   // once
+ * // …every frame…
+ * pool.run(rows, 12);   // this thread takes row band 0, the crew takes 1..11
+ * // …at the end…
+ * pool.close();
+ * ```
+ *
+ * One thread drives a pool. `attach`, `run` and `close` are for the owner to
+ * call, one at a time and never while a pass is in flight — the crew is what is
+ * parallel here, not the calls that steer it.
+ */
+pub class WorkerPool : Closeable {
+    /** Permits released to let a pass begin: one per worker the pass wants. */
+    pub(file) begin : Semaphore = new Semaphore(0),
+
+    /** And one released back by each worker as its share returns. */
+    pub(file) ended : Semaphore = new Semaphore(0),
+
+    /**
+     * Which share the next worker to wake should take.
+     *
+     * Released permits do not name a worker, so a woken worker claims its share
+     * rather than being given one. Reset to zero before the permits go out, and
+     * `incrementAndGet` hands the first claimant 1 — share 0 belongs to the
+     * caller.
+     */
+    pub(file) ticket : AtomicI32 = new AtomicI32(0),
+
+    /** How many shares the pass in flight was cut into. */
+    pub(file) shares : AtomicI32 = new AtomicI32(0),
+
+    /** Which attached pass is in flight. */
+    pub(file) active : AtomicI32 = new AtomicI32(0),
+
+    /** Cleared by `close`, so a woken worker returns instead of asking for work. */
+    pub(file) alive : AtomicBoolean = new AtomicBoolean(true),
+
+    /** The attached passes, held for the pool's life. */
+    pub(file) jobs : dyn Job[],
+    pub(file) nJobs : i32,
+
+    pub(file) crew : Task<i32>[31],
+    pub(file) n : i32,
+
+    /**
+     * Start `crew` workers and park them.
+     *
+     * They are asleep from here until the first `run`, and asleep again between
+     * every pass after it, so a pool that is never used costs its stacks and
+     * nothing else.
+     * @param crew  workers to start, over and above the calling thread
+     */
+    constructor(crew : i32) {
+        let want : i32 = crew;
+        if (want < 0) {
+            want = 0;
+        }
+        if (want > POOL_MAX) {
+            want = POOL_MAX;
+        }
+        self.n = want;
+        self.nJobs = 0;
+        self.jobs = malloc<dyn Job>(POOL_JOBS as i64);
+        for (i of 0..POOL_JOBS) {
+            self.jobs[i] = new IdlePass();
+        }
+        for (i of 0..want) {
+            self.crew[i] = spawn poolLoop(self);
+        }
+    }
+
+    /**
+     * Take a pass, and answer with the handle `run` wants.
+     *
+     * Ownership passes to the pool and stays there: a pass is a fixture of the
+     * program that owns the pool, and both are released together.
+     * @param work  the pass
+     * @return its handle, or -1 if the pool is already carrying `POOL_JOBS`
+     */
+    pub fn attach(mut self, own work : dyn Job) : i32 {
+        if (self.nJobs >= POOL_JOBS) {
+            return 0 - 1;
+        }
+        let at : i32 = self.nJobs;
+        self.jobs[at] = work;
+        self.nJobs = at + 1;
+        return at;
+    }
+
+    /**
+     * How many workers stand behind this pool, not counting the caller.
+     * @return the crew size
+     */
+    pub fn size(self) : i32 {
+        return self.n;
+    }
+
+    /**
+     * Run one attached pass over `shares` shares, and return when every share
+     * has finished.
+     *
+     * Share 0 runs on this thread, between waking the crew and waiting for it,
+     * so the calling thread is working rather than blocked for the whole pass.
+     * More shares than the crew can cover is not an error: the extra shares are
+     * run here as well, in order, which is slower but never wrong.
+     * @param pass    the handle `attach` gave back
+     * @param shares  how many pieces to cut the pass into; 1 runs it all here
+     */
+    pub fn run(mut self, pass : i32, shares : i32) : void {
+        if (shares <= 0 || pass < 0 || pass >= self.nJobs) {
+            return;
+        }
+        let helpers : i32 = shares - 1;
+        if (helpers > self.n) {
+            helpers = self.n;
+        }
+        self.active.set(pass);
+        self.shares.set(shares);
+        self.ticket.set(0);
+        for (i of 0..helpers) {
+            self.begin.release();
+        }
+        // This thread's own share, and any the crew was too small to take.
+        self.jobs[pass].run(0, shares);
+        let mine : i32 = helpers + 1;
+        while (mine < shares) {
+            self.jobs[pass].run(mine, shares);
+            mine = mine + 1;
+        }
+        for (i of 0..helpers) {
+            self.awaitOne();
+        }
+    }
+
+    /**
+     * Wait for one worker to report its share finished.
+     *
+     * An interrupt is swallowed rather than thrown on: the caller is mid-pass,
+     * and a share it stopped waiting for would still be writing into the
+     * caller's buffers. Waiting again is the only safe answer.
+     */
+    pub(file) fn awaitOne(self) : void {
+        let waiting : bool = true;
+        while (waiting) {
+            try {
+                self.ended.acquire();
+                waiting = false;
+            } catch e : InterruptedException {
+                waiting = true;
+            }
+        }
+    }
+
+    /**
+     * Stop the crew and wait for it.
+     *
+     * One permit each with `alive` cleared, which is what a parked worker wakes
+     * to and returns on; then a join apiece, so no worker outlives the pool's
+     * memory.
+     */
+    pub fn close(mut self) : void {
+        if (self.n == 0) {
+            return;
+        }
+        self.alive.set(false);
+        for (i of 0..self.n) {
+            self.begin.release();
+        }
+        for (i of 0..self.n) {
+            let done : i32 = self.crew[i].join();
+        }
+        self.n = 0;
+    }
+}
+
+/**
+ * One worker's life: park, claim a share, run it, report, park again.
+ *
+ * A free function because a `Task<T>` is minted by `spawn` on a free call, and
+ * the pool is passed rather than captured because a class is a reference — the
+ * one the constructor is building is the one every worker reads.
+ * @param p  the pool this worker belongs to
+ * @return 0, unused
+ */
+fn poolLoop(p : WorkerPool) : i32 {
+    while (true) {
+        let woken : bool = false;
+        while (!woken) {
+            try {
+                p.begin.acquire();
+                woken = true;
+            } catch e : InterruptedException {
+                woken = false;
+            }
+        }
+        if (!p.alive.get()) {
+            return 0;
+        }
+        p.jobs[p.active.get()].run(p.ticket.incrementAndGet(), p.shares.get());
+        p.ended.release();
+    }
+}

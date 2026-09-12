@@ -41,7 +41,7 @@ use crate::platform::{sys_clock, sys_app, sys_screen, sys_blit, sys_audio};
 
 use crate::audio::{clip, mixer, bank};
 
-use crate::core::{error, init, timer, event, keyboard, mouse, pump};
+use crate::core::{error, init, timer, pool, event, keyboard, mouse, pump};
 
 use crate::video::{window, display, scancode_set1, sys_window, sys_drain, sys_cursor};
 
