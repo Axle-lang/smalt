@@ -89,9 +89,10 @@ name = "your-game"
 smalt = { path = "../smalt" }
 ```
 
-```axle
+```rs
 use smalt::{Platform, PlatformError, WindowDesc, Events, EventKind, Clock, FramePacer, SoftDevice, Camera, Color};
 
+// `main` is the only place errors stop: everything below propagates with `?`.
 fn main() : i32 {
     try {
         return run();
@@ -102,24 +103,37 @@ fn main() : i32 {
 }
 
 fn run() : i32 ! PlatformError {
+    // --- Open the platform, and the window on it ---------------------------
+    // Every handle here is `Closeable`, so the compiler refuses the path that
+    // forgets one. `defer` runs on the way out, including the error way out.
     let platform = new Platform()?;
     defer platform.close();
+
     let win = platform.open(
         WindowDesc { title: "game", w: 1280, h: 720, resizable: true }
     )?;
     defer win.close();
-    let clock = new Clock();
+
+    // --- The three things a frame is made of -------------------------------
+    let clock = new Clock();          // one measurement, shared by pacer and events
     defer clock.close();
-    let events = new Events();
+
+    let events = new Events();        // input queue, drained once per frame
     defer events.close();
-    let device = new SoftDevice(1280, 720);
+
+    let device = new SoftDevice(1280, 720);   // the software 3-D pipeline
     defer device.close();
+
     let camera = new Camera();
 
+    // --- The loop ----------------------------------------------------------
     let pacer = new FramePacer(60);
     let running = true;
     while (running) {
+        // 1. time: `dt` is the variable span since the last tick
         let dt = pacer.tick(clock);
+
+        // 2. input: pump the OS queue, then drain it
         events.pump(win, clock);
         while (events.hasNext()) {
             let e = events.next();
@@ -128,6 +142,9 @@ fn run() : i32 ! PlatformError {
                 _ => {}
             }
         }
+
+        // 3. draw: camera, clear, geometry, present
+        //    (`mesh` / `model` / `texture` / `material` are your own assets)
         device.setCamera(camera);
         device.beginFrame(Color::black());
         device.drawMesh(mesh, model, texture, material);
@@ -300,7 +317,7 @@ A module path then resolves to `<path>.axle` when a capability has one
 implementation, and to a file in one of the *active* port's directories
 when it has one per backend — so a portable file writes
 
-```axle
+```rs
 use crate::platform::sys_clock::SysClock;   // core/timer.axle
 ```
 

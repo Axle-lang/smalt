@@ -35,10 +35,13 @@ time — which would rule out modern OpenGL, Vulkan, D3D and Metal, since
 all of them are reached through addresses a loader hands back. That has
 not been true since the C function-pointer cast landed:
 
-```axle
+```rs
 unsafe {
+    // The loader hands back an untyped address; the cast gives it a C
+    // signature, and from there it is called like any other function.
     let draw : extern "C" (u32, i32, i32) => void =
         GetProcAddress(gl, name) as extern "C" (u32, i32, i32) => void;
+
     draw(0, 0, 0);
 }
 ```
@@ -206,7 +209,7 @@ none is checked in, because what is worth keeping is the answer.
 A `struct` method calling a sibling declared **later in the same body**
 is rejected — and the diagnostic names neither the cause nor the method:
 
-```axle
+```rs
 pub struct Frame {
     pub fn fill(self, packed : i32) : void {
         self.fillRect(self.clipRect(), packed);   // E0006: expected 0, found 3
@@ -226,7 +229,7 @@ class is declared"); structs appear not to have been.
 Every field of `Mat4` has a default, and `Mat4 { }` is still a parse
 error. One field has to be named:
 
-```axle
+```rs
 return Mat4 { m00: 1.0 };   // ★ src/math/mat.axle — `identity()`
 ```
 
@@ -254,7 +257,7 @@ be used arithmetically in both.
 `for (x of thing)` accepts a range or an array and nothing else (E0517).
 A container cannot be made iterable, which is why the event loop is:
 
-```axle
+```rs
 while (events.hasNext()) { let e = events.next(); … }
 ```
 
@@ -265,7 +268,7 @@ and not `for (e of events)`.
 Which is why the ergonomic shape is an **options record with field
 defaults** rather than overloads:
 
-```axle
+```rs
 platform.open(WindowDesc { title: "game", w: 1280, h: 720, resizable: true })
 ```
 
@@ -288,7 +291,7 @@ mean.
 This one is worse than being unsupported, which is why it is worth
 stating precisely. `@derive(Eq)` on a `struct` **compiles**:
 
-```axle
+```rs
 @derive(Eq)
 struct P { x : i32; y : i32; }
 ```
@@ -320,12 +323,12 @@ three lines say who stops the pump, who waits for it, and who releases
 the device, in that order, which is an order a `Mixer::startPump()`
 hiding the handle could not have made visible:
 
-```axle
-let audio : Task<i32> = spawn mixerLoop(mixer);
+```rs
+let audio : Task<i32> = spawn mixerLoop(mixer);   // the pump runs on its own task
 …
-mixer.requestStop();
-audio.join();
-mixer.close();
+mixer.requestStop();   // 1. who stops the pump
+audio.join();          // 2. who waits for it
+mixer.close();         // 3. who releases the device
 ```
 
 ### 2.9 Address-of a local aggregate — this works
@@ -335,7 +338,7 @@ thing standing between Axle and a readable Vulkan binding. That was read
 off the FFI chapter, which only demonstrates `&arr[0]`, instead of being
 asked of the compiler. Both of these run:
 
-```axle
+```rs
 extern "C" struct QueueInfo { pub family : i32; pub count : i32; }
 
 let one : QueueInfo = QueueInfo { family: 11, count: 13 };
@@ -407,7 +410,7 @@ A `[…]` literal is a **fixed** `i32[N]`. It becomes a dynamic `i32[]`
 through a `let` with the type written, or through a `return` — and not
 through being passed:
 
-```axle
+```rs
 fn takes(t : i32[]) : void { }
 
 takes([1, 2, 3]);                    // E0001: expected i32[], found i32[3]
@@ -421,7 +424,7 @@ tables before handing them to `fromTables`.
 
 ### 2.16 A `static` field must be a literal, not a named constant
 
-```axle
+```rs
 const FIGURE_BYTES : i32 = 32;
 class Scratch {
     pub(file) static HEADROOM : i32 = FIGURE_BYTES;   // E0720
