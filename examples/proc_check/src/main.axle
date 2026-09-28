@@ -52,7 +52,7 @@ fn run() : i32 ! PlatformError {
         return 3;
     }
     // The same question for the one file format the library reads. Its two
-    // headers are `@packed`, and without that every offset in them is two
+    // headers are `@layout(packed)`, and without that every offset in them is two
     // bytes further along than the format says.
     let badBmp = Bmp::verifyLayout();
     if (badBmp != 0) {

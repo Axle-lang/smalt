@@ -28,13 +28,13 @@ use std::ffi::libc::fs;
 /**
  * `BITMAPFILEHEADER` — the 14 bytes a `.bmp` opens with.
  *
- * `@packed` is not a preference here, it is the format: a `WORD` followed
+ * `@layout(packed)` is not a preference here, it is the format: a `WORD` followed
  * by a `DWORD` would be padded to 16 bytes by any ordinary layout, and
  * every offset after it — including the one that says where the pixels
  * start — would be two bytes off. The file was written by something that
  * packed it, so it is read by something that says so.
  */
-@packed
+@layout(packed)
 extern "C" struct BITMAPFILEHEADER {
     /** `WORD bfType` — `BM`, little-endian, so `0x4D42`. */
     bfType      : u16;
@@ -59,7 +59,7 @@ extern "C" struct BITMAPFILEHEADER {
  * four-byte aligned, so an ordinary layout would start it at 16 and the
  * whole DIB header would be read two bytes into itself.
  */
-@packed
+@layout(packed)
 extern "C" struct BMPHEADER {
     /** The file header. */
     file : BITMAPFILEHEADER;
@@ -103,7 +103,7 @@ pub class Bmp {
      * These are the numbers this decoder used to name one at a time —
      * `bfOffBits` at 10, `biWidth` at 18, and the 54 bytes the two headers
      * cover. Reading them off the declarations instead is only an
-     * improvement if the declarations agree, and `@packed` is precisely the
+     * improvement if the declarations agree, and `@layout(packed)` is precisely the
      * thing that would be silently absent: drop it and every one of these
      * grows by two.
      */
@@ -282,7 +282,7 @@ pub class Bmp {
      * Stamp the two headers into `header`.
      *
      * Through the declared records rather than by offset, which is the
-     * point of `@packed` being on them: the writer and the reader compute
+     * point of `@layout(packed)` being on them: the writer and the reader compute
      * every field position from the same declaration, so a layout that
      * drifted would break both at once rather than producing files only
      * this library can read.

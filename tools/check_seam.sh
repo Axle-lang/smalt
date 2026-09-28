@@ -11,7 +11,7 @@
 # Two rules, each of which has a way of being violated by accident:
 #
 #   1. No OS import outside a port directory. A `native fn` /
-#      `@link_name` / `extern "C" from` is a symbol some libc, DLL or
+#      `@link(symbol = …)` / `extern "C" from` is a symbol some libc, DLL or
 #      shared object has to provide, so the file that writes one belongs
 #      to a port.
 #   2. No `use` path crosses into a port that is not the file's own.
@@ -61,7 +61,7 @@ portable_files() {
 # Rule 1 — an OS import outside a port directory.
 check_no_os_import() {
     local root=$1 hits
-    hits=$(portable_files "$root" | xargs grep -nE 'extern[[:space:]]+"C"[[:space:]]+from|@link_name|native[[:space:]]+fn' 2>/dev/null)
+    hits=$(portable_files "$root" | xargs grep -nE 'extern[[:space:]]+"C"[[:space:]]+from|@link[[:space:]]*\(|native[[:space:]]+fn' 2>/dev/null)
     if [ -n "$hits" ]; then
         note "FAIL: an OS import outside a port directory:"
         note "$hits"

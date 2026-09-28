@@ -15,18 +15,18 @@
 // run, and a name that outlives the program is the honest shape of that.
 
 /** `char *strdup(const char *)` — a copy that outlives the call. */
-@link_name("strdup")
+@link(symbol = "strdup")
 pub extern "C" fn cstr(s : string) : ptr;
 
 /** `int strcmp(const char *, const char *)` — zero when the two agree. */
-@link_name("strcmp")
+@link(symbol = "strcmp")
 pub extern "C" fn cstrcmp(a : ptr, b : string) : i32;
 
 /** `void *dlsym(void *handle, const char *)`; a null handle is `RTLD_DEFAULT`. */
 pub extern "C" fn dlsym(handle : ptr, symbol : string) : ptr;
 
 /** `int memfd_create(const char *, unsigned)` — an anonymous file. */
-@link_name("memfd_create")
+@link(symbol = "memfd_create")
 pub extern "C" fn memfdCreate(name : string, flags : i32) : i32;
 
 /** `int ftruncate(int, off_t)` — give the anonymous file a size. */
@@ -39,7 +39,7 @@ pub extern "C" fn mmap(addr : ptr, length : i64, prot : i32, flags : i32, fd : i
 pub extern "C" fn munmap(addr : ptr, length : i64) : i32;
 
 /** `int close(int)`. */
-@link_name("close")
+@link(symbol = "close")
 pub extern "C" fn closeFd(fd : i32) : i32;
 
 /** `int poll(struct pollfd *, nfds_t, int timeout)`. */

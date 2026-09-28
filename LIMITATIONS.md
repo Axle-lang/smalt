@@ -359,9 +359,9 @@ addressing one.
 
 ### 2.10 No unions
 
-`VkClearValue` is a union of unions. Workable as a `@packed extern "C"
+`VkClearValue` is a union of unions. Workable as a `@layout(packed) extern "C"
 struct` of the right width with the offsets computed by hand — which is
-exactly the class of error `@packed` plus `offsetof` exists to eliminate
+exactly the class of error `@layout(packed)` plus `offsetof` exists to eliminate
 everywhere else.
 
 ### 2.11 A payload-bearing `enum` cannot carry another one
