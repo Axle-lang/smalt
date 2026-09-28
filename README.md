@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://axle-lang.dev"><img alt="Powered by Axle" src="https://img.shields.io/badge/powered%20by-Axle-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
-  <a href="https://axle-lang.dev"><img alt="Axle 0.12.0+" src="https://img.shields.io/badge/axle-0.12.0%2B-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
+  <a href="https://axle-lang.dev"><img alt="Axle 0.14.0+" src="https://img.shields.io/badge/axle-0.14.0%2B-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
 </p>
 <p align="center">
   <img alt="Rendering: 100% CPU" src="https://img.shields.io/badge/rendering-100%25%20CPU-FF7A45?style=flat-square&labelColor=1b1b2b">
@@ -159,18 +159,24 @@ That is the whole setup. No DLL beside the binary, no `[link]` section — `gdi3
 
 ### Prerequisite
 
-Only the Axle compiler, **v0.12.0 or newer**:
+Only the Axle compiler, **v0.14.0 or newer**:
 
 ```bash
-axle --version      # must print 0.12.0 or higher
+axle --version      # must print 0.14.0 or higher
 ```
+
+0.14 is a floor, not a preference: it spells annotations as values —
+`@layout(packed)`, `@link(symbol = "…")` — and refuses the older
+`@packed` / `@link_name` the BMP headers and the Wayland imports used
+to carry. An older compiler does not know the new spellings, so there is
+no version that builds both.
 
 <details>
 <summary><b>Missing or older? Install / upgrade Axle →</b></summary>
 
 <br>
 
-- **Windows** — install the x64 `.msi` from the `v0.12.0` (or newer) release; it puts `axle.exe` in `C:\Program Files (x86)\Axle\` and on your `PATH`.
+- **Windows** — install the x64 `.msi` from the `v0.14.0` (or newer) release; it puts `axle.exe` in `C:\Program Files (x86)\Axle\` and on your `PATH`.
 - **Other platforms** — see [axle-lang.dev](https://axle-lang.dev).
 
 On Linux, the X11 port needs `libx11-dev` and `libasound2-dev`; the
@@ -551,13 +557,16 @@ Display enumeration covers the primary monitor only — `EnumDisplayMonitors` ta
 
 ## 📝 Notes for anyone extending this
 
-Five language rules shape the signatures here:
+Six language rules shape the signatures here:
 
 - **Every member sits on a visibility ladder**, fields and methods alike: unmarked means the declaring class's own, then `pub(derived)`, `pub(file)`, `pub(crate)`, `pub`. smalt writes the narrowest rung that compiles, so the marker is information: `KeyboardState::isDown` is `pub` and `KeyboardState::press` is `pub(crate)`, which says in the signature what the docs used to say in prose — the drain writes the input state and a game reads it. A seam class declares `pub(crate)` and so do its methods; an implementation helper is `pub(file)`.
 - **A constant is a `static` field on the class it belongs to.** This used to read the other way round: a `static` field did not cross a crate boundary, so a published constant had to be a `pub const` with the class spelled into its name — `WINDOW_RESIZABLE` rather than `Window::RESIZABLE`. Axle 0.12.1 fixed that, one day after the commit here that wrote the old rule down. So the flags are `Window::RESIZABLE` and friends now, and the prefix is the scope it was imitating. Both forms take a literal, so a constant derived from another is a `static fn` — `AudioFormat::frameBytes()`.
 - **A field's default belongs on the field.** `focusedNow : bool = true;` runs at every construction, so a constructor carries only what depends on an argument, and nine classes here have none at all.
 - **Storing a parameter into a field or an array element needs `own`** (**E0513** otherwise) when the parameter is a *reference* or a value that owns a resource. A plain value struct — `Vertex`, `Vec3`, `Event` — is copied into the slot and needs no keyword.
+- **An object has one owner, or a `Shared` handle.** Since 0.14 a field read out of a borrowed parameter and stored into a field (`self.store = m.store`) is **E0513** like storing `m` itself, and a field of `self` handed to a new owner is **E0765** — both used to compile and free the object twice at teardown. smalt itself never needs a second owner, but a game will — one `WorkerPool` its renderer and its sky pass both run on — and that is a `Shared<T>` (`new shared WorkerPool(n)`); an array held that way is `Shared::wrap(malloc<T>(n))`.
 - **`mut` on a class parameter is rejected as never-mutated** (**E0281**): calling a mutating method through it is not a mutation *of the binding*.
+
+An annotation says what it is about in its own words: `@layout(packed)` on a record, `@link(symbol = "…")` on an import, `@float(fast)` on a function. Anything else — an old spelling, a typo, one on a site it does not concern — is an error rather than a no-op, and `tools/check_seam.sh` looks for `@link(` outside the port directories as it looks for `extern "C" from`.
 
 One shape stays out of reach: **a payload-bearing `enum` cannot carry another payload-bearing `enum`**. It is worth stating precisely, because it is usually read as ruling out more than it does — a variant payload takes a scalar, a **payload-free** `enum`, a `string`, an owning object, a `Shared`/`Weak` handle or a dynamic array. `Scancode` and `MouseButton` are payload-free, so `Event::KeyDown(Scancode, bool)` is writable **today**. `core/event.axle` is a flat struct with a `kind` tag because that is what the two decode tables were written against, not because the language refuses the tagged union.
 
