@@ -189,8 +189,7 @@ pub class Clip : Closeable {
         // second free.
         self.samples = new Blob((outFrames as i64) * Clip::SAMPLE_BYTES);
         let dst : ptr = self.samples.at();
-        let i : i32 = 0;
-        while (i < outFrames) {
+        for (i of 0..outFrames) {
             let src : i32 = (((i as i64) * (rate as i64)) / (AUDIO_RATE as i64)) as i32;
             if (src >= srcFrames) {
                 src = srcFrames - 1;
@@ -201,7 +200,6 @@ pub class Clip : Closeable {
                 v = (v + Raw::i16At(base, off + Clip::SAMPLE_BYTES)) / 2;
             }
             Raw::putU16(dst, (i as i64) * Clip::SAMPLE_BYTES, v);
-            i = i + 1;
         }
         self.frames = outFrames;
     }

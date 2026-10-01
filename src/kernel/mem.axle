@@ -264,10 +264,8 @@ pub class Mem {
         if (n > (cap as i64)) {
             n = cap as i64;
         }
-        let i : i64 = 0;
-        while (i < n) {
+        for (i of 0..n) {
             Mem::putByte(base, off + i, s.byteAt(i));
-            i = i + 1;
         }
         return n as i32;
     }

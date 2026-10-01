@@ -179,14 +179,13 @@ pub class BytePool : Closeable {
         }
         for (start of 0..(len - needleLen + 1)) {
             let hit : bool = true;
-            let i : i32 = 0;
-            while (i < needleLen && hit) {
+            for (i of 0..needleLen) {
                 let a : i32 = BytePool::fold(Mem::byteAt(self.block, offset + ((start + i) as i64)));
                 let b : i32 = BytePool::fold(Mem::byteAt(needle, i as i64));
                 if (a != b) {
                     hit = false;
+                    break;
                 }
-                i = i + 1;
             }
             if (hit) {
                 return true;

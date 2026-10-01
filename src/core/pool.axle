@@ -200,10 +200,8 @@ pub class WorkerPool : Closeable {
         }
         // This thread's own share, and any the crew was too small to take.
         self.jobs[pass].run(0, shares);
-        let mine : i32 = helpers + 1;
-        while (mine < shares) {
+        for (mine of (helpers + 1)..shares) {
             self.jobs[pass].run(mine, shares);
-            mine = mine + 1;
         }
         for (i of 0..helpers) {
             self.awaitOne();

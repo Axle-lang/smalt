@@ -124,10 +124,8 @@ pub class SoundBank : Closeable {
      * would read freed memory. Close banks after the mixer.
      */
     pub fn close(self) : void {
-        let i : i32 = 0;
-        while (i < self.count) {
+        for (i of 0..self.count) {
             self.clips[i].close();
-            i = i + 1;
         }
         free(self.clips);
     }

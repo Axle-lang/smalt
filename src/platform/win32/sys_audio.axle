@@ -112,8 +112,7 @@ pub(crate) class SysAudio : Closeable {
 
         // Every header points at its block once and for good. The device
         // never moves them, so this is the only place the two are tied.
-        let i : i32 = 0;
-        while (i < AUDIO_BLOCKS) {
+        for (i of 0..AUDIO_BLOCKS) {
             unsafe {
                 let h = headerAt(self.headers, i);
                 (*h).lpData = Raw::at(self.blockAddress(i));
@@ -126,7 +125,6 @@ pub(crate) class SysAudio : Closeable {
                 (*h).dwFlags = WHDR_DONE as u32;
                 (*h).dwLoops = 0;
             }
-            i = i + 1;
         }
     }
 
@@ -158,8 +156,7 @@ pub(crate) class SysAudio : Closeable {
         if (!self.opened) {
             return -1;
         }
-        let i : i32 = 0;
-        while (i < AUDIO_BLOCKS) {
+        for (i of 0..AUDIO_BLOCKS) {
             let done : bool = false;
             unsafe {
                 let h = headerAt(self.headers, i);
@@ -168,7 +165,6 @@ pub(crate) class SysAudio : Closeable {
             if (done) {
                 return i;
             }
-            i = i + 1;
         }
         return -1;
     }
@@ -215,14 +211,12 @@ pub(crate) class SysAudio : Closeable {
             let size : u32 = sizeof<WAVEHDR>() as u32;
             unsafe {
                 waveOutReset(deviceHandle(self.device));
-                let i : i32 = 0;
-                while (i < AUDIO_BLOCKS) {
+                for (i of 0..AUDIO_BLOCKS) {
                     waveOutUnprepareHeader(
                         deviceHandle(self.device),
                         headerAt(self.headers, i) as ptr,
                         size
                     );
-                    i = i + 1;
                 }
                 waveOutClose(deviceHandle(self.device));
             }

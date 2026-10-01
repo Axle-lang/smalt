@@ -461,15 +461,12 @@ pub class BitmapFont {
         }
         let dots : i32 = self.advance(TEXT_DOT) * 3;
         let pen : i32 = x;
-        let i : i32 = 0;
-        while (i < len) {
+        for (i of 0..len) {
             let c : i32 = Mem::byteAt(buf, off + (i as i64));
             if (pen + self.advance(c) + dots > x + limit) {
-                i = len;
-            } else {
-                pen = pen + self.glyph(f, pen, baseline, c, ink);
-                i = i + 1;
+                break;
             }
+            pen = pen + self.glyph(f, pen, baseline, c, ink);
         }
         for (d of 0..3) {
             pen = pen + self.glyph(f, pen, baseline, TEXT_DOT, ink);
@@ -493,15 +490,12 @@ pub class BitmapFont {
         let dots : i32 = self.advance(TEXT_DOT) * 3;
         let pen : i32 = x;
         let n : i64 = s.byteLength;
-        let i : i64 = 0;
-        while (i < n) {
+        for (i of 0..n) {
             let c : i32 = s.byteAt(i);
             if (pen + self.advance(c) + dots > x + limit) {
-                i = n;
-            } else {
-                pen = pen + self.glyph(f, pen, baseline, c, ink);
-                i = i + 1;
+                break;
             }
+            pen = pen + self.glyph(f, pen, baseline, c, ink);
         }
         for (d of 0..3) {
             pen = pen + self.glyph(f, pen, baseline, TEXT_DOT, ink);

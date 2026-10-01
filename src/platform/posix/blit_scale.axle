@@ -65,19 +65,15 @@ pub(crate) class ScaleScratch : Closeable {
         unsafe {
             let dst : ptr<i32> = self.pixels.at() as ptr<i32>;
             let sy : i64 = 0;
-            let dy : i32 = 0;
-            while (dy < dstH) {
+            for (dy of 0..dstH) {
                 let srcRow : i64 = (sy >> ScaleScratch::FRACTION_BITS) * (srcW as i64);
                 let dstRow : i64 = (dy as i64) * (dstW as i64);
                 let sx : i64 = 0;
-                let dx : i32 = 0;
-                while (dx < dstW) {
+                for (dx of 0..dstW) {
                     dst[dstRow + (dx as i64)] = source[srcRow + (sx >> ScaleScratch::FRACTION_BITS)];
                     sx = sx + xStep;
-                    dx = dx + 1;
                 }
                 sy = sy + yStep;
-                dy = dy + 1;
             }
         }
     }
