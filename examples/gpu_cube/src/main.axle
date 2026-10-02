@@ -1,0 +1,388 @@
+// gpu_cube — `spinning_cube`'s scene and more, through the renderer a game would use.
+//
+// `spinning_cube` drives `SoftDevice` call by call: bind the camera, bind the light,
+// begin a frame, draw, end it. This program says what the frame *contains* — a camera,
+// a sun, a lamp, some fog, and four things to look at — and `Renderer::render` does the
+// rest, on a GPU if there is one and on the CPU if there is not. Nothing below names
+// Vulkan.
+//
+// What is on screen, and what each thing is showing:
+//
+//   * the tiled floor and the crate — an ordinary lit, textured mesh (`Material::textured`,
+//     `Material::glossy`), uploaded once from the CPU `Primitives`;
+//   * the coloured wall — a mesh built with `MeshBuilder::face`, each corner given its own
+//     colour. That per-vertex colour is where a voxel mesher's baked light goes, and
+//     `Material::baked` is the material that shades from it alone;
+//   * the pane of blue glass — `Material::opacity < 1`, drawn after the opaque things, far to
+//     near;
+//   * the orange lamp circling the crate — a `PointLight`, with a range;
+//   * the haze — `Fog::linear`;
+//   * the panel in the corner — the 2-D overlay, a `Frame` like any other, written to with the
+//     same `BitmapFont` a `Surface` program uses.
+//
+// On the CPU fallback the wall is evenly lit, the glass is opaque, and the lamp and the haze
+// are absent (`gpu/soft/backend_soft` lists exactly what the CPU cannot show). The panel
+// says which backend is drawing.
+//
+// Controls: WASD to move, Space and Shift for up and down, Tab to capture the mouse and look
+// around, R to release the crate and upload it again (what a game does when it streams a
+// chunk out and back in — the GPU must not free what a frame in flight still draws), Escape
+// to quit.
+//
+// Flags: `--software` forces the CPU, `--gpu` refuses to fall back and says why it failed,
+// `--smoke` draws 120 frames (releasing and re-uploading the crate halfway), then closes the
+// renderer twice and checks that a closed renderer refuses to draw — exit code 0 when all
+// held. A GPU that is lost mid-run (`isLost`) is answered the way the documentation says:
+// the renderer is dropped and the scene carries on with `Backend::Software`.
+
+use smalt::{
+    Platform, PlatformError, Window, Clock, FramePacer, Events, EventKind, Scancode, Color, Camera,
+    Primitives, Texture, Material, DirectionalLight, Mat4, Vec3, Rect, BitmapFont, Face, Renderer,
+    RendererDesc, Backend, Scene, MeshBuilder, Image, SamplerDesc, PointLight, Fog,
+};
+use std::sys::process::{argc, argAt};
+use std::lang::IndexOutOfBoundsException;
+
+/** Client width at startup. */
+const VIEW_W : i32 = 1024;
+
+/** Client height at startup. */
+const VIEW_H : i32 = 640;
+
+/** Metres per second the camera walks. */
+const WALK_SPEED : f64 = 4.0;
+
+/** Radians of turn per pixel of mouse motion. */
+const LOOK_SPEED : f64 = 0.0035;
+
+/** The frame rate the loop is capped at, on either backend; vsync can only hold it lower. */
+const FRAME_RATE : i32 = 60;
+
+/** The overlay panel's fill. */
+const C_PANEL : i32 = 0x1F252C;
+
+/** The overlay's text. */
+const C_TEXT : i32 = 0xE6EAEE;
+
+/** Frames `--smoke` draws before it checks the renderer's teardown. */
+const SMOKE_FRAMES : i32 = 120;
+
+/** What a session ends with: the program was asked to quit. */
+const END_QUIT : i32 = 0;
+
+/** What a session ends with: the GPU was lost, and a CPU session should follow. */
+const END_LOST : i32 = 2;
+
+/** What a session ends with: `--smoke` found something wrong. */
+const END_FAILED : i32 = 1;
+
+/** The sky, and the colour the fog fades to. */
+fn sky() : Color {
+    return Color::rgb(0.52, 0.66, 0.82);
+}
+
+fn main() : i32 {
+    try {
+        return run();
+    } catch e : PlatformError {
+        println(e.message);
+        return 1;
+    }
+}
+
+/** Which backend the command line asks for. */
+fn chooseBackend() : Backend {
+    for (i of 1..argc()) {
+        try {
+            if (argAt(i) == "--software") {
+                return Backend::Software;
+            }
+            if (argAt(i) == "--gpu") {
+                return Backend::Gpu;
+            }
+        } catch e : IndexOutOfBoundsException {
+            return Backend::Auto;
+        }
+    }
+    return Backend::Auto;
+}
+
+/** Whether `--smoke` was given. */
+fn smokeRun() : bool {
+    for (i of 1..argc()) {
+        try {
+            if (argAt(i) == "--smoke") {
+                return true;
+            }
+        } catch e : IndexOutOfBoundsException {
+            return false;
+        }
+    }
+    return false;
+}
+
+/** The crate's texture: a checker, sampled nearest. */
+fn crateImage() : Image {
+    return Image::fromTexture(
+        Texture::checker(128, 8, Color::rgb(0.9, 0.62, 0.28), Color::rgb(0.34, 0.22, 0.12))
+    );
+}
+
+/** A vertical wall in the XY plane at depth `z`, its four corners four colours. */
+fn coloredWall(z : f64) : MeshBuilder {
+    let b = new MeshBuilder(4, 6);
+    let normal = Vec3::make(0.0, 0.0, 1.0);
+    b.face(
+        Vec3::make(-3.0, 0.0, z),
+        Vec3::make(3.0, 0.0, z),
+        Vec3::make(3.0, 3.0, z),
+        Vec3::make(-3.0, 3.0, z),
+        normal,
+        0,
+        MeshBuilder::rgba(255, 90, 60, 255),
+        MeshBuilder::rgba(255, 220, 60, 255),
+        MeshBuilder::rgba(60, 200, 255, 255),
+        MeshBuilder::rgba(160, 80, 255, 255)
+    );
+    return b;
+}
+
+fn run() : i32 ! PlatformError {
+    let platform = new Platform()?;
+    defer platform.close();
+    let win = platform.createWindow("smalt — gpu cube", VIEW_W, VIEW_H, Window::RESIZABLE)?;
+    defer win.close();
+
+    let clock = new Clock();
+    defer clock.close();
+    let events = new Events();
+    defer events.close();
+
+    let smoke : bool = smokeRun();
+    let end : i32 = session(win, clock, events, chooseBackend(), smoke)?;
+    if (end == END_LOST) {
+        // The documented answer to a lost GPU: drop the renderer, carry on with the CPU.
+        println("the GPU was lost; carrying on with the CPU");
+        end = session(win, clock, events, Backend::Software, smoke)?;
+    }
+    if (end == END_FAILED) {
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * Open a renderer of `backend` on `win`, upload the scene, and draw it until the program
+ * is asked to quit (`END_QUIT`), the GPU is lost (`END_LOST`), or — with `smoke` — the
+ * frames are drawn and the teardown checked (`END_QUIT` or `END_FAILED`).
+ */
+fn session(
+    win : Window,
+    clock : Clock,
+    events : Events,
+    backend : Backend,
+    smoke : bool
+) : i32 ! PlatformError {
+    // The only place a backend is chosen. `Auto` takes the GPU when there is one.
+    let gfx = new Renderer(win, RendererDesc { backend: backend })?;
+    defer gfx.close();
+    println("renderer: ${gfx.backendName()}");
+    if (gfx.fallbackReason().byteLength != 0) {
+        println("  (no GPU: ${gfx.fallbackReason()})");
+    }
+
+    // Geometry, built on the CPU and uploaded once. Handles, not objects: the renderer
+    // owns what is on the GPU.
+    let cube = gfx.uploadMesh(MeshBuilder::fromMesh(Primitives::cube(1.6)));
+    let ground = gfx.uploadMesh(MeshBuilder::fromMesh(Primitives::ground(24.0, 12.0)));
+    let wall = gfx.uploadMesh(coloredWall(-6.0));
+    let pane = gfx.uploadMesh(MeshBuilder::fromMesh(Primitives::ground(2.5, 1.0)));
+
+    let crate1 = gfx.uploadTexture(crateImage(), SamplerDesc { nearest: true, anisotropy: 8 });
+    let tiles = gfx.uploadTexture(
+        Image::fromTexture(
+            Texture::checker(128, 2, Color::rgb(0.3, 0.33, 0.38), Color::rgb(0.18, 0.2, 0.24))
+        ),
+        SamplerDesc { anisotropy: 8 }
+    );
+    // A none handle is an upload that did not happen: the draw is skipped, the program
+    // runs on. Said once rather than discovered as a missing crate.
+    if (cube.isNone() || ground.isNone() || wall.isNone() || pane.isNone() || crate1.isNone() || tiles.isNone()) {
+        println("  (some of the scene could not be uploaded; it is drawn without it)");
+    }
+
+    let glass = Material::matte(Color::rgb(0.35, 0.6, 1.0));
+    glass.opacity = 0.45;
+    glass.cullBackface = false;
+    let cubeMaterial = Material::glossy(0.35, 48.0);
+    let floorMaterial = Material::textured();
+    let wallMaterial = Material::baked();
+
+    let camera = new Camera();
+    camera.moveTo(Vec3::make(0.0, 1.6, 4.5));
+    camera.lookAt(Vec3::make(0.0, 0.8, 0.0));
+    camera.setViewport(VIEW_W, VIEW_H);
+
+    let scene = new Scene(64);
+    let ui = BitmapFont::baked(Face::Ui);
+    let pacer = new FramePacer(FRAME_RATE);
+    let running = true;
+    let looking = false;
+    let reload = false;
+    let spin : f64 = 0.0;
+    let frames : i32 = 0;
+    let shownCount : i32 = 0;
+
+    while (running) {
+        let dt = pacer.tick(clock);
+        events.pump(win, clock);
+        while (events.hasNext()) {
+            let e = events.next();
+            match e.kind {
+                EventKind::Quit => {
+                    running = false;
+                },
+                EventKind::KeyDown => {
+                    if (e.scancode == Scancode::Escape) {
+                        running = false;
+                    }
+                    if (e.scancode == Scancode::Tab && !e.repeat) {
+                        looking = !looking;
+                        events.setRelativeMouse(looking);
+                    }
+                    if (e.scancode == Scancode::R && !e.repeat) {
+                        reload = true;
+                    }
+                },
+                EventKind::WindowResized => {
+                    camera.setViewport(e.width, e.height);
+                },
+                _ => {},
+            }
+        }
+
+        if (looking) {
+            camera.turn(
+                (events.mouseDX() as f64) * LOOK_SPEED,
+                -(events.mouseDY() as f64) * LOOK_SPEED
+            );
+        }
+        walk(camera, events, dt);
+        spin += dt * 0.7;
+
+        // Released while the last frames that drew them may still be on the GPU, and
+        // uploaded again into whatever slots come free: the renderer's graveyard is what
+        // keeps the frames in flight from reading freed memory.
+        if (reload || (smoke && frames == SMOKE_FRAMES / 2)) {
+            gfx.releaseMesh(cube);
+            gfx.releaseTexture(crate1);
+            cube = gfx.uploadMesh(MeshBuilder::fromMesh(Primitives::cube(1.6)));
+            crate1 = gfx.uploadTexture(crateImage(), SamplerDesc { nearest: true, anisotropy: 8 });
+            reload = false;
+        }
+
+        // Describe the frame. Nothing is drawn until `render`.
+        scene.reset();
+        scene.setCamera(camera);
+        scene.setClear(sky());
+        scene.setSun(DirectionalLight::noon());
+        scene.setAmbient(Color::white());
+        scene.setFog(Fog::linear(sky(), 10.0, 34.0));
+        scene.add(ground, tiles, floorMaterial, Mat4::identity());
+        scene.add(cube, crate1, cubeMaterial, cubeModel(spin));
+        scene.add(wall, gfx.whiteTexture(), wallMaterial, Mat4::identity());
+        scene.add(pane, gfx.whiteTexture(), glass, paneModel());
+        scene.addLight(
+            PointLight::make(
+                Vec3::make(spin.cos() * 2.6, 1.4, spin.sin() * 2.6),
+                Color::rgb(1.0, 0.55, 0.2).scaled(1.6),
+                6.0
+            )
+        );
+
+        // The 2-D layer: the same `Frame` a `Surface` program draws on. It is composited
+        // over the 3-D frame by `render`, and is empty again the next time it is taken.
+        let hud = gfx.overlay();
+        hud.fillRect(Rect::make(10, 10, 300, 44), C_PANEL);
+        ui.draw(hud, 20, 28, gfx.backendName(), C_TEXT);
+        ui.draw(hud, 20, 46, "${pacer.fps().round()} fps", C_TEXT);
+
+        if (!win.minimised()) {
+            if (gfx.render(scene, win)) {
+                shownCount += 1;
+            } else if (gfx.isLost()) {
+                return END_LOST;
+            }
+        }
+        frames += 1;
+        if (smoke && frames >= SMOKE_FRAMES) {
+            running = false;
+        }
+    }
+    if (!smoke) {
+        return END_QUIT;
+    }
+
+    // The teardown a program can get wrong: a second close is harmless, and a closed
+    // renderer refuses everything instead of touching what it gave back.
+    let fails : i32 = 0;
+    if (shownCount == 0) {
+        println("smoke: no frame was shown");
+        fails += 1;
+    }
+    gfx.close();
+    gfx.close();
+    if (gfx.render(scene, win)) {
+        println("smoke: a closed renderer drew a frame");
+        fails += 1;
+    }
+    if (!gfx.uploadMesh(MeshBuilder::fromMesh(Primitives::cube(1.0))).isNone()) {
+        println("smoke: a closed renderer took a mesh");
+        fails += 1;
+    }
+    if (fails != 0) {
+        return END_FAILED;
+    }
+    println("smoke: ${shownCount} of ${frames} frames shown on ${gfx.backendName()}; teardown ok");
+    return END_QUIT;
+}
+
+/** The crate's transform: turning about Y, nodding about X, held above the floor. */
+fn cubeModel(spin : f64) : Mat4 {
+    return Mat4::translation(
+        Vec3::make(0.0, 1.1, 0.0)
+    ).mul(Mat4::rotationY(spin)).mul(Mat4::rotationX(spin * 0.55));
+}
+
+/** The glass pane: standing on the floor beside the crate, turned to face the start. */
+fn paneModel() : Mat4 {
+    return Mat4::translation(Vec3::make(2.2, 1.25, 1.2)).mul(Mat4::rotationX(1.5707963));
+}
+
+/** Move the camera from the held keys, framerate-independently. */
+fn walk(camera : Camera, events : Events, dt : f64) : void {
+    let step = WALK_SPEED * dt;
+    let forward = camera.forward();
+    let right = camera.right();
+    let move = Vec3::zero();
+
+    if (events.isKeyDown(Scancode::W)) {
+        move = move.plus(forward);
+    }
+    if (events.isKeyDown(Scancode::S)) {
+        move = move.minus(forward);
+    }
+    if (events.isKeyDown(Scancode::D)) {
+        move = move.plus(right);
+    }
+    if (events.isKeyDown(Scancode::A)) {
+        move = move.minus(right);
+    }
+    if (events.isKeyDown(Scancode::Space)) {
+        move = move.plus(Vec3::unitY());
+    }
+    if (events.isKeyDown(Scancode::LeftShift)) {
+        move = move.minus(Vec3::unitY());
+    }
+    camera.translate(move.normalized().scaled(step));
+}
