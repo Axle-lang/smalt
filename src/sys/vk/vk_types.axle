@@ -1,0 +1,2534 @@
+// vk_types — the Vulkan records the backend fills.
+//
+// Written from the Khronos registry (`vk.xml`) for the commands and records the
+// backend uses, each size and offset measured by a C compiler against
+// `<vulkan/vulkan.h>`. The script that first produced it is not part of this
+// tree: the file is maintained by hand, and `vk_layout_check` is what holds the
+// records to C — at start-up, before the first one reaches a driver, and in
+// `examples/gpu_check`.
+
+// Layout. Each record is an `extern "C" struct`, so field order is the source
+// order and padding is C's — the same bytes the driver reads. A fixed array
+// member is flattened into consecutive fields (`srcOffsets0`, `srcOffsets1`),
+// which is the same layout as the array. Handles are `i64` whatever their
+// kind: on every 64-bit target a pointer-sized integer is passed in the same
+// register as a pointer, and `i64` is what a non-dispatchable one is anyway.
+// Enumerations, flags and counts are `i32` — signedness changes no layout.
+//
+// `sys/vk/vk_layout_check` asserts every size and offset below against the
+// numbers gcc measured from `<vulkan/vulkan.h>` when this file was generated.
+
+use crate::kernel::raw::Raw;
+use crate::sys::vk::vk_const::{
+    VK_QUEUE_FAMILY_IGNORED, VK_STRUCTURE_TYPE_APPLICATION_INFO,
+    VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+    VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+    VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+    VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+    VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+    VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+    VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+    VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+    VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+};
+
+/** `VkApplicationInfo` — 48 bytes. */
+pub extern "C" struct VkApplicationInfo {
+    /** `sType`, at byte 0. */
+    pub sType              : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext              : ptr;
+
+    /** `pApplicationName`, at byte 16. */
+    pub pApplicationName   : ptr;
+
+    /** `applicationVersion`, at byte 24. */
+    pub applicationVersion : i32;
+
+    /** `pEngineName`, at byte 32. */
+    pub pEngineName        : ptr;
+
+    /** `engineVersion`, at byte 40. */
+    pub engineVersion      : i32;
+
+    /** `apiVersion`, at byte 44. */
+    pub apiVersion         : i32;
+}
+
+/** `VkInstanceCreateInfo` — 64 bytes. */
+pub extern "C" struct VkInstanceCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType                   : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext                   : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags                   : i32;
+
+    /** `pApplicationInfo`, at byte 24. */
+    pub pApplicationInfo        : ptr;
+
+    /** `enabledLayerCount`, at byte 32. */
+    pub enabledLayerCount       : i32;
+
+    /** `ppEnabledLayerNames`, at byte 40. */
+    pub ppEnabledLayerNames     : ptr;
+
+    /** `enabledExtensionCount`, at byte 48. */
+    pub enabledExtensionCount   : i32;
+
+    /** `ppEnabledExtensionNames`, at byte 56. */
+    pub ppEnabledExtensionNames : ptr;
+}
+
+/** `VkDeviceQueueCreateInfo` — 40 bytes. */
+pub extern "C" struct VkDeviceQueueCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType            : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext            : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags            : i32;
+
+    /** `queueFamilyIndex`, at byte 20. */
+    pub queueFamilyIndex : i32;
+
+    /** `queueCount`, at byte 24. */
+    pub queueCount       : i32;
+
+    /** `pQueuePriorities`, at byte 32. */
+    pub pQueuePriorities : ptr;
+}
+
+/** `VkDeviceCreateInfo` — 72 bytes. */
+pub extern "C" struct VkDeviceCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType                   : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext                   : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags                   : i32;
+
+    /** `queueCreateInfoCount`, at byte 20. */
+    pub queueCreateInfoCount    : i32;
+
+    /** `pQueueCreateInfos`, at byte 24. */
+    pub pQueueCreateInfos       : ptr;
+
+    /** `enabledLayerCount`, at byte 32. */
+    pub enabledLayerCount       : i32;
+
+    /** `ppEnabledLayerNames`, at byte 40. */
+    pub ppEnabledLayerNames     : ptr;
+
+    /** `enabledExtensionCount`, at byte 48. */
+    pub enabledExtensionCount   : i32;
+
+    /** `ppEnabledExtensionNames`, at byte 56. */
+    pub ppEnabledExtensionNames : ptr;
+
+    /** `pEnabledFeatures`, at byte 64. */
+    pub pEnabledFeatures        : ptr;
+}
+
+/** `VkPhysicalDeviceFeatures` — 220 bytes. */
+pub extern "C" struct VkPhysicalDeviceFeatures {
+    /** `robustBufferAccess`, at byte 0. */
+    pub robustBufferAccess : i32;
+
+    /** `fullDrawIndexUint32`, at byte 4. */
+    pub fullDrawIndexUint32 : i32;
+
+    /** `imageCubeArray`, at byte 8. */
+    pub imageCubeArray : i32;
+
+    /** `independentBlend`, at byte 12. */
+    pub independentBlend : i32;
+
+    /** `geometryShader`, at byte 16. */
+    pub geometryShader : i32;
+
+    /** `tessellationShader`, at byte 20. */
+    pub tessellationShader : i32;
+
+    /** `sampleRateShading`, at byte 24. */
+    pub sampleRateShading : i32;
+
+    /** `dualSrcBlend`, at byte 28. */
+    pub dualSrcBlend : i32;
+
+    /** `logicOp`, at byte 32. */
+    pub logicOp : i32;
+
+    /** `multiDrawIndirect`, at byte 36. */
+    pub multiDrawIndirect : i32;
+
+    /** `drawIndirectFirstInstance`, at byte 40. */
+    pub drawIndirectFirstInstance : i32;
+
+    /** `depthClamp`, at byte 44. */
+    pub depthClamp : i32;
+
+    /** `depthBiasClamp`, at byte 48. */
+    pub depthBiasClamp : i32;
+
+    /** `fillModeNonSolid`, at byte 52. */
+    pub fillModeNonSolid : i32;
+
+    /** `depthBounds`, at byte 56. */
+    pub depthBounds : i32;
+
+    /** `wideLines`, at byte 60. */
+    pub wideLines : i32;
+
+    /** `largePoints`, at byte 64. */
+    pub largePoints : i32;
+
+    /** `alphaToOne`, at byte 68. */
+    pub alphaToOne : i32;
+
+    /** `multiViewport`, at byte 72. */
+    pub multiViewport : i32;
+
+    /** `samplerAnisotropy`, at byte 76. */
+    pub samplerAnisotropy : i32;
+
+    /** `textureCompressionETC2`, at byte 80. */
+    pub textureCompressionETC2 : i32;
+
+    /** `textureCompressionASTC_LDR`, at byte 84. */
+    pub textureCompressionASTC_LDR : i32;
+
+    /** `textureCompressionBC`, at byte 88. */
+    pub textureCompressionBC : i32;
+
+    /** `occlusionQueryPrecise`, at byte 92. */
+    pub occlusionQueryPrecise : i32;
+
+    /** `pipelineStatisticsQuery`, at byte 96. */
+    pub pipelineStatisticsQuery : i32;
+
+    /** `vertexPipelineStoresAndAtomics`, at byte 100. */
+    pub vertexPipelineStoresAndAtomics : i32;
+
+    /** `fragmentStoresAndAtomics`, at byte 104. */
+    pub fragmentStoresAndAtomics : i32;
+
+    /** `shaderTessellationAndGeometryPointSize`, at byte 108. */
+    pub shaderTessellationAndGeometryPointSize : i32;
+
+    /** `shaderImageGatherExtended`, at byte 112. */
+    pub shaderImageGatherExtended : i32;
+
+    /** `shaderStorageImageExtendedFormats`, at byte 116. */
+    pub shaderStorageImageExtendedFormats : i32;
+
+    /** `shaderStorageImageMultisample`, at byte 120. */
+    pub shaderStorageImageMultisample : i32;
+
+    /** `shaderStorageImageReadWithoutFormat`, at byte 124. */
+    pub shaderStorageImageReadWithoutFormat : i32;
+
+    /** `shaderStorageImageWriteWithoutFormat`, at byte 128. */
+    pub shaderStorageImageWriteWithoutFormat : i32;
+
+    /** `shaderUniformBufferArrayDynamicIndexing`, at byte 132. */
+    pub shaderUniformBufferArrayDynamicIndexing : i32;
+
+    /** `shaderSampledImageArrayDynamicIndexing`, at byte 136. */
+    pub shaderSampledImageArrayDynamicIndexing : i32;
+
+    /** `shaderStorageBufferArrayDynamicIndexing`, at byte 140. */
+    pub shaderStorageBufferArrayDynamicIndexing : i32;
+
+    /** `shaderStorageImageArrayDynamicIndexing`, at byte 144. */
+    pub shaderStorageImageArrayDynamicIndexing : i32;
+
+    /** `shaderClipDistance`, at byte 148. */
+    pub shaderClipDistance : i32;
+
+    /** `shaderCullDistance`, at byte 152. */
+    pub shaderCullDistance : i32;
+
+    /** `shaderFloat64`, at byte 156. */
+    pub shaderFloat64 : i32;
+
+    /** `shaderInt64`, at byte 160. */
+    pub shaderInt64 : i32;
+
+    /** `shaderInt16`, at byte 164. */
+    pub shaderInt16 : i32;
+
+    /** `shaderResourceResidency`, at byte 168. */
+    pub shaderResourceResidency : i32;
+
+    /** `shaderResourceMinLod`, at byte 172. */
+    pub shaderResourceMinLod : i32;
+
+    /** `sparseBinding`, at byte 176. */
+    pub sparseBinding : i32;
+
+    /** `sparseResidencyBuffer`, at byte 180. */
+    pub sparseResidencyBuffer : i32;
+
+    /** `sparseResidencyImage2D`, at byte 184. */
+    pub sparseResidencyImage2D : i32;
+
+    /** `sparseResidencyImage3D`, at byte 188. */
+    pub sparseResidencyImage3D : i32;
+
+    /** `sparseResidency2Samples`, at byte 192. */
+    pub sparseResidency2Samples : i32;
+
+    /** `sparseResidency4Samples`, at byte 196. */
+    pub sparseResidency4Samples : i32;
+
+    /** `sparseResidency8Samples`, at byte 200. */
+    pub sparseResidency8Samples : i32;
+
+    /** `sparseResidency16Samples`, at byte 204. */
+    pub sparseResidency16Samples : i32;
+
+    /** `sparseResidencyAliased`, at byte 208. */
+    pub sparseResidencyAliased : i32;
+
+    /** `variableMultisampleRate`, at byte 212. */
+    pub variableMultisampleRate : i32;
+
+    /** `inheritedQueries`, at byte 216. */
+    pub inheritedQueries : i32;
+}
+
+/** `VkExtent2D` — 8 bytes. */
+pub extern "C" struct VkExtent2D {
+    /** `width`, at byte 0. */
+    pub width  : i32;
+
+    /** `height`, at byte 4. */
+    pub height : i32;
+}
+
+/** `VkExtent3D` — 12 bytes. */
+pub extern "C" struct VkExtent3D {
+    /** `width`, at byte 0. */
+    pub width  : i32;
+
+    /** `height`, at byte 4. */
+    pub height : i32;
+
+    /** `depth`, at byte 8. */
+    pub depth  : i32;
+}
+
+/** `VkOffset2D` — 8 bytes. */
+pub extern "C" struct VkOffset2D {
+    /** `x`, at byte 0. */
+    pub x : i32;
+
+    /** `y`, at byte 4. */
+    pub y : i32;
+}
+
+/** `VkOffset3D` — 12 bytes. */
+pub extern "C" struct VkOffset3D {
+    /** `x`, at byte 0. */
+    pub x : i32;
+
+    /** `y`, at byte 4. */
+    pub y : i32;
+
+    /** `z`, at byte 8. */
+    pub z : i32;
+}
+
+/** `VkRect2D` — 16 bytes. */
+pub extern "C" struct VkRect2D {
+    /** `offset`, at byte 0. */
+    pub offset : VkOffset2D;
+
+    /** `extent`, at byte 8. */
+    pub extent : VkExtent2D;
+}
+
+/** `VkViewport` — 24 bytes. */
+pub extern "C" struct VkViewport {
+    /** `x`, at byte 0. */
+    pub x        : f32;
+
+    /** `y`, at byte 4. */
+    pub y        : f32;
+
+    /** `width`, at byte 8. */
+    pub width    : f32;
+
+    /** `height`, at byte 12. */
+    pub height   : f32;
+
+    /** `minDepth`, at byte 16. */
+    pub minDepth : f32;
+
+    /** `maxDepth`, at byte 20. */
+    pub maxDepth : f32;
+}
+
+/** `VkMemoryAllocateInfo` — 32 bytes. */
+pub extern "C" struct VkMemoryAllocateInfo {
+    /** `sType`, at byte 0. */
+    pub sType           : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext           : ptr;
+
+    /** `allocationSize`, at byte 16. */
+    pub allocationSize  : i64;
+
+    /** `memoryTypeIndex`, at byte 24. */
+    pub memoryTypeIndex : i32;
+}
+
+/** `VkBufferCreateInfo` — 56 bytes. */
+pub extern "C" struct VkBufferCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType                 : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext                 : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags                 : i32;
+
+    /** `size`, at byte 24. */
+    pub size                  : i64;
+
+    /** `usage`, at byte 32. */
+    pub usage                 : i32;
+
+    /** `sharingMode`, at byte 36. */
+    pub sharingMode           : i32;
+
+    /** `queueFamilyIndexCount`, at byte 40. */
+    pub queueFamilyIndexCount : i32;
+
+    /** `pQueueFamilyIndices`, at byte 48. */
+    pub pQueueFamilyIndices   : ptr;
+}
+
+/** `VkImageCreateInfo` — 88 bytes. */
+pub extern "C" struct VkImageCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType                 : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext                 : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags                 : i32;
+
+    /** `imageType`, at byte 20. */
+    pub imageType             : i32;
+
+    /** `format`, at byte 24. */
+    pub format                : i32;
+
+    /** `extent`, at byte 28. */
+    pub extent                : VkExtent3D;
+
+    /** `mipLevels`, at byte 40. */
+    pub mipLevels             : i32;
+
+    /** `arrayLayers`, at byte 44. */
+    pub arrayLayers           : i32;
+
+    /** `samples`, at byte 48. */
+    pub samples               : i32;
+
+    /** `tiling`, at byte 52. */
+    pub tiling                : i32;
+
+    /** `usage`, at byte 56. */
+    pub usage                 : i32;
+
+    /** `sharingMode`, at byte 60. */
+    pub sharingMode           : i32;
+
+    /** `queueFamilyIndexCount`, at byte 64. */
+    pub queueFamilyIndexCount : i32;
+
+    /** `pQueueFamilyIndices`, at byte 72. */
+    pub pQueueFamilyIndices   : ptr;
+
+    /** `initialLayout`, at byte 80. */
+    pub initialLayout         : i32;
+}
+
+/** `VkImageSubresourceRange` — 20 bytes. */
+pub extern "C" struct VkImageSubresourceRange {
+    /** `aspectMask`, at byte 0. */
+    pub aspectMask     : i32;
+
+    /** `baseMipLevel`, at byte 4. */
+    pub baseMipLevel   : i32;
+
+    /** `levelCount`, at byte 8. */
+    pub levelCount     : i32;
+
+    /** `baseArrayLayer`, at byte 12. */
+    pub baseArrayLayer : i32;
+
+    /** `layerCount`, at byte 16. */
+    pub layerCount     : i32;
+}
+
+/** `VkImageSubresourceLayers` — 16 bytes. */
+pub extern "C" struct VkImageSubresourceLayers {
+    /** `aspectMask`, at byte 0. */
+    pub aspectMask     : i32;
+
+    /** `mipLevel`, at byte 4. */
+    pub mipLevel       : i32;
+
+    /** `baseArrayLayer`, at byte 8. */
+    pub baseArrayLayer : i32;
+
+    /** `layerCount`, at byte 12. */
+    pub layerCount     : i32;
+}
+
+/** `VkComponentMapping` — 16 bytes. */
+pub extern "C" struct VkComponentMapping {
+    /** `r`, at byte 0. */
+    pub r : i32;
+
+    /** `g`, at byte 4. */
+    pub g : i32;
+
+    /** `b`, at byte 8. */
+    pub b : i32;
+
+    /** `a`, at byte 12. */
+    pub a : i32;
+}
+
+/** `VkImageViewCreateInfo` — 80 bytes. */
+pub extern "C" struct VkImageViewCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType            : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext            : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags            : i32;
+
+    /** `image`, at byte 24. */
+    pub image            : i64;
+
+    /** `viewType`, at byte 32. */
+    pub viewType         : i32;
+
+    /** `format`, at byte 36. */
+    pub format           : i32;
+
+    /** `components`, at byte 40. */
+    pub components       : VkComponentMapping;
+
+    /** `subresourceRange`, at byte 56. */
+    pub subresourceRange : VkImageSubresourceRange;
+}
+
+/** `VkSamplerCreateInfo` — 80 bytes. */
+pub extern "C" struct VkSamplerCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType                   : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext                   : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags                   : i32;
+
+    /** `magFilter`, at byte 20. */
+    pub magFilter               : i32;
+
+    /** `minFilter`, at byte 24. */
+    pub minFilter               : i32;
+
+    /** `mipmapMode`, at byte 28. */
+    pub mipmapMode              : i32;
+
+    /** `addressModeU`, at byte 32. */
+    pub addressModeU            : i32;
+
+    /** `addressModeV`, at byte 36. */
+    pub addressModeV            : i32;
+
+    /** `addressModeW`, at byte 40. */
+    pub addressModeW            : i32;
+
+    /** `mipLodBias`, at byte 44. */
+    pub mipLodBias              : f32;
+
+    /** `anisotropyEnable`, at byte 48. */
+    pub anisotropyEnable        : i32;
+
+    /** `maxAnisotropy`, at byte 52. */
+    pub maxAnisotropy           : f32;
+
+    /** `compareEnable`, at byte 56. */
+    pub compareEnable           : i32;
+
+    /** `compareOp`, at byte 60. */
+    pub compareOp               : i32;
+
+    /** `minLod`, at byte 64. */
+    pub minLod                  : f32;
+
+    /** `maxLod`, at byte 68. */
+    pub maxLod                  : f32;
+
+    /** `borderColor`, at byte 72. */
+    pub borderColor             : i32;
+
+    /** `unnormalizedCoordinates`, at byte 76. */
+    pub unnormalizedCoordinates : i32;
+}
+
+/** `VkShaderModuleCreateInfo` — 40 bytes. */
+pub extern "C" struct VkShaderModuleCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType    : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext    : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags    : i32;
+
+    /** `codeSize`, at byte 24. */
+    pub codeSize : i64;
+
+    /** `pCode`, at byte 32. */
+    pub pCode    : ptr;
+}
+
+/** `VkDescriptorSetLayoutBinding` — 24 bytes. */
+pub extern "C" struct VkDescriptorSetLayoutBinding {
+    /** `binding`, at byte 0. */
+    pub binding            : i32;
+
+    /** `descriptorType`, at byte 4. */
+    pub descriptorType     : i32;
+
+    /** `descriptorCount`, at byte 8. */
+    pub descriptorCount    : i32;
+
+    /** `stageFlags`, at byte 12. */
+    pub stageFlags         : i32;
+
+    /** `pImmutableSamplers`, at byte 16. */
+    pub pImmutableSamplers : ptr;
+}
+
+/** `VkDescriptorSetLayoutCreateInfo` — 32 bytes. */
+pub extern "C" struct VkDescriptorSetLayoutCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType        : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext        : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags        : i32;
+
+    /** `bindingCount`, at byte 20. */
+    pub bindingCount : i32;
+
+    /** `pBindings`, at byte 24. */
+    pub pBindings    : ptr;
+}
+
+/** `VkPushConstantRange` — 12 bytes. */
+pub extern "C" struct VkPushConstantRange {
+    /** `stageFlags`, at byte 0. */
+    pub stageFlags : i32;
+
+    /** `offset`, at byte 4. */
+    pub offset     : i32;
+
+    /** `size`, at byte 8. */
+    pub size       : i32;
+}
+
+/** `VkPipelineLayoutCreateInfo` — 48 bytes. */
+pub extern "C" struct VkPipelineLayoutCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType                  : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext                  : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags                  : i32;
+
+    /** `setLayoutCount`, at byte 20. */
+    pub setLayoutCount         : i32;
+
+    /** `pSetLayouts`, at byte 24. */
+    pub pSetLayouts            : ptr;
+
+    /** `pushConstantRangeCount`, at byte 32. */
+    pub pushConstantRangeCount : i32;
+
+    /** `pPushConstantRanges`, at byte 40. */
+    pub pPushConstantRanges    : ptr;
+}
+
+/** `VkAttachmentDescription` — 36 bytes. */
+pub extern "C" struct VkAttachmentDescription {
+    /** `flags`, at byte 0. */
+    pub flags          : i32;
+
+    /** `format`, at byte 4. */
+    pub format         : i32;
+
+    /** `samples`, at byte 8. */
+    pub samples        : i32;
+
+    /** `loadOp`, at byte 12. */
+    pub loadOp         : i32;
+
+    /** `storeOp`, at byte 16. */
+    pub storeOp        : i32;
+
+    /** `stencilLoadOp`, at byte 20. */
+    pub stencilLoadOp  : i32;
+
+    /** `stencilStoreOp`, at byte 24. */
+    pub stencilStoreOp : i32;
+
+    /** `initialLayout`, at byte 28. */
+    pub initialLayout  : i32;
+
+    /** `finalLayout`, at byte 32. */
+    pub finalLayout    : i32;
+}
+
+/** `VkAttachmentReference` — 8 bytes. */
+pub extern "C" struct VkAttachmentReference {
+    /** `attachment`, at byte 0. */
+    pub attachment : i32;
+
+    /** `layout`, at byte 4. */
+    pub layout     : i32;
+}
+
+/** `VkSubpassDescription` — 72 bytes. */
+pub extern "C" struct VkSubpassDescription {
+    /** `flags`, at byte 0. */
+    pub flags                   : i32;
+
+    /** `pipelineBindPoint`, at byte 4. */
+    pub pipelineBindPoint       : i32;
+
+    /** `inputAttachmentCount`, at byte 8. */
+    pub inputAttachmentCount    : i32;
+
+    /** `pInputAttachments`, at byte 16. */
+    pub pInputAttachments       : ptr;
+
+    /** `colorAttachmentCount`, at byte 24. */
+    pub colorAttachmentCount    : i32;
+
+    /** `pColorAttachments`, at byte 32. */
+    pub pColorAttachments       : ptr;
+
+    /** `pResolveAttachments`, at byte 40. */
+    pub pResolveAttachments     : ptr;
+
+    /** `pDepthStencilAttachment`, at byte 48. */
+    pub pDepthStencilAttachment : ptr;
+
+    /** `preserveAttachmentCount`, at byte 56. */
+    pub preserveAttachmentCount : i32;
+
+    /** `pPreserveAttachments`, at byte 64. */
+    pub pPreserveAttachments    : ptr;
+}
+
+/** `VkSubpassDependency` — 28 bytes. */
+pub extern "C" struct VkSubpassDependency {
+    /** `srcSubpass`, at byte 0. */
+    pub srcSubpass      : i32;
+
+    /** `dstSubpass`, at byte 4. */
+    pub dstSubpass      : i32;
+
+    /** `srcStageMask`, at byte 8. */
+    pub srcStageMask    : i32;
+
+    /** `dstStageMask`, at byte 12. */
+    pub dstStageMask    : i32;
+
+    /** `srcAccessMask`, at byte 16. */
+    pub srcAccessMask   : i32;
+
+    /** `dstAccessMask`, at byte 20. */
+    pub dstAccessMask   : i32;
+
+    /** `dependencyFlags`, at byte 24. */
+    pub dependencyFlags : i32;
+}
+
+/** `VkRenderPassCreateInfo` — 64 bytes. */
+pub extern "C" struct VkRenderPassCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType           : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext           : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags           : i32;
+
+    /** `attachmentCount`, at byte 20. */
+    pub attachmentCount : i32;
+
+    /** `pAttachments`, at byte 24. */
+    pub pAttachments    : ptr;
+
+    /** `subpassCount`, at byte 32. */
+    pub subpassCount    : i32;
+
+    /** `pSubpasses`, at byte 40. */
+    pub pSubpasses      : ptr;
+
+    /** `dependencyCount`, at byte 48. */
+    pub dependencyCount : i32;
+
+    /** `pDependencies`, at byte 56. */
+    pub pDependencies   : ptr;
+}
+
+/** `VkFramebufferCreateInfo` — 64 bytes. */
+pub extern "C" struct VkFramebufferCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType           : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext           : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags           : i32;
+
+    /** `renderPass`, at byte 24. */
+    pub renderPass      : i64;
+
+    /** `attachmentCount`, at byte 32. */
+    pub attachmentCount : i32;
+
+    /** `pAttachments`, at byte 40. */
+    pub pAttachments    : ptr;
+
+    /** `width`, at byte 48. */
+    pub width           : i32;
+
+    /** `height`, at byte 52. */
+    pub height          : i32;
+
+    /** `layers`, at byte 56. */
+    pub layers          : i32;
+}
+
+/** `VkPipelineShaderStageCreateInfo` — 48 bytes. */
+pub extern "C" struct VkPipelineShaderStageCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType               : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext               : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags               : i32;
+
+    /** `stage`, at byte 20. */
+    pub stage               : i32;
+
+    /** `module`, at byte 24. */
+    pub module_             : i64;
+
+    /** `pName`, at byte 32. */
+    pub pName               : ptr;
+
+    /** `pSpecializationInfo`, at byte 40. */
+    pub pSpecializationInfo : ptr;
+}
+
+/** `VkVertexInputBindingDescription` — 12 bytes. */
+pub extern "C" struct VkVertexInputBindingDescription {
+    /** `binding`, at byte 0. */
+    pub binding   : i32;
+
+    /** `stride`, at byte 4. */
+    pub stride    : i32;
+
+    /** `inputRate`, at byte 8. */
+    pub inputRate : i32;
+}
+
+/** `VkVertexInputAttributeDescription` — 16 bytes. */
+pub extern "C" struct VkVertexInputAttributeDescription {
+    /** `location`, at byte 0. */
+    pub location : i32;
+
+    /** `binding`, at byte 4. */
+    pub binding  : i32;
+
+    /** `format`, at byte 8. */
+    pub format   : i32;
+
+    /** `offset`, at byte 12. */
+    pub offset   : i32;
+}
+
+/** `VkPipelineVertexInputStateCreateInfo` — 48 bytes. */
+pub extern "C" struct VkPipelineVertexInputStateCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags : i32;
+
+    /** `vertexBindingDescriptionCount`, at byte 20. */
+    pub vertexBindingDescriptionCount : i32;
+
+    /** `pVertexBindingDescriptions`, at byte 24. */
+    pub pVertexBindingDescriptions : ptr;
+
+    /** `vertexAttributeDescriptionCount`, at byte 32. */
+    pub vertexAttributeDescriptionCount : i32;
+
+    /** `pVertexAttributeDescriptions`, at byte 40. */
+    pub pVertexAttributeDescriptions : ptr;
+}
+
+/** `VkPipelineInputAssemblyStateCreateInfo` — 32 bytes. */
+pub extern "C" struct VkPipelineInputAssemblyStateCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType                  : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext                  : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags                  : i32;
+
+    /** `topology`, at byte 20. */
+    pub topology               : i32;
+
+    /** `primitiveRestartEnable`, at byte 24. */
+    pub primitiveRestartEnable : i32;
+}
+
+/** `VkPipelineViewportStateCreateInfo` — 48 bytes. */
+pub extern "C" struct VkPipelineViewportStateCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType         : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext         : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags         : i32;
+
+    /** `viewportCount`, at byte 20. */
+    pub viewportCount : i32;
+
+    /** `pViewports`, at byte 24. */
+    pub pViewports    : ptr;
+
+    /** `scissorCount`, at byte 32. */
+    pub scissorCount  : i32;
+
+    /** `pScissors`, at byte 40. */
+    pub pScissors     : ptr;
+}
+
+/** `VkPipelineRasterizationStateCreateInfo` — 64 bytes. */
+pub extern "C" struct VkPipelineRasterizationStateCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType                   : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext                   : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags                   : i32;
+
+    /** `depthClampEnable`, at byte 20. */
+    pub depthClampEnable        : i32;
+
+    /** `rasterizerDiscardEnable`, at byte 24. */
+    pub rasterizerDiscardEnable : i32;
+
+    /** `polygonMode`, at byte 28. */
+    pub polygonMode             : i32;
+
+    /** `cullMode`, at byte 32. */
+    pub cullMode                : i32;
+
+    /** `frontFace`, at byte 36. */
+    pub frontFace               : i32;
+
+    /** `depthBiasEnable`, at byte 40. */
+    pub depthBiasEnable         : i32;
+
+    /** `depthBiasConstantFactor`, at byte 44. */
+    pub depthBiasConstantFactor : f32;
+
+    /** `depthBiasClamp`, at byte 48. */
+    pub depthBiasClamp          : f32;
+
+    /** `depthBiasSlopeFactor`, at byte 52. */
+    pub depthBiasSlopeFactor    : f32;
+
+    /** `lineWidth`, at byte 56. */
+    pub lineWidth               : f32;
+}
+
+/** `VkPipelineMultisampleStateCreateInfo` — 48 bytes. */
+pub extern "C" struct VkPipelineMultisampleStateCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType                 : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext                 : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags                 : i32;
+
+    /** `rasterizationSamples`, at byte 20. */
+    pub rasterizationSamples  : i32;
+
+    /** `sampleShadingEnable`, at byte 24. */
+    pub sampleShadingEnable   : i32;
+
+    /** `minSampleShading`, at byte 28. */
+    pub minSampleShading      : f32;
+
+    /** `pSampleMask`, at byte 32. */
+    pub pSampleMask           : ptr;
+
+    /** `alphaToCoverageEnable`, at byte 40. */
+    pub alphaToCoverageEnable : i32;
+
+    /** `alphaToOneEnable`, at byte 44. */
+    pub alphaToOneEnable      : i32;
+}
+
+/** `VkStencilOpState` — 28 bytes. */
+pub extern "C" struct VkStencilOpState {
+    /** `failOp`, at byte 0. */
+    pub failOp      : i32;
+
+    /** `passOp`, at byte 4. */
+    pub passOp      : i32;
+
+    /** `depthFailOp`, at byte 8. */
+    pub depthFailOp : i32;
+
+    /** `compareOp`, at byte 12. */
+    pub compareOp   : i32;
+
+    /** `compareMask`, at byte 16. */
+    pub compareMask : i32;
+
+    /** `writeMask`, at byte 20. */
+    pub writeMask   : i32;
+
+    /** `reference`, at byte 24. */
+    pub reference   : i32;
+}
+
+/** `VkPipelineDepthStencilStateCreateInfo` — 104 bytes. */
+pub extern "C" struct VkPipelineDepthStencilStateCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType                 : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext                 : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags                 : i32;
+
+    /** `depthTestEnable`, at byte 20. */
+    pub depthTestEnable       : i32;
+
+    /** `depthWriteEnable`, at byte 24. */
+    pub depthWriteEnable      : i32;
+
+    /** `depthCompareOp`, at byte 28. */
+    pub depthCompareOp        : i32;
+
+    /** `depthBoundsTestEnable`, at byte 32. */
+    pub depthBoundsTestEnable : i32;
+
+    /** `stencilTestEnable`, at byte 36. */
+    pub stencilTestEnable     : i32;
+
+    /** `front`, at byte 40. */
+    pub front                 : VkStencilOpState;
+
+    /** `back`, at byte 68. */
+    pub back                  : VkStencilOpState;
+
+    /** `minDepthBounds`, at byte 96. */
+    pub minDepthBounds        : f32;
+
+    /** `maxDepthBounds`, at byte 100. */
+    pub maxDepthBounds        : f32;
+}
+
+/** `VkPipelineColorBlendAttachmentState` — 32 bytes. */
+pub extern "C" struct VkPipelineColorBlendAttachmentState {
+    /** `blendEnable`, at byte 0. */
+    pub blendEnable         : i32;
+
+    /** `srcColorBlendFactor`, at byte 4. */
+    pub srcColorBlendFactor : i32;
+
+    /** `dstColorBlendFactor`, at byte 8. */
+    pub dstColorBlendFactor : i32;
+
+    /** `colorBlendOp`, at byte 12. */
+    pub colorBlendOp        : i32;
+
+    /** `srcAlphaBlendFactor`, at byte 16. */
+    pub srcAlphaBlendFactor : i32;
+
+    /** `dstAlphaBlendFactor`, at byte 20. */
+    pub dstAlphaBlendFactor : i32;
+
+    /** `alphaBlendOp`, at byte 24. */
+    pub alphaBlendOp        : i32;
+
+    /** `colorWriteMask`, at byte 28. */
+    pub colorWriteMask      : i32;
+}
+
+/** `VkPipelineColorBlendStateCreateInfo` — 56 bytes. */
+pub extern "C" struct VkPipelineColorBlendStateCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType           : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext           : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags           : i32;
+
+    /** `logicOpEnable`, at byte 20. */
+    pub logicOpEnable   : i32;
+
+    /** `logicOp`, at byte 24. */
+    pub logicOp         : i32;
+
+    /** `attachmentCount`, at byte 28. */
+    pub attachmentCount : i32;
+
+    /** `pAttachments`, at byte 32. */
+    pub pAttachments    : ptr;
+
+    /** `blendConstants[]`, at byte 40. */
+    pub blendConstants0 : f32;
+
+    /** `blendConstants[]`, at byte 44. */
+    pub blendConstants1 : f32;
+
+    /** `blendConstants[]`, at byte 48. */
+    pub blendConstants2 : f32;
+
+    /** `blendConstants[]`, at byte 52. */
+    pub blendConstants3 : f32;
+}
+
+/** `VkPipelineDynamicStateCreateInfo` — 32 bytes. */
+pub extern "C" struct VkPipelineDynamicStateCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType             : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext             : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags             : i32;
+
+    /** `dynamicStateCount`, at byte 20. */
+    pub dynamicStateCount : i32;
+
+    /** `pDynamicStates`, at byte 24. */
+    pub pDynamicStates    : ptr;
+}
+
+/** `VkGraphicsPipelineCreateInfo` — 144 bytes. */
+pub extern "C" struct VkGraphicsPipelineCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType               : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext               : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags               : i32;
+
+    /** `stageCount`, at byte 20. */
+    pub stageCount          : i32;
+
+    /** `pStages`, at byte 24. */
+    pub pStages             : ptr;
+
+    /** `pVertexInputState`, at byte 32. */
+    pub pVertexInputState   : ptr;
+
+    /** `pInputAssemblyState`, at byte 40. */
+    pub pInputAssemblyState : ptr;
+
+    /** `pTessellationState`, at byte 48. */
+    pub pTessellationState  : ptr;
+
+    /** `pViewportState`, at byte 56. */
+    pub pViewportState      : ptr;
+
+    /** `pRasterizationState`, at byte 64. */
+    pub pRasterizationState : ptr;
+
+    /** `pMultisampleState`, at byte 72. */
+    pub pMultisampleState   : ptr;
+
+    /** `pDepthStencilState`, at byte 80. */
+    pub pDepthStencilState  : ptr;
+
+    /** `pColorBlendState`, at byte 88. */
+    pub pColorBlendState    : ptr;
+
+    /** `pDynamicState`, at byte 96. */
+    pub pDynamicState       : ptr;
+
+    /** `layout`, at byte 104. */
+    pub layout              : i64;
+
+    /** `renderPass`, at byte 112. */
+    pub renderPass          : i64;
+
+    /** `subpass`, at byte 120. */
+    pub subpass             : i32;
+
+    /** `basePipelineHandle`, at byte 128. */
+    pub basePipelineHandle  : i64;
+
+    /** `basePipelineIndex`, at byte 136. */
+    pub basePipelineIndex   : i32;
+}
+
+/** `VkCommandPoolCreateInfo` — 24 bytes. */
+pub extern "C" struct VkCommandPoolCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType            : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext            : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags            : i32;
+
+    /** `queueFamilyIndex`, at byte 20. */
+    pub queueFamilyIndex : i32;
+}
+
+/** `VkCommandBufferAllocateInfo` — 32 bytes. */
+pub extern "C" struct VkCommandBufferAllocateInfo {
+    /** `sType`, at byte 0. */
+    pub sType              : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext              : ptr;
+
+    /** `commandPool`, at byte 16. */
+    pub commandPool        : i64;
+
+    /** `level`, at byte 24. */
+    pub level              : i32;
+
+    /** `commandBufferCount`, at byte 28. */
+    pub commandBufferCount : i32;
+}
+
+/** `VkCommandBufferBeginInfo` — 32 bytes. */
+pub extern "C" struct VkCommandBufferBeginInfo {
+    /** `sType`, at byte 0. */
+    pub sType            : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext            : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags            : i32;
+
+    /** `pInheritanceInfo`, at byte 24. */
+    pub pInheritanceInfo : ptr;
+}
+
+/** `VkSemaphoreCreateInfo` — 24 bytes. */
+pub extern "C" struct VkSemaphoreCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags : i32;
+}
+
+/** `VkFenceCreateInfo` — 24 bytes. */
+pub extern "C" struct VkFenceCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags : i32;
+}
+
+/** `VkDescriptorPoolSize` — 8 bytes. */
+pub extern "C" struct VkDescriptorPoolSize {
+    /** `type`, at byte 0. */
+    pub type_           : i32;
+
+    /** `descriptorCount`, at byte 4. */
+    pub descriptorCount : i32;
+}
+
+/** `VkDescriptorPoolCreateInfo` — 40 bytes. */
+pub extern "C" struct VkDescriptorPoolCreateInfo {
+    /** `sType`, at byte 0. */
+    pub sType         : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext         : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags         : i32;
+
+    /** `maxSets`, at byte 20. */
+    pub maxSets       : i32;
+
+    /** `poolSizeCount`, at byte 24. */
+    pub poolSizeCount : i32;
+
+    /** `pPoolSizes`, at byte 32. */
+    pub pPoolSizes    : ptr;
+}
+
+/** `VkDescriptorSetAllocateInfo` — 40 bytes. */
+pub extern "C" struct VkDescriptorSetAllocateInfo {
+    /** `sType`, at byte 0. */
+    pub sType              : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext              : ptr;
+
+    /** `descriptorPool`, at byte 16. */
+    pub descriptorPool     : i64;
+
+    /** `descriptorSetCount`, at byte 24. */
+    pub descriptorSetCount : i32;
+
+    /** `pSetLayouts`, at byte 32. */
+    pub pSetLayouts        : ptr;
+}
+
+/** `VkDescriptorBufferInfo` — 24 bytes. */
+pub extern "C" struct VkDescriptorBufferInfo {
+    /** `buffer`, at byte 0. */
+    pub buffer : i64;
+
+    /** `offset`, at byte 8. */
+    pub offset : i64;
+
+    /** `range`, at byte 16. */
+    pub range  : i64;
+}
+
+/** `VkDescriptorImageInfo` — 24 bytes. */
+pub extern "C" struct VkDescriptorImageInfo {
+    /** `sampler`, at byte 0. */
+    pub sampler     : i64;
+
+    /** `imageView`, at byte 8. */
+    pub imageView   : i64;
+
+    /** `imageLayout`, at byte 16. */
+    pub imageLayout : i32;
+}
+
+/** `VkWriteDescriptorSet` — 64 bytes. */
+pub extern "C" struct VkWriteDescriptorSet {
+    /** `sType`, at byte 0. */
+    pub sType            : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext            : ptr;
+
+    /** `dstSet`, at byte 16. */
+    pub dstSet           : i64;
+
+    /** `dstBinding`, at byte 24. */
+    pub dstBinding       : i32;
+
+    /** `dstArrayElement`, at byte 28. */
+    pub dstArrayElement  : i32;
+
+    /** `descriptorCount`, at byte 32. */
+    pub descriptorCount  : i32;
+
+    /** `descriptorType`, at byte 36. */
+    pub descriptorType   : i32;
+
+    /** `pImageInfo`, at byte 40. */
+    pub pImageInfo       : ptr;
+
+    /** `pBufferInfo`, at byte 48. */
+    pub pBufferInfo      : ptr;
+
+    /** `pTexelBufferView`, at byte 56. */
+    pub pTexelBufferView : ptr;
+}
+
+/** `VkBufferCopy` — 24 bytes. */
+pub extern "C" struct VkBufferCopy {
+    /** `srcOffset`, at byte 0. */
+    pub srcOffset : i64;
+
+    /** `dstOffset`, at byte 8. */
+    pub dstOffset : i64;
+
+    /** `size`, at byte 16. */
+    pub size      : i64;
+}
+
+/** `VkBufferImageCopy` — 56 bytes. */
+pub extern "C" struct VkBufferImageCopy {
+    /** `bufferOffset`, at byte 0. */
+    pub bufferOffset      : i64;
+
+    /** `bufferRowLength`, at byte 8. */
+    pub bufferRowLength   : i32;
+
+    /** `bufferImageHeight`, at byte 12. */
+    pub bufferImageHeight : i32;
+
+    /** `imageSubresource`, at byte 16. */
+    pub imageSubresource  : VkImageSubresourceLayers;
+
+    /** `imageOffset`, at byte 32. */
+    pub imageOffset       : VkOffset3D;
+
+    /** `imageExtent`, at byte 44. */
+    pub imageExtent       : VkExtent3D;
+}
+
+/** `VkImageMemoryBarrier` — 72 bytes. */
+pub extern "C" struct VkImageMemoryBarrier {
+    /** `sType`, at byte 0. */
+    pub sType               : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext               : ptr;
+
+    /** `srcAccessMask`, at byte 16. */
+    pub srcAccessMask       : i32;
+
+    /** `dstAccessMask`, at byte 20. */
+    pub dstAccessMask       : i32;
+
+    /** `oldLayout`, at byte 24. */
+    pub oldLayout           : i32;
+
+    /** `newLayout`, at byte 28. */
+    pub newLayout           : i32;
+
+    /** `srcQueueFamilyIndex`, at byte 32. */
+    pub srcQueueFamilyIndex : i32;
+
+    /** `dstQueueFamilyIndex`, at byte 36. */
+    pub dstQueueFamilyIndex : i32;
+
+    /** `image`, at byte 40. */
+    pub image               : i64;
+
+    /** `subresourceRange`, at byte 48. */
+    pub subresourceRange    : VkImageSubresourceRange;
+}
+
+/** `VkImageBlit` — 80 bytes. */
+pub extern "C" struct VkImageBlit {
+    /** `srcSubresource`, at byte 0. */
+    pub srcSubresource : VkImageSubresourceLayers;
+
+    /** `srcOffsets[]`, at byte 16. */
+    pub srcOffsets0    : VkOffset3D;
+
+    /** `srcOffsets[]`, at byte 28. */
+    pub srcOffsets1    : VkOffset3D;
+
+    /** `dstSubresource`, at byte 40. */
+    pub dstSubresource : VkImageSubresourceLayers;
+
+    /** `dstOffsets[]`, at byte 56. */
+    pub dstOffsets0    : VkOffset3D;
+
+    /** `dstOffsets[]`, at byte 68. */
+    pub dstOffsets1    : VkOffset3D;
+}
+
+/** `VkRenderPassBeginInfo` — 64 bytes. */
+pub extern "C" struct VkRenderPassBeginInfo {
+    /** `sType`, at byte 0. */
+    pub sType           : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext           : ptr;
+
+    /** `renderPass`, at byte 16. */
+    pub renderPass      : i64;
+
+    /** `framebuffer`, at byte 24. */
+    pub framebuffer     : i64;
+
+    /** `renderArea`, at byte 32. */
+    pub renderArea      : VkRect2D;
+
+    /** `clearValueCount`, at byte 48. */
+    pub clearValueCount : i32;
+
+    /** `pClearValues`, at byte 56. */
+    pub pClearValues    : ptr;
+}
+
+/** `VkSubmitInfo` — 72 bytes. */
+pub extern "C" struct VkSubmitInfo {
+    /** `sType`, at byte 0. */
+    pub sType                : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext                : ptr;
+
+    /** `waitSemaphoreCount`, at byte 16. */
+    pub waitSemaphoreCount   : i32;
+
+    /** `pWaitSemaphores`, at byte 24. */
+    pub pWaitSemaphores      : ptr;
+
+    /** `pWaitDstStageMask`, at byte 32. */
+    pub pWaitDstStageMask    : ptr;
+
+    /** `commandBufferCount`, at byte 40. */
+    pub commandBufferCount   : i32;
+
+    /** `pCommandBuffers`, at byte 48. */
+    pub pCommandBuffers      : ptr;
+
+    /** `signalSemaphoreCount`, at byte 56. */
+    pub signalSemaphoreCount : i32;
+
+    /** `pSignalSemaphores`, at byte 64. */
+    pub pSignalSemaphores    : ptr;
+}
+
+/** `VkPresentInfoKHR` — 64 bytes. */
+pub extern "C" struct VkPresentInfoKHR {
+    /** `sType`, at byte 0. */
+    pub sType              : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext              : ptr;
+
+    /** `waitSemaphoreCount`, at byte 16. */
+    pub waitSemaphoreCount : i32;
+
+    /** `pWaitSemaphores`, at byte 24. */
+    pub pWaitSemaphores    : ptr;
+
+    /** `swapchainCount`, at byte 32. */
+    pub swapchainCount     : i32;
+
+    /** `pSwapchains`, at byte 40. */
+    pub pSwapchains        : ptr;
+
+    /** `pImageIndices`, at byte 48. */
+    pub pImageIndices      : ptr;
+
+    /** `pResults`, at byte 56. */
+    pub pResults           : ptr;
+}
+
+/** `VkSwapchainCreateInfoKHR` — 104 bytes. */
+pub extern "C" struct VkSwapchainCreateInfoKHR {
+    /** `sType`, at byte 0. */
+    pub sType                 : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext                 : ptr;
+
+    /** `flags`, at byte 16. */
+    pub flags                 : i32;
+
+    /** `surface`, at byte 24. */
+    pub surface               : i64;
+
+    /** `minImageCount`, at byte 32. */
+    pub minImageCount         : i32;
+
+    /** `imageFormat`, at byte 36. */
+    pub imageFormat           : i32;
+
+    /** `imageColorSpace`, at byte 40. */
+    pub imageColorSpace       : i32;
+
+    /** `imageExtent`, at byte 44. */
+    pub imageExtent           : VkExtent2D;
+
+    /** `imageArrayLayers`, at byte 52. */
+    pub imageArrayLayers      : i32;
+
+    /** `imageUsage`, at byte 56. */
+    pub imageUsage            : i32;
+
+    /** `imageSharingMode`, at byte 60. */
+    pub imageSharingMode      : i32;
+
+    /** `queueFamilyIndexCount`, at byte 64. */
+    pub queueFamilyIndexCount : i32;
+
+    /** `pQueueFamilyIndices`, at byte 72. */
+    pub pQueueFamilyIndices   : ptr;
+
+    /** `preTransform`, at byte 80. */
+    pub preTransform          : i32;
+
+    /** `compositeAlpha`, at byte 84. */
+    pub compositeAlpha        : i32;
+
+    /** `presentMode`, at byte 88. */
+    pub presentMode           : i32;
+
+    /** `clipped`, at byte 92. */
+    pub clipped               : i32;
+
+    /** `oldSwapchain`, at byte 96. */
+    pub oldSwapchain          : i64;
+}
+
+/**
+ * `VkClearValue` — a union in C, and Axle has none.
+ *
+ * Sixteen bytes, which is the union's width: a colour is four floats, and a
+ * depth clear is `{ float depth; uint32_t stencil; }`, whose `depth` lands in
+ * the first float. So the record is four floats, and a depth clear writes `c0`.
+ */
+pub extern "C" struct VkClearValue {
+    /** Float 0 of the union. */
+    pub c0 : f32;
+
+    /** Float 1 of the union. */
+    pub c1 : f32;
+
+    /** Float 2 of the union. */
+    pub c2 : f32;
+
+    /** Float 3 of the union. */
+    pub c3 : f32;
+}
+
+/**
+ * One factory per record, with the `sType` tag already set where the record has
+ * one and every other field zero or null.
+ *
+ * A wrong or missing `sType` is the commonest silent Vulkan mistake — the
+ * driver reads the tag to know what it was handed — so a record is *started*
+ * here and then assigned, which leaves no way to forget it.
+ */
+pub class VkInit {
+    /** A `VkApplicationInfo` with its `sType` set. */
+    pub static fn applicationInfo() : VkApplicationInfo {
+        return VkApplicationInfo {
+            sType: VK_STRUCTURE_TYPE_APPLICATION_INFO,
+            pNext: Raw::nil(),
+            pApplicationName: Raw::nil(),
+            applicationVersion: 0,
+            pEngineName: Raw::nil(),
+            engineVersion: 0,
+            apiVersion: 0,
+        };
+    }
+
+    /** A `VkInstanceCreateInfo` with its `sType` set. */
+    pub static fn instanceCreateInfo() : VkInstanceCreateInfo {
+        return VkInstanceCreateInfo {
+            sType: VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            pApplicationInfo: Raw::nil(),
+            enabledLayerCount: 0,
+            ppEnabledLayerNames: Raw::nil(),
+            enabledExtensionCount: 0,
+            ppEnabledExtensionNames: Raw::nil(),
+        };
+    }
+
+    /** A `VkDeviceQueueCreateInfo` with its `sType` set. */
+    pub static fn deviceQueueCreateInfo() : VkDeviceQueueCreateInfo {
+        return VkDeviceQueueCreateInfo {
+            sType: VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            queueFamilyIndex: 0,
+            queueCount: 0,
+            pQueuePriorities: Raw::nil(),
+        };
+    }
+
+    /** A `VkDeviceCreateInfo` with its `sType` set. */
+    pub static fn deviceCreateInfo() : VkDeviceCreateInfo {
+        return VkDeviceCreateInfo {
+            sType: VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            queueCreateInfoCount: 0,
+            pQueueCreateInfos: Raw::nil(),
+            enabledLayerCount: 0,
+            ppEnabledLayerNames: Raw::nil(),
+            enabledExtensionCount: 0,
+            ppEnabledExtensionNames: Raw::nil(),
+            pEnabledFeatures: Raw::nil(),
+        };
+    }
+
+    /** A `VkPhysicalDeviceFeatures`, every field zero. */
+    pub static fn physicalDeviceFeatures() : VkPhysicalDeviceFeatures {
+        return VkPhysicalDeviceFeatures {
+            robustBufferAccess: 0,
+            fullDrawIndexUint32: 0,
+            imageCubeArray: 0,
+            independentBlend: 0,
+            geometryShader: 0,
+            tessellationShader: 0,
+            sampleRateShading: 0,
+            dualSrcBlend: 0,
+            logicOp: 0,
+            multiDrawIndirect: 0,
+            drawIndirectFirstInstance: 0,
+            depthClamp: 0,
+            depthBiasClamp: 0,
+            fillModeNonSolid: 0,
+            depthBounds: 0,
+            wideLines: 0,
+            largePoints: 0,
+            alphaToOne: 0,
+            multiViewport: 0,
+            samplerAnisotropy: 0,
+            textureCompressionETC2: 0,
+            textureCompressionASTC_LDR: 0,
+            textureCompressionBC: 0,
+            occlusionQueryPrecise: 0,
+            pipelineStatisticsQuery: 0,
+            vertexPipelineStoresAndAtomics: 0,
+            fragmentStoresAndAtomics: 0,
+            shaderTessellationAndGeometryPointSize: 0,
+            shaderImageGatherExtended: 0,
+            shaderStorageImageExtendedFormats: 0,
+            shaderStorageImageMultisample: 0,
+            shaderStorageImageReadWithoutFormat: 0,
+            shaderStorageImageWriteWithoutFormat: 0,
+            shaderUniformBufferArrayDynamicIndexing: 0,
+            shaderSampledImageArrayDynamicIndexing: 0,
+            shaderStorageBufferArrayDynamicIndexing: 0,
+            shaderStorageImageArrayDynamicIndexing: 0,
+            shaderClipDistance: 0,
+            shaderCullDistance: 0,
+            shaderFloat64: 0,
+            shaderInt64: 0,
+            shaderInt16: 0,
+            shaderResourceResidency: 0,
+            shaderResourceMinLod: 0,
+            sparseBinding: 0,
+            sparseResidencyBuffer: 0,
+            sparseResidencyImage2D: 0,
+            sparseResidencyImage3D: 0,
+            sparseResidency2Samples: 0,
+            sparseResidency4Samples: 0,
+            sparseResidency8Samples: 0,
+            sparseResidency16Samples: 0,
+            sparseResidencyAliased: 0,
+            variableMultisampleRate: 0,
+            inheritedQueries: 0,
+        };
+    }
+
+    /** A `VkExtent2D`, every field zero. */
+    pub static fn extent2D() : VkExtent2D {
+        return VkExtent2D { width: 0, height: 0 };
+    }
+
+    /** A `VkExtent3D`, every field zero. */
+    pub static fn extent3D() : VkExtent3D {
+        return VkExtent3D { width: 0, height: 0, depth: 0 };
+    }
+
+    /** A `VkOffset2D`, every field zero. */
+    pub static fn offset2D() : VkOffset2D {
+        return VkOffset2D { x: 0, y: 0 };
+    }
+
+    /** A `VkOffset3D`, every field zero. */
+    pub static fn offset3D() : VkOffset3D {
+        return VkOffset3D { x: 0, y: 0, z: 0 };
+    }
+
+    /** A `VkRect2D`, every field zero. */
+    pub static fn rect2D() : VkRect2D {
+        return VkRect2D {
+            offset: VkOffset2D { x: 0, y: 0 },
+            extent: VkExtent2D { width: 0, height: 0 },
+        };
+    }
+
+    /** A `VkViewport`, every field zero. */
+    pub static fn viewport() : VkViewport {
+        return VkViewport {
+            x: (0.0 as f32),
+            y: (0.0 as f32),
+            width: (0.0 as f32),
+            height: (0.0 as f32),
+            minDepth: (0.0 as f32),
+            maxDepth: (0.0 as f32),
+        };
+    }
+
+    /** A `VkMemoryAllocateInfo` with its `sType` set. */
+    pub static fn memoryAllocateInfo() : VkMemoryAllocateInfo {
+        return VkMemoryAllocateInfo {
+            sType: VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            pNext: Raw::nil(),
+            allocationSize: 0,
+            memoryTypeIndex: 0,
+        };
+    }
+
+    /** A `VkBufferCreateInfo` with its `sType` set. */
+    pub static fn bufferCreateInfo() : VkBufferCreateInfo {
+        return VkBufferCreateInfo {
+            sType: VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            size: 0,
+            usage: 0,
+            sharingMode: 0,
+            queueFamilyIndexCount: 0,
+            pQueueFamilyIndices: Raw::nil(),
+        };
+    }
+
+    /** A `VkImageCreateInfo` with its `sType` set. */
+    pub static fn imageCreateInfo() : VkImageCreateInfo {
+        return VkImageCreateInfo {
+            sType: VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            imageType: 0,
+            format: 0,
+            extent: VkExtent3D { width: 0, height: 0, depth: 0 },
+            mipLevels: 0,
+            arrayLayers: 0,
+            samples: 0,
+            tiling: 0,
+            usage: 0,
+            sharingMode: 0,
+            queueFamilyIndexCount: 0,
+            pQueueFamilyIndices: Raw::nil(),
+            initialLayout: 0,
+        };
+    }
+
+    /** A `VkImageSubresourceRange`, every field zero. */
+    pub static fn imageSubresourceRange() : VkImageSubresourceRange {
+        return VkImageSubresourceRange {
+            aspectMask: 0,
+            baseMipLevel: 0,
+            levelCount: 0,
+            baseArrayLayer: 0,
+            layerCount: 0,
+        };
+    }
+
+    /** A `VkImageSubresourceLayers`, every field zero. */
+    pub static fn imageSubresourceLayers() : VkImageSubresourceLayers {
+        return VkImageSubresourceLayers {
+            aspectMask: 0,
+            mipLevel: 0,
+            baseArrayLayer: 0,
+            layerCount: 0,
+        };
+    }
+
+    /** A `VkComponentMapping`, every field zero. */
+    pub static fn componentMapping() : VkComponentMapping {
+        return VkComponentMapping { r: 0, g: 0, b: 0, a: 0 };
+    }
+
+    /** A `VkImageViewCreateInfo` with its `sType` set. */
+    pub static fn imageViewCreateInfo() : VkImageViewCreateInfo {
+        return VkImageViewCreateInfo {
+            sType: VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            image: 0,
+            viewType: 0,
+            format: 0,
+            components: VkComponentMapping { r: 0, g: 0, b: 0, a: 0 },
+            subresourceRange: VkImageSubresourceRange {
+                aspectMask: 0,
+                baseMipLevel: 0,
+                levelCount: 0,
+                baseArrayLayer: 0,
+                layerCount: 0,
+            },
+        };
+    }
+
+    /** A `VkSamplerCreateInfo` with its `sType` set. */
+    pub static fn samplerCreateInfo() : VkSamplerCreateInfo {
+        return VkSamplerCreateInfo {
+            sType: VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            magFilter: 0,
+            minFilter: 0,
+            mipmapMode: 0,
+            addressModeU: 0,
+            addressModeV: 0,
+            addressModeW: 0,
+            mipLodBias: (0.0 as f32),
+            anisotropyEnable: 0,
+            maxAnisotropy: (0.0 as f32),
+            compareEnable: 0,
+            compareOp: 0,
+            minLod: (0.0 as f32),
+            maxLod: (0.0 as f32),
+            borderColor: 0,
+            unnormalizedCoordinates: 0,
+        };
+    }
+
+    /** A `VkShaderModuleCreateInfo` with its `sType` set. */
+    pub static fn shaderModuleCreateInfo() : VkShaderModuleCreateInfo {
+        return VkShaderModuleCreateInfo {
+            sType: VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            codeSize: 0,
+            pCode: Raw::nil(),
+        };
+    }
+
+    /** A `VkDescriptorSetLayoutBinding`, every field zero. */
+    pub static fn descriptorSetLayoutBinding() : VkDescriptorSetLayoutBinding {
+        return VkDescriptorSetLayoutBinding {
+            binding: 0,
+            descriptorType: 0,
+            descriptorCount: 0,
+            stageFlags: 0,
+            pImmutableSamplers: Raw::nil(),
+        };
+    }
+
+    /** A `VkDescriptorSetLayoutCreateInfo` with its `sType` set. */
+    pub static fn descriptorSetLayoutCreateInfo() : VkDescriptorSetLayoutCreateInfo {
+        return VkDescriptorSetLayoutCreateInfo {
+            sType: VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            bindingCount: 0,
+            pBindings: Raw::nil(),
+        };
+    }
+
+    /** A `VkPushConstantRange`, every field zero. */
+    pub static fn pushConstantRange() : VkPushConstantRange {
+        return VkPushConstantRange { stageFlags: 0, offset: 0, size: 0 };
+    }
+
+    /** A `VkPipelineLayoutCreateInfo` with its `sType` set. */
+    pub static fn pipelineLayoutCreateInfo() : VkPipelineLayoutCreateInfo {
+        return VkPipelineLayoutCreateInfo {
+            sType: VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            setLayoutCount: 0,
+            pSetLayouts: Raw::nil(),
+            pushConstantRangeCount: 0,
+            pPushConstantRanges: Raw::nil(),
+        };
+    }
+
+    /** A `VkAttachmentDescription`, every field zero. */
+    pub static fn attachmentDescription() : VkAttachmentDescription {
+        return VkAttachmentDescription {
+            flags: 0,
+            format: 0,
+            samples: 0,
+            loadOp: 0,
+            storeOp: 0,
+            stencilLoadOp: 0,
+            stencilStoreOp: 0,
+            initialLayout: 0,
+            finalLayout: 0,
+        };
+    }
+
+    /** A `VkAttachmentReference`, every field zero. */
+    pub static fn attachmentReference() : VkAttachmentReference {
+        return VkAttachmentReference { attachment: 0, layout: 0 };
+    }
+
+    /** A `VkSubpassDescription`, every field zero. */
+    pub static fn subpassDescription() : VkSubpassDescription {
+        return VkSubpassDescription {
+            flags: 0,
+            pipelineBindPoint: 0,
+            inputAttachmentCount: 0,
+            pInputAttachments: Raw::nil(),
+            colorAttachmentCount: 0,
+            pColorAttachments: Raw::nil(),
+            pResolveAttachments: Raw::nil(),
+            pDepthStencilAttachment: Raw::nil(),
+            preserveAttachmentCount: 0,
+            pPreserveAttachments: Raw::nil(),
+        };
+    }
+
+    /** A `VkSubpassDependency`, every field zero. */
+    pub static fn subpassDependency() : VkSubpassDependency {
+        return VkSubpassDependency {
+            srcSubpass: 0,
+            dstSubpass: 0,
+            srcStageMask: 0,
+            dstStageMask: 0,
+            srcAccessMask: 0,
+            dstAccessMask: 0,
+            dependencyFlags: 0,
+        };
+    }
+
+    /** A `VkRenderPassCreateInfo` with its `sType` set. */
+    pub static fn renderPassCreateInfo() : VkRenderPassCreateInfo {
+        return VkRenderPassCreateInfo {
+            sType: VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            attachmentCount: 0,
+            pAttachments: Raw::nil(),
+            subpassCount: 0,
+            pSubpasses: Raw::nil(),
+            dependencyCount: 0,
+            pDependencies: Raw::nil(),
+        };
+    }
+
+    /** A `VkFramebufferCreateInfo` with its `sType` set. */
+    pub static fn framebufferCreateInfo() : VkFramebufferCreateInfo {
+        return VkFramebufferCreateInfo {
+            sType: VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            renderPass: 0,
+            attachmentCount: 0,
+            pAttachments: Raw::nil(),
+            width: 0,
+            height: 0,
+            layers: 0,
+        };
+    }
+
+    /** A `VkPipelineShaderStageCreateInfo` with its `sType` set. */
+    pub static fn pipelineShaderStageCreateInfo() : VkPipelineShaderStageCreateInfo {
+        return VkPipelineShaderStageCreateInfo {
+            sType: VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            stage: 0,
+            module_: 0,
+            pName: Raw::nil(),
+            pSpecializationInfo: Raw::nil(),
+        };
+    }
+
+    /** A `VkVertexInputBindingDescription`, every field zero. */
+    pub static fn vertexInputBindingDescription() : VkVertexInputBindingDescription {
+        return VkVertexInputBindingDescription { binding: 0, stride: 0, inputRate: 0 };
+    }
+
+    /** A `VkVertexInputAttributeDescription`, every field zero. */
+    pub static fn vertexInputAttributeDescription() : VkVertexInputAttributeDescription {
+        return VkVertexInputAttributeDescription { location: 0, binding: 0, format: 0, offset: 0 };
+    }
+
+    /** A `VkPipelineVertexInputStateCreateInfo` with its `sType` set. */
+    pub static fn pipelineVertexInputStateCreateInfo() : VkPipelineVertexInputStateCreateInfo {
+        return VkPipelineVertexInputStateCreateInfo {
+            sType: VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            vertexBindingDescriptionCount: 0,
+            pVertexBindingDescriptions: Raw::nil(),
+            vertexAttributeDescriptionCount: 0,
+            pVertexAttributeDescriptions: Raw::nil(),
+        };
+    }
+
+    /** A `VkPipelineInputAssemblyStateCreateInfo` with its `sType` set. */
+    pub static fn pipelineInputAssemblyStateCreateInfo() : VkPipelineInputAssemblyStateCreateInfo {
+        return VkPipelineInputAssemblyStateCreateInfo {
+            sType: VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            topology: 0,
+            primitiveRestartEnable: 0,
+        };
+    }
+
+    /** A `VkPipelineViewportStateCreateInfo` with its `sType` set. */
+    pub static fn pipelineViewportStateCreateInfo() : VkPipelineViewportStateCreateInfo {
+        return VkPipelineViewportStateCreateInfo {
+            sType: VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            viewportCount: 0,
+            pViewports: Raw::nil(),
+            scissorCount: 0,
+            pScissors: Raw::nil(),
+        };
+    }
+
+    /** A `VkPipelineRasterizationStateCreateInfo` with its `sType` set. */
+    pub static fn pipelineRasterizationStateCreateInfo() : VkPipelineRasterizationStateCreateInfo {
+        return VkPipelineRasterizationStateCreateInfo {
+            sType: VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            depthClampEnable: 0,
+            rasterizerDiscardEnable: 0,
+            polygonMode: 0,
+            cullMode: 0,
+            frontFace: 0,
+            depthBiasEnable: 0,
+            depthBiasConstantFactor: (0.0 as f32),
+            depthBiasClamp: (0.0 as f32),
+            depthBiasSlopeFactor: (0.0 as f32),
+            lineWidth: (0.0 as f32),
+        };
+    }
+
+    /** A `VkPipelineMultisampleStateCreateInfo` with its `sType` set. */
+    pub static fn pipelineMultisampleStateCreateInfo() : VkPipelineMultisampleStateCreateInfo {
+        return VkPipelineMultisampleStateCreateInfo {
+            sType: VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            rasterizationSamples: 0,
+            sampleShadingEnable: 0,
+            minSampleShading: (0.0 as f32),
+            pSampleMask: Raw::nil(),
+            alphaToCoverageEnable: 0,
+            alphaToOneEnable: 0,
+        };
+    }
+
+    /** A `VkStencilOpState`, every field zero. */
+    pub static fn stencilOpState() : VkStencilOpState {
+        return VkStencilOpState {
+            failOp: 0,
+            passOp: 0,
+            depthFailOp: 0,
+            compareOp: 0,
+            compareMask: 0,
+            writeMask: 0,
+            reference: 0,
+        };
+    }
+
+    /** A `VkPipelineDepthStencilStateCreateInfo` with its `sType` set. */
+    pub static fn pipelineDepthStencilStateCreateInfo() : VkPipelineDepthStencilStateCreateInfo {
+        return VkPipelineDepthStencilStateCreateInfo {
+            sType: VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            depthTestEnable: 0,
+            depthWriteEnable: 0,
+            depthCompareOp: 0,
+            depthBoundsTestEnable: 0,
+            stencilTestEnable: 0,
+            front: VkStencilOpState {
+                failOp: 0,
+                passOp: 0,
+                depthFailOp: 0,
+                compareOp: 0,
+                compareMask: 0,
+                writeMask: 0,
+                reference: 0,
+            },
+            back: VkStencilOpState {
+                failOp: 0,
+                passOp: 0,
+                depthFailOp: 0,
+                compareOp: 0,
+                compareMask: 0,
+                writeMask: 0,
+                reference: 0,
+            },
+            minDepthBounds: (0.0 as f32),
+            maxDepthBounds: (0.0 as f32),
+        };
+    }
+
+    /** A `VkPipelineColorBlendAttachmentState`, every field zero. */
+    pub static fn pipelineColorBlendAttachmentState() : VkPipelineColorBlendAttachmentState {
+        return VkPipelineColorBlendAttachmentState {
+            blendEnable: 0,
+            srcColorBlendFactor: 0,
+            dstColorBlendFactor: 0,
+            colorBlendOp: 0,
+            srcAlphaBlendFactor: 0,
+            dstAlphaBlendFactor: 0,
+            alphaBlendOp: 0,
+            colorWriteMask: 0,
+        };
+    }
+
+    /** A `VkPipelineColorBlendStateCreateInfo` with its `sType` set. */
+    pub static fn pipelineColorBlendStateCreateInfo() : VkPipelineColorBlendStateCreateInfo {
+        return VkPipelineColorBlendStateCreateInfo {
+            sType: VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            logicOpEnable: 0,
+            logicOp: 0,
+            attachmentCount: 0,
+            pAttachments: Raw::nil(),
+            blendConstants0: (0.0 as f32),
+            blendConstants1: (0.0 as f32),
+            blendConstants2: (0.0 as f32),
+            blendConstants3: (0.0 as f32),
+        };
+    }
+
+    /** A `VkPipelineDynamicStateCreateInfo` with its `sType` set. */
+    pub static fn pipelineDynamicStateCreateInfo() : VkPipelineDynamicStateCreateInfo {
+        return VkPipelineDynamicStateCreateInfo {
+            sType: VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            dynamicStateCount: 0,
+            pDynamicStates: Raw::nil(),
+        };
+    }
+
+    /** A `VkGraphicsPipelineCreateInfo` with its `sType` set. */
+    pub static fn graphicsPipelineCreateInfo() : VkGraphicsPipelineCreateInfo {
+        return VkGraphicsPipelineCreateInfo {
+            sType: VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            stageCount: 0,
+            pStages: Raw::nil(),
+            pVertexInputState: Raw::nil(),
+            pInputAssemblyState: Raw::nil(),
+            pTessellationState: Raw::nil(),
+            pViewportState: Raw::nil(),
+            pRasterizationState: Raw::nil(),
+            pMultisampleState: Raw::nil(),
+            pDepthStencilState: Raw::nil(),
+            pColorBlendState: Raw::nil(),
+            pDynamicState: Raw::nil(),
+            layout: 0,
+            renderPass: 0,
+            subpass: 0,
+            basePipelineHandle: 0,
+            basePipelineIndex: 0,
+        };
+    }
+
+    /** A `VkCommandPoolCreateInfo` with its `sType` set. */
+    pub static fn commandPoolCreateInfo() : VkCommandPoolCreateInfo {
+        return VkCommandPoolCreateInfo {
+            sType: VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            queueFamilyIndex: 0,
+        };
+    }
+
+    /** A `VkCommandBufferAllocateInfo` with its `sType` set. */
+    pub static fn commandBufferAllocateInfo() : VkCommandBufferAllocateInfo {
+        return VkCommandBufferAllocateInfo {
+            sType: VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            pNext: Raw::nil(),
+            commandPool: 0,
+            level: 0,
+            commandBufferCount: 0,
+        };
+    }
+
+    /** A `VkCommandBufferBeginInfo` with its `sType` set. */
+    pub static fn commandBufferBeginInfo() : VkCommandBufferBeginInfo {
+        return VkCommandBufferBeginInfo {
+            sType: VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            pInheritanceInfo: Raw::nil(),
+        };
+    }
+
+    /** A `VkSemaphoreCreateInfo` with its `sType` set. */
+    pub static fn semaphoreCreateInfo() : VkSemaphoreCreateInfo {
+        return VkSemaphoreCreateInfo {
+            sType: VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+        };
+    }
+
+    /** A `VkFenceCreateInfo` with its `sType` set. */
+    pub static fn fenceCreateInfo() : VkFenceCreateInfo {
+        return VkFenceCreateInfo {
+            sType: VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+        };
+    }
+
+    /** A `VkDescriptorPoolSize`, every field zero. */
+    pub static fn descriptorPoolSize() : VkDescriptorPoolSize {
+        return VkDescriptorPoolSize { type_: 0, descriptorCount: 0 };
+    }
+
+    /** A `VkDescriptorPoolCreateInfo` with its `sType` set. */
+    pub static fn descriptorPoolCreateInfo() : VkDescriptorPoolCreateInfo {
+        return VkDescriptorPoolCreateInfo {
+            sType: VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            pNext: Raw::nil(),
+            flags: 0,
+            maxSets: 0,
+            poolSizeCount: 0,
+            pPoolSizes: Raw::nil(),
+        };
+    }
+
+    /** A `VkDescriptorSetAllocateInfo` with its `sType` set. */
+    pub static fn descriptorSetAllocateInfo() : VkDescriptorSetAllocateInfo {
+        return VkDescriptorSetAllocateInfo {
+            sType: VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            pNext: Raw::nil(),
+            descriptorPool: 0,
+            descriptorSetCount: 0,
+            pSetLayouts: Raw::nil(),
+        };
+    }
+
+    /** A `VkDescriptorBufferInfo`, every field zero. */
+    pub static fn descriptorBufferInfo() : VkDescriptorBufferInfo {
+        return VkDescriptorBufferInfo { buffer: 0, offset: 0, range: 0 };
+    }
+
+    /** A `VkDescriptorImageInfo`, every field zero. */
+    pub static fn descriptorImageInfo() : VkDescriptorImageInfo {
+        return VkDescriptorImageInfo { sampler: 0, imageView: 0, imageLayout: 0 };
+    }
+
+    /** A `VkWriteDescriptorSet` with its `sType` set. */
+    pub static fn writeDescriptorSet() : VkWriteDescriptorSet {
+        return VkWriteDescriptorSet {
+            sType: VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            pNext: Raw::nil(),
+            dstSet: 0,
+            dstBinding: 0,
+            dstArrayElement: 0,
+            descriptorCount: 0,
+            descriptorType: 0,
+            pImageInfo: Raw::nil(),
+            pBufferInfo: Raw::nil(),
+            pTexelBufferView: Raw::nil(),
+        };
+    }
+
+    /** A `VkBufferCopy`, every field zero. */
+    pub static fn bufferCopy() : VkBufferCopy {
+        return VkBufferCopy { srcOffset: 0, dstOffset: 0, size: 0 };
+    }
+
+    /** A `VkBufferImageCopy`, every field zero. */
+    pub static fn bufferImageCopy() : VkBufferImageCopy {
+        return VkBufferImageCopy {
+            bufferOffset: 0,
+            bufferRowLength: 0,
+            bufferImageHeight: 0,
+            imageSubresource: VkImageSubresourceLayers {
+                aspectMask: 0,
+                mipLevel: 0,
+                baseArrayLayer: 0,
+                layerCount: 0,
+            },
+            imageOffset: VkOffset3D { x: 0, y: 0, z: 0 },
+            imageExtent: VkExtent3D { width: 0, height: 0, depth: 0 },
+        };
+    }
+
+    /** A `VkImageMemoryBarrier` with its `sType` set. */
+    pub static fn imageMemoryBarrier() : VkImageMemoryBarrier {
+        return VkImageMemoryBarrier {
+            sType: VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            pNext: Raw::nil(),
+            srcAccessMask: 0,
+            dstAccessMask: 0,
+            oldLayout: 0,
+            newLayout: 0,
+            srcQueueFamilyIndex: VK_QUEUE_FAMILY_IGNORED,
+            dstQueueFamilyIndex: VK_QUEUE_FAMILY_IGNORED,
+            image: 0,
+            subresourceRange: VkImageSubresourceRange {
+                aspectMask: 0,
+                baseMipLevel: 0,
+                levelCount: 0,
+                baseArrayLayer: 0,
+                layerCount: 0,
+            },
+        };
+        // No ownership transfer: the one value that is right whoever forgets to set it.
+    }
+
+    /** A `VkImageBlit`, every field zero. */
+    pub static fn imageBlit() : VkImageBlit {
+        return VkImageBlit {
+            srcSubresource: VkImageSubresourceLayers {
+                aspectMask: 0,
+                mipLevel: 0,
+                baseArrayLayer: 0,
+                layerCount: 0,
+            },
+            srcOffsets0: VkOffset3D { x: 0, y: 0, z: 0 },
+            srcOffsets1: VkOffset3D { x: 0, y: 0, z: 0 },
+            dstSubresource: VkImageSubresourceLayers {
+                aspectMask: 0,
+                mipLevel: 0,
+                baseArrayLayer: 0,
+                layerCount: 0,
+            },
+            dstOffsets0: VkOffset3D { x: 0, y: 0, z: 0 },
+            dstOffsets1: VkOffset3D { x: 0, y: 0, z: 0 },
+        };
+    }
+
+    /** A `VkRenderPassBeginInfo` with its `sType` set. */
+    pub static fn renderPassBeginInfo() : VkRenderPassBeginInfo {
+        return VkRenderPassBeginInfo {
+            sType: VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            pNext: Raw::nil(),
+            renderPass: 0,
+            framebuffer: 0,
+            renderArea: VkRect2D {
+                offset: VkOffset2D { x: 0, y: 0 },
+                extent: VkExtent2D { width: 0, height: 0 },
+            },
+            clearValueCount: 0,
+            pClearValues: Raw::nil(),
+        };
+    }
+
+    /** A `VkSubmitInfo` with its `sType` set. */
+    pub static fn submitInfo() : VkSubmitInfo {
+        return VkSubmitInfo {
+            sType: VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            pNext: Raw::nil(),
+            waitSemaphoreCount: 0,
+            pWaitSemaphores: Raw::nil(),
+            pWaitDstStageMask: Raw::nil(),
+            commandBufferCount: 0,
+            pCommandBuffers: Raw::nil(),
+            signalSemaphoreCount: 0,
+            pSignalSemaphores: Raw::nil(),
+        };
+    }
+
+    /** A `VkPresentInfoKHR` with its `sType` set. */
+    pub static fn presentInfo() : VkPresentInfoKHR {
+        return VkPresentInfoKHR {
+            sType: VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            pNext: Raw::nil(),
+            waitSemaphoreCount: 0,
+            pWaitSemaphores: Raw::nil(),
+            swapchainCount: 0,
+            pSwapchains: Raw::nil(),
+            pImageIndices: Raw::nil(),
+            pResults: Raw::nil(),
+        };
+    }
+
+    /** A `VkSwapchainCreateInfoKHR` with its `sType` set. */
+    pub static fn swapchainCreateInfo() : VkSwapchainCreateInfoKHR {
+        return VkSwapchainCreateInfoKHR {
+            sType: VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+            pNext: Raw::nil(),
+            flags: 0,
+            surface: 0,
+            minImageCount: 0,
+            imageFormat: 0,
+            imageColorSpace: 0,
+            imageExtent: VkExtent2D { width: 0, height: 0 },
+            imageArrayLayers: 0,
+            imageUsage: 0,
+            imageSharingMode: 0,
+            queueFamilyIndexCount: 0,
+            pQueueFamilyIndices: Raw::nil(),
+            preTransform: 0,
+            compositeAlpha: 0,
+            presentMode: 0,
+            clipped: 0,
+            oldSwapchain: 0,
+        };
+    }
+}

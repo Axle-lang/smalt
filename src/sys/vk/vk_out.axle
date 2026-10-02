@@ -1,0 +1,155 @@
+// vk_out — the offsets of the records the driver fills.
+//
+// Written from the Khronos registry (`vk.xml`) for the commands and records the
+// backend uses, each size and offset measured by a C compiler against
+// `<vulkan/vulkan.h>`. The script that first produced it is not part of this
+// tree: the file is maintained by hand, and `vk_layout_check` is what holds the
+// records to C — at start-up, before the first one reaches a driver, and in
+// `examples/gpu_check`.
+
+// A record the driver fills and smalt only reads (properties, capabilities,
+// memory requirements) is not declared as an Axle struct: it carries arrays of
+// `char` and nested limit tables, and a second copy of an 800-byte layout is a
+// second place to be wrong. The block is allocated at `*_BYTES` and a field is
+// read at its measured offset through `Mem`.
+
+/** `sizeof(VkPhysicalDeviceProperties)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_PROPERTIES_BYTES : i64 = 824;
+
+/** `offsetof(VkPhysicalDeviceProperties, deviceType)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_PROPERTIES_DEVICE_TYPE : i64 = 16;
+
+/** `offsetof(VkPhysicalDeviceProperties, deviceName)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_PROPERTIES_DEVICE_NAME : i64 = 20;
+
+/** `offsetof(VkPhysicalDeviceProperties, limits.maxImageDimension2D)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_IMAGE_DIMENSION2D : i64 = 300;
+
+/** `offsetof(VkPhysicalDeviceProperties, limits.maxImageArrayLayers)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_IMAGE_ARRAY_LAYERS : i64 = 312;
+
+/** `offsetof(VkPhysicalDeviceProperties, limits.maxPushConstantsSize)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_PUSH_CONSTANTS_SIZE : i64 = 328;
+
+/** `offsetof(VkPhysicalDeviceProperties, limits.maxMemoryAllocationCount)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_MEMORY_ALLOCATION_COUNT : i64 = 332;
+
+/** `offsetof(VkPhysicalDeviceProperties, limits.bufferImageGranularity)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_BUFFER_IMAGE_GRANULARITY : i64 = 344;
+
+/** `offsetof(VkPhysicalDeviceProperties, limits.minUniformBufferOffsetAlignment)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MIN_UNIFORM_BUFFER_OFFSET_ALIGNMENT : i64 = 616;
+
+/** `offsetof(VkPhysicalDeviceProperties, limits.maxSamplerAnisotropy)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_SAMPLER_ANISOTROPY : i64 = 568;
+
+/** `offsetof(VkPhysicalDeviceProperties, limits.nonCoherentAtomSize)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_NON_COHERENT_ATOM_SIZE : i64 = 792;
+
+/** `sizeof(VkPhysicalDeviceFeatures)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_FEATURES_BYTES : i64 = 220;
+
+/** `offsetof(VkPhysicalDeviceFeatures, samplerAnisotropy)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_FEATURES_SAMPLER_ANISOTROPY : i64 = 76;
+
+/** `sizeof(VkPhysicalDeviceMemoryProperties)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_BYTES : i64 = 520;
+
+/** `offsetof(VkPhysicalDeviceMemoryProperties, memoryTypeCount)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_MEMORY_TYPE_COUNT : i64 = 0;
+
+/** `offsetof(VkPhysicalDeviceMemoryProperties, memoryTypes)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_MEMORY_TYPES : i64 = 4;
+
+/** `offsetof(VkPhysicalDeviceMemoryProperties, memoryHeapCount)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_MEMORY_HEAP_COUNT : i64 = 260;
+
+/** `offsetof(VkPhysicalDeviceMemoryProperties, memoryHeaps)`. */
+pub(crate) const VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_MEMORY_HEAPS : i64 = 264;
+
+/** `sizeof(VkMemoryType)`. */
+pub(crate) const VKO_MEMORY_TYPE_BYTES : i64 = 8;
+
+/** `offsetof(VkMemoryType, propertyFlags)`. */
+pub(crate) const VKO_MEMORY_TYPE_PROPERTY_FLAGS : i64 = 0;
+
+/** `offsetof(VkMemoryType, heapIndex)`. */
+pub(crate) const VKO_MEMORY_TYPE_HEAP_INDEX : i64 = 4;
+
+/** `sizeof(VkMemoryHeap)`. */
+pub(crate) const VKO_MEMORY_HEAP_BYTES : i64 = 16;
+
+/** `offsetof(VkMemoryHeap, size)`. */
+pub(crate) const VKO_MEMORY_HEAP_SIZE : i64 = 0;
+
+/** `offsetof(VkMemoryHeap, flags)`. */
+pub(crate) const VKO_MEMORY_HEAP_FLAGS : i64 = 8;
+
+/** `sizeof(VkQueueFamilyProperties)`. */
+pub(crate) const VKO_QUEUE_FAMILY_PROPERTIES_BYTES : i64 = 24;
+
+/** `offsetof(VkQueueFamilyProperties, queueFlags)`. */
+pub(crate) const VKO_QUEUE_FAMILY_PROPERTIES_QUEUE_FLAGS : i64 = 0;
+
+/** `offsetof(VkQueueFamilyProperties, queueCount)`. */
+pub(crate) const VKO_QUEUE_FAMILY_PROPERTIES_QUEUE_COUNT : i64 = 4;
+
+/** `sizeof(VkSurfaceCapabilitiesKHR)`. */
+pub(crate) const VKO_SURFACE_CAPABILITIES_KHR_BYTES : i64 = 52;
+
+/** `offsetof(VkSurfaceCapabilitiesKHR, minImageCount)`. */
+pub(crate) const VKO_SURFACE_CAPABILITIES_KHR_MIN_IMAGE_COUNT : i64 = 0;
+
+/** `offsetof(VkSurfaceCapabilitiesKHR, maxImageCount)`. */
+pub(crate) const VKO_SURFACE_CAPABILITIES_KHR_MAX_IMAGE_COUNT : i64 = 4;
+
+/** `offsetof(VkSurfaceCapabilitiesKHR, currentExtent)`. */
+pub(crate) const VKO_SURFACE_CAPABILITIES_KHR_CURRENT_EXTENT : i64 = 8;
+
+/** `offsetof(VkSurfaceCapabilitiesKHR, minImageExtent)`. */
+pub(crate) const VKO_SURFACE_CAPABILITIES_KHR_MIN_IMAGE_EXTENT : i64 = 16;
+
+/** `offsetof(VkSurfaceCapabilitiesKHR, maxImageExtent)`. */
+pub(crate) const VKO_SURFACE_CAPABILITIES_KHR_MAX_IMAGE_EXTENT : i64 = 24;
+
+/** `offsetof(VkSurfaceCapabilitiesKHR, supportedTransforms)`. */
+pub(crate) const VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_TRANSFORMS : i64 = 36;
+
+/** `offsetof(VkSurfaceCapabilitiesKHR, currentTransform)`. */
+pub(crate) const VKO_SURFACE_CAPABILITIES_KHR_CURRENT_TRANSFORM : i64 = 40;
+
+/** `offsetof(VkSurfaceCapabilitiesKHR, supportedCompositeAlpha)`. */
+pub(crate) const VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_COMPOSITE_ALPHA : i64 = 44;
+
+/** `offsetof(VkSurfaceCapabilitiesKHR, supportedUsageFlags)`. */
+pub(crate) const VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_USAGE_FLAGS : i64 = 48;
+
+/** `sizeof(VkSurfaceFormatKHR)`. */
+pub(crate) const VKO_SURFACE_FORMAT_KHR_BYTES : i64 = 8;
+
+/** `offsetof(VkSurfaceFormatKHR, format)`. */
+pub(crate) const VKO_SURFACE_FORMAT_KHR_FORMAT : i64 = 0;
+
+/** `offsetof(VkSurfaceFormatKHR, colorSpace)`. */
+pub(crate) const VKO_SURFACE_FORMAT_KHR_COLOR_SPACE : i64 = 4;
+
+/** `sizeof(VkMemoryRequirements)`. */
+pub(crate) const VKO_MEMORY_REQUIREMENTS_BYTES : i64 = 24;
+
+/** `offsetof(VkMemoryRequirements, size)`. */
+pub(crate) const VKO_MEMORY_REQUIREMENTS_SIZE : i64 = 0;
+
+/** `offsetof(VkMemoryRequirements, alignment)`. */
+pub(crate) const VKO_MEMORY_REQUIREMENTS_ALIGNMENT : i64 = 8;
+
+/** `offsetof(VkMemoryRequirements, memoryTypeBits)`. */
+pub(crate) const VKO_MEMORY_REQUIREMENTS_MEMORY_TYPE_BITS : i64 = 16;
+
+/** `sizeof(VkFormatProperties)`. */
+pub(crate) const VKO_FORMAT_PROPERTIES_BYTES : i64 = 12;
+
+/** `offsetof(VkFormatProperties, linearTilingFeatures)`. */
+pub(crate) const VKO_FORMAT_PROPERTIES_LINEAR_TILING_FEATURES : i64 = 0;
+
+/** `offsetof(VkFormatProperties, optimalTilingFeatures)`. */
+pub(crate) const VKO_FORMAT_PROPERTIES_OPTIMAL_TILING_FEATURES : i64 = 4;

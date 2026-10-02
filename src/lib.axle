@@ -56,4 +56,6 @@ use crate::render::soft::{shade, raster};
 use crate::math::{quat, geom};
 
 use crate::io::{file, fmt, bmp};
+
+use crate::sys::vk::{vk_const, vk_types, vk_out, vk_table, vk_layout_check};
 use std::numeric::math;

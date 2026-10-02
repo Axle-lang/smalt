@@ -1,0 +1,1946 @@
+// vk_table — the Vulkan entry points, called through addresses the loader hands back.
+//
+// Written from the Khronos registry (`vk.xml`), one method per command the backend
+// calls, each signature transcribed from the C prototype quoted above it. The
+// script that first produced it is not part of this tree; the file is maintained by
+// hand now, and a command is added the way the others are: field, load, method.
+
+// Vulkan is not linked. The loader (`vulkan-1.dll`, `libvulkan.so.1`) is opened
+// at run time by the `platform::sys_gpu_loader` seam, which yields one address,
+// `vkGetInstanceProcAddr`; every other command is asked of it by name and kept
+// here as a bare address. That is the whole reason there is no `[link]` section
+// and no `-lvulkan`: a machine without a Vulkan driver builds, runs, and lets
+// `Renderer` fall back to the software device.
+//
+// A method is the C prototype with three changes, all mechanical:
+//   * the allocator argument is gone (always null);
+//   * a `const VkXxx *` that names ONE record is taken by value, and its address
+//     is the address of the callee's own copy;
+//   * every other pointer is a `ptr`, and an array the caller built is handed
+//     over with `VkAddr`.
+//
+// The `unsafe` in this crate's Vulkan code is exactly this file's casts and
+// `VkAddr`'s address-of: each call site above it is safe Axle.
+
+use crate::kernel::raw::Raw;
+use crate::sys::vk::vk_types::{
+    VkApplicationInfo, VkAttachmentDescription, VkAttachmentReference, VkBufferCreateInfo,
+    VkBufferImageCopy, VkCommandBufferAllocateInfo, VkCommandBufferBeginInfo,
+    VkCommandPoolCreateInfo, VkDescriptorBufferInfo, VkDescriptorImageInfo,
+    VkDescriptorPoolCreateInfo, VkDescriptorPoolSize, VkDescriptorSetAllocateInfo,
+    VkDescriptorSetLayoutBinding, VkDescriptorSetLayoutCreateInfo, VkDeviceCreateInfo,
+    VkDeviceQueueCreateInfo, VkFenceCreateInfo, VkFramebufferCreateInfo,
+    VkGraphicsPipelineCreateInfo, VkImageBlit, VkImageCreateInfo, VkImageMemoryBarrier,
+    VkImageViewCreateInfo, VkInstanceCreateInfo, VkMemoryAllocateInfo, VkPhysicalDeviceFeatures,
+    VkPipelineColorBlendAttachmentState, VkPipelineColorBlendStateCreateInfo,
+    VkPipelineDepthStencilStateCreateInfo, VkPipelineDynamicStateCreateInfo,
+    VkPipelineInputAssemblyStateCreateInfo, VkPipelineLayoutCreateInfo,
+    VkPipelineMultisampleStateCreateInfo, VkPipelineRasterizationStateCreateInfo,
+    VkPipelineShaderStageCreateInfo, VkPipelineVertexInputStateCreateInfo,
+    VkPipelineViewportStateCreateInfo, VkPresentInfoKHR, VkPushConstantRange, VkRect2D,
+    VkRenderPassBeginInfo, VkRenderPassCreateInfo, VkSamplerCreateInfo, VkSemaphoreCreateInfo,
+    VkShaderModuleCreateInfo, VkSubmitInfo, VkSubpassDependency, VkSubpassDescription,
+    VkSwapchainCreateInfoKHR, VkVertexInputAttributeDescription, VkVertexInputBindingDescription,
+    VkViewport, VkWriteDescriptorSet,
+};
+
+/** The loaded Vulkan entry points. */
+pub class VkTable {
+    /** `vkGetInstanceProcAddr`, the one address the loader gives. */
+    getProc : ptr = Raw::nil();
+
+    pCreateInstance : ptr = Raw::nil();
+    pEnumerateInstanceLayerProperties : ptr = Raw::nil();
+    pDestroyInstance : ptr = Raw::nil();
+    pEnumeratePhysicalDevices : ptr = Raw::nil();
+    pGetPhysicalDeviceProperties : ptr = Raw::nil();
+    pGetPhysicalDeviceFeatures : ptr = Raw::nil();
+    pGetPhysicalDeviceQueueFamilyProperties : ptr = Raw::nil();
+    pGetPhysicalDeviceMemoryProperties : ptr = Raw::nil();
+    pGetPhysicalDeviceFormatProperties : ptr = Raw::nil();
+    pCreateDevice : ptr = Raw::nil();
+    pDestroySurfaceKHR : ptr = Raw::nil();
+    pGetPhysicalDeviceSurfaceSupportKHR : ptr = Raw::nil();
+    pGetPhysicalDeviceSurfaceCapabilitiesKHR : ptr = Raw::nil();
+    pGetPhysicalDeviceSurfaceFormatsKHR : ptr = Raw::nil();
+    pGetPhysicalDeviceSurfacePresentModesKHR : ptr = Raw::nil();
+    pDestroyDevice : ptr = Raw::nil();
+    pGetDeviceQueue : ptr = Raw::nil();
+    pDeviceWaitIdle : ptr = Raw::nil();
+    pQueueSubmit : ptr = Raw::nil();
+    pQueueWaitIdle : ptr = Raw::nil();
+    pAllocateMemory : ptr = Raw::nil();
+    pFreeMemory : ptr = Raw::nil();
+    pMapMemory : ptr = Raw::nil();
+    pBindBufferMemory : ptr = Raw::nil();
+    pBindImageMemory : ptr = Raw::nil();
+    pGetBufferMemoryRequirements : ptr = Raw::nil();
+    pGetImageMemoryRequirements : ptr = Raw::nil();
+    pCreateBuffer : ptr = Raw::nil();
+    pDestroyBuffer : ptr = Raw::nil();
+    pCreateImage : ptr = Raw::nil();
+    pDestroyImage : ptr = Raw::nil();
+    pCreateImageView : ptr = Raw::nil();
+    pDestroyImageView : ptr = Raw::nil();
+    pCreateSampler : ptr = Raw::nil();
+    pDestroySampler : ptr = Raw::nil();
+    pCreateShaderModule : ptr = Raw::nil();
+    pDestroyShaderModule : ptr = Raw::nil();
+    pCreateDescriptorSetLayout : ptr = Raw::nil();
+    pDestroyDescriptorSetLayout : ptr = Raw::nil();
+    pCreatePipelineLayout : ptr = Raw::nil();
+    pDestroyPipelineLayout : ptr = Raw::nil();
+    pCreateRenderPass : ptr = Raw::nil();
+    pDestroyRenderPass : ptr = Raw::nil();
+    pCreateFramebuffer : ptr = Raw::nil();
+    pDestroyFramebuffer : ptr = Raw::nil();
+    pCreateGraphicsPipelines : ptr = Raw::nil();
+    pDestroyPipeline : ptr = Raw::nil();
+    pCreateCommandPool : ptr = Raw::nil();
+    pDestroyCommandPool : ptr = Raw::nil();
+    pAllocateCommandBuffers : ptr = Raw::nil();
+    pFreeCommandBuffers : ptr = Raw::nil();
+    pResetCommandBuffer : ptr = Raw::nil();
+    pBeginCommandBuffer : ptr = Raw::nil();
+    pEndCommandBuffer : ptr = Raw::nil();
+    pCreateSemaphore : ptr = Raw::nil();
+    pDestroySemaphore : ptr = Raw::nil();
+    pCreateFence : ptr = Raw::nil();
+    pDestroyFence : ptr = Raw::nil();
+    pWaitForFences : ptr = Raw::nil();
+    pResetFences : ptr = Raw::nil();
+    pCreateDescriptorPool : ptr = Raw::nil();
+    pDestroyDescriptorPool : ptr = Raw::nil();
+    pAllocateDescriptorSets : ptr = Raw::nil();
+    pFreeDescriptorSets : ptr = Raw::nil();
+    pUpdateDescriptorSets : ptr = Raw::nil();
+    pCreateSwapchainKHR : ptr = Raw::nil();
+    pDestroySwapchainKHR : ptr = Raw::nil();
+    pGetSwapchainImagesKHR : ptr = Raw::nil();
+    pAcquireNextImageKHR : ptr = Raw::nil();
+    pQueuePresentKHR : ptr = Raw::nil();
+    pCmdBeginRenderPass : ptr = Raw::nil();
+    pCmdEndRenderPass : ptr = Raw::nil();
+    pCmdBindPipeline : ptr = Raw::nil();
+    pCmdBindDescriptorSets : ptr = Raw::nil();
+    pCmdBindVertexBuffers : ptr = Raw::nil();
+    pCmdBindIndexBuffer : ptr = Raw::nil();
+    pCmdPushConstants : ptr = Raw::nil();
+    pCmdDrawIndexed : ptr = Raw::nil();
+    pCmdDraw : ptr = Raw::nil();
+    pCmdSetViewport : ptr = Raw::nil();
+    pCmdSetScissor : ptr = Raw::nil();
+    pCmdCopyBufferToImage : ptr = Raw::nil();
+    pCmdPipelineBarrier : ptr = Raw::nil();
+    pCmdBlitImage : ptr = Raw::nil();
+
+    /** A table over the loader's `vkGetInstanceProcAddr`. */
+    constructor(getProc : ptr) {
+        self.getProc = getProc;
+    }
+
+    /**
+     * The address of the command `name`, as the loader answers for `instance`
+     * (0 for the commands that exist before an instance does).
+     *
+     * Public because a platform's surface commands (`vkCreateXlibSurfaceKHR`, …)
+     * are not in the portable table: the port that needs one asks for it here.
+     */
+    pub fn proc(self, instance : i64, name : string) : ptr {
+        unsafe {
+            let f : extern "C" (i64, string) => ptr = self.getProc as extern "C" (i64, string) => ptr;
+            return f(instance, name);
+        }
+    }
+
+    /** Whether the loader answered at all. */
+    pub fn isLoaded(self) : bool {
+        return Raw::addr(self.getProc) != 0;
+    }
+
+    /** Resolve the commands that exist before an instance; "" when all did. */
+    pub fn loadGlobal(mut self) : string {
+        self.pCreateInstance = self.proc(0, "vkCreateInstance");
+        if (Raw::isNil(self.pCreateInstance)) {
+            return "vkCreateInstance";
+        }
+        // Optional: only asked when a layer is wanted, and a loader without it has none.
+        self.pEnumerateInstanceLayerProperties = self.proc(0, "vkEnumerateInstanceLayerProperties");
+        return "";
+    }
+
+    /**
+     * Whether `vkDestroyInstance` was resolved. `loadInstance` can fail on the very
+     * first name, and an instance whose destroy command the loader would not give is
+     * one that cannot be destroyed — calling through the null address instead is a
+     * crash where a fallback to the CPU was due.
+     */
+    pub fn canDestroyInstance(self) : bool {
+        return !Raw::isNil(self.pDestroyInstance);
+    }
+
+    /** Whether `vkEnumerateInstanceLayerProperties` was resolved. */
+    pub fn canListLayers(self) : bool {
+        return !Raw::isNil(self.pEnumerateInstanceLayerProperties);
+    }
+
+    /** `VkResult vkEnumerateInstanceLayerProperties(uint32_t* pPropertyCount, VkLayerProperties* pProperties)`. */
+    pub fn enumerateInstanceLayerProperties(self, pPropertyCount : ptr, pProperties : ptr) : i32 {
+        unsafe {
+            let f : extern "C" (ptr, ptr) => i32 = self.pEnumerateInstanceLayerProperties as extern "C" (ptr, ptr) => i32;
+            return f(pPropertyCount, pProperties);
+        }
+    }
+
+    /** Resolve every other command against `instance`; the first missing name, or "". */
+    pub fn loadInstance(mut self, instance : i64) : string {
+        self.pDestroyInstance = self.proc(instance, "vkDestroyInstance");
+        if (Raw::isNil(self.pDestroyInstance)) {
+            return "vkDestroyInstance";
+        }
+        self.pEnumeratePhysicalDevices = self.proc(instance, "vkEnumeratePhysicalDevices");
+        if (Raw::isNil(self.pEnumeratePhysicalDevices)) {
+            return "vkEnumeratePhysicalDevices";
+        }
+        self.pGetPhysicalDeviceProperties = self.proc(instance, "vkGetPhysicalDeviceProperties");
+        if (Raw::isNil(self.pGetPhysicalDeviceProperties)) {
+            return "vkGetPhysicalDeviceProperties";
+        }
+        self.pGetPhysicalDeviceFeatures = self.proc(instance, "vkGetPhysicalDeviceFeatures");
+        if (Raw::isNil(self.pGetPhysicalDeviceFeatures)) {
+            return "vkGetPhysicalDeviceFeatures";
+        }
+        self.pGetPhysicalDeviceQueueFamilyProperties = self.proc(
+            instance,
+            "vkGetPhysicalDeviceQueueFamilyProperties"
+        );
+        if (Raw::isNil(self.pGetPhysicalDeviceQueueFamilyProperties)) {
+            return "vkGetPhysicalDeviceQueueFamilyProperties";
+        }
+        self.pGetPhysicalDeviceMemoryProperties = self.proc(
+            instance,
+            "vkGetPhysicalDeviceMemoryProperties"
+        );
+        if (Raw::isNil(self.pGetPhysicalDeviceMemoryProperties)) {
+            return "vkGetPhysicalDeviceMemoryProperties";
+        }
+        self.pGetPhysicalDeviceFormatProperties = self.proc(
+            instance,
+            "vkGetPhysicalDeviceFormatProperties"
+        );
+        if (Raw::isNil(self.pGetPhysicalDeviceFormatProperties)) {
+            return "vkGetPhysicalDeviceFormatProperties";
+        }
+        self.pCreateDevice = self.proc(instance, "vkCreateDevice");
+        if (Raw::isNil(self.pCreateDevice)) {
+            return "vkCreateDevice";
+        }
+        self.pDestroySurfaceKHR = self.proc(instance, "vkDestroySurfaceKHR");
+        if (Raw::isNil(self.pDestroySurfaceKHR)) {
+            return "vkDestroySurfaceKHR";
+        }
+        self.pGetPhysicalDeviceSurfaceSupportKHR = self.proc(
+            instance,
+            "vkGetPhysicalDeviceSurfaceSupportKHR"
+        );
+        if (Raw::isNil(self.pGetPhysicalDeviceSurfaceSupportKHR)) {
+            return "vkGetPhysicalDeviceSurfaceSupportKHR";
+        }
+        self.pGetPhysicalDeviceSurfaceCapabilitiesKHR = self.proc(
+            instance,
+            "vkGetPhysicalDeviceSurfaceCapabilitiesKHR"
+        );
+        if (Raw::isNil(self.pGetPhysicalDeviceSurfaceCapabilitiesKHR)) {
+            return "vkGetPhysicalDeviceSurfaceCapabilitiesKHR";
+        }
+        self.pGetPhysicalDeviceSurfaceFormatsKHR = self.proc(
+            instance,
+            "vkGetPhysicalDeviceSurfaceFormatsKHR"
+        );
+        if (Raw::isNil(self.pGetPhysicalDeviceSurfaceFormatsKHR)) {
+            return "vkGetPhysicalDeviceSurfaceFormatsKHR";
+        }
+        self.pGetPhysicalDeviceSurfacePresentModesKHR = self.proc(
+            instance,
+            "vkGetPhysicalDeviceSurfacePresentModesKHR"
+        );
+        if (Raw::isNil(self.pGetPhysicalDeviceSurfacePresentModesKHR)) {
+            return "vkGetPhysicalDeviceSurfacePresentModesKHR";
+        }
+        self.pDestroyDevice = self.proc(instance, "vkDestroyDevice");
+        if (Raw::isNil(self.pDestroyDevice)) {
+            return "vkDestroyDevice";
+        }
+        self.pGetDeviceQueue = self.proc(instance, "vkGetDeviceQueue");
+        if (Raw::isNil(self.pGetDeviceQueue)) {
+            return "vkGetDeviceQueue";
+        }
+        self.pDeviceWaitIdle = self.proc(instance, "vkDeviceWaitIdle");
+        if (Raw::isNil(self.pDeviceWaitIdle)) {
+            return "vkDeviceWaitIdle";
+        }
+        self.pQueueSubmit = self.proc(instance, "vkQueueSubmit");
+        if (Raw::isNil(self.pQueueSubmit)) {
+            return "vkQueueSubmit";
+        }
+        self.pQueueWaitIdle = self.proc(instance, "vkQueueWaitIdle");
+        if (Raw::isNil(self.pQueueWaitIdle)) {
+            return "vkQueueWaitIdle";
+        }
+        self.pAllocateMemory = self.proc(instance, "vkAllocateMemory");
+        if (Raw::isNil(self.pAllocateMemory)) {
+            return "vkAllocateMemory";
+        }
+        self.pFreeMemory = self.proc(instance, "vkFreeMemory");
+        if (Raw::isNil(self.pFreeMemory)) {
+            return "vkFreeMemory";
+        }
+        self.pMapMemory = self.proc(instance, "vkMapMemory");
+        if (Raw::isNil(self.pMapMemory)) {
+            return "vkMapMemory";
+        }
+        self.pBindBufferMemory = self.proc(instance, "vkBindBufferMemory");
+        if (Raw::isNil(self.pBindBufferMemory)) {
+            return "vkBindBufferMemory";
+        }
+        self.pBindImageMemory = self.proc(instance, "vkBindImageMemory");
+        if (Raw::isNil(self.pBindImageMemory)) {
+            return "vkBindImageMemory";
+        }
+        self.pGetBufferMemoryRequirements = self.proc(instance, "vkGetBufferMemoryRequirements");
+        if (Raw::isNil(self.pGetBufferMemoryRequirements)) {
+            return "vkGetBufferMemoryRequirements";
+        }
+        self.pGetImageMemoryRequirements = self.proc(instance, "vkGetImageMemoryRequirements");
+        if (Raw::isNil(self.pGetImageMemoryRequirements)) {
+            return "vkGetImageMemoryRequirements";
+        }
+        self.pCreateBuffer = self.proc(instance, "vkCreateBuffer");
+        if (Raw::isNil(self.pCreateBuffer)) {
+            return "vkCreateBuffer";
+        }
+        self.pDestroyBuffer = self.proc(instance, "vkDestroyBuffer");
+        if (Raw::isNil(self.pDestroyBuffer)) {
+            return "vkDestroyBuffer";
+        }
+        self.pCreateImage = self.proc(instance, "vkCreateImage");
+        if (Raw::isNil(self.pCreateImage)) {
+            return "vkCreateImage";
+        }
+        self.pDestroyImage = self.proc(instance, "vkDestroyImage");
+        if (Raw::isNil(self.pDestroyImage)) {
+            return "vkDestroyImage";
+        }
+        self.pCreateImageView = self.proc(instance, "vkCreateImageView");
+        if (Raw::isNil(self.pCreateImageView)) {
+            return "vkCreateImageView";
+        }
+        self.pDestroyImageView = self.proc(instance, "vkDestroyImageView");
+        if (Raw::isNil(self.pDestroyImageView)) {
+            return "vkDestroyImageView";
+        }
+        self.pCreateSampler = self.proc(instance, "vkCreateSampler");
+        if (Raw::isNil(self.pCreateSampler)) {
+            return "vkCreateSampler";
+        }
+        self.pDestroySampler = self.proc(instance, "vkDestroySampler");
+        if (Raw::isNil(self.pDestroySampler)) {
+            return "vkDestroySampler";
+        }
+        self.pCreateShaderModule = self.proc(instance, "vkCreateShaderModule");
+        if (Raw::isNil(self.pCreateShaderModule)) {
+            return "vkCreateShaderModule";
+        }
+        self.pDestroyShaderModule = self.proc(instance, "vkDestroyShaderModule");
+        if (Raw::isNil(self.pDestroyShaderModule)) {
+            return "vkDestroyShaderModule";
+        }
+        self.pCreateDescriptorSetLayout = self.proc(instance, "vkCreateDescriptorSetLayout");
+        if (Raw::isNil(self.pCreateDescriptorSetLayout)) {
+            return "vkCreateDescriptorSetLayout";
+        }
+        self.pDestroyDescriptorSetLayout = self.proc(instance, "vkDestroyDescriptorSetLayout");
+        if (Raw::isNil(self.pDestroyDescriptorSetLayout)) {
+            return "vkDestroyDescriptorSetLayout";
+        }
+        self.pCreatePipelineLayout = self.proc(instance, "vkCreatePipelineLayout");
+        if (Raw::isNil(self.pCreatePipelineLayout)) {
+            return "vkCreatePipelineLayout";
+        }
+        self.pDestroyPipelineLayout = self.proc(instance, "vkDestroyPipelineLayout");
+        if (Raw::isNil(self.pDestroyPipelineLayout)) {
+            return "vkDestroyPipelineLayout";
+        }
+        self.pCreateRenderPass = self.proc(instance, "vkCreateRenderPass");
+        if (Raw::isNil(self.pCreateRenderPass)) {
+            return "vkCreateRenderPass";
+        }
+        self.pDestroyRenderPass = self.proc(instance, "vkDestroyRenderPass");
+        if (Raw::isNil(self.pDestroyRenderPass)) {
+            return "vkDestroyRenderPass";
+        }
+        self.pCreateFramebuffer = self.proc(instance, "vkCreateFramebuffer");
+        if (Raw::isNil(self.pCreateFramebuffer)) {
+            return "vkCreateFramebuffer";
+        }
+        self.pDestroyFramebuffer = self.proc(instance, "vkDestroyFramebuffer");
+        if (Raw::isNil(self.pDestroyFramebuffer)) {
+            return "vkDestroyFramebuffer";
+        }
+        self.pCreateGraphicsPipelines = self.proc(instance, "vkCreateGraphicsPipelines");
+        if (Raw::isNil(self.pCreateGraphicsPipelines)) {
+            return "vkCreateGraphicsPipelines";
+        }
+        self.pDestroyPipeline = self.proc(instance, "vkDestroyPipeline");
+        if (Raw::isNil(self.pDestroyPipeline)) {
+            return "vkDestroyPipeline";
+        }
+        self.pCreateCommandPool = self.proc(instance, "vkCreateCommandPool");
+        if (Raw::isNil(self.pCreateCommandPool)) {
+            return "vkCreateCommandPool";
+        }
+        self.pDestroyCommandPool = self.proc(instance, "vkDestroyCommandPool");
+        if (Raw::isNil(self.pDestroyCommandPool)) {
+            return "vkDestroyCommandPool";
+        }
+        self.pAllocateCommandBuffers = self.proc(instance, "vkAllocateCommandBuffers");
+        if (Raw::isNil(self.pAllocateCommandBuffers)) {
+            return "vkAllocateCommandBuffers";
+        }
+        self.pFreeCommandBuffers = self.proc(instance, "vkFreeCommandBuffers");
+        if (Raw::isNil(self.pFreeCommandBuffers)) {
+            return "vkFreeCommandBuffers";
+        }
+        self.pResetCommandBuffer = self.proc(instance, "vkResetCommandBuffer");
+        if (Raw::isNil(self.pResetCommandBuffer)) {
+            return "vkResetCommandBuffer";
+        }
+        self.pBeginCommandBuffer = self.proc(instance, "vkBeginCommandBuffer");
+        if (Raw::isNil(self.pBeginCommandBuffer)) {
+            return "vkBeginCommandBuffer";
+        }
+        self.pEndCommandBuffer = self.proc(instance, "vkEndCommandBuffer");
+        if (Raw::isNil(self.pEndCommandBuffer)) {
+            return "vkEndCommandBuffer";
+        }
+        self.pCreateSemaphore = self.proc(instance, "vkCreateSemaphore");
+        if (Raw::isNil(self.pCreateSemaphore)) {
+            return "vkCreateSemaphore";
+        }
+        self.pDestroySemaphore = self.proc(instance, "vkDestroySemaphore");
+        if (Raw::isNil(self.pDestroySemaphore)) {
+            return "vkDestroySemaphore";
+        }
+        self.pCreateFence = self.proc(instance, "vkCreateFence");
+        if (Raw::isNil(self.pCreateFence)) {
+            return "vkCreateFence";
+        }
+        self.pDestroyFence = self.proc(instance, "vkDestroyFence");
+        if (Raw::isNil(self.pDestroyFence)) {
+            return "vkDestroyFence";
+        }
+        self.pWaitForFences = self.proc(instance, "vkWaitForFences");
+        if (Raw::isNil(self.pWaitForFences)) {
+            return "vkWaitForFences";
+        }
+        self.pResetFences = self.proc(instance, "vkResetFences");
+        if (Raw::isNil(self.pResetFences)) {
+            return "vkResetFences";
+        }
+        self.pCreateDescriptorPool = self.proc(instance, "vkCreateDescriptorPool");
+        if (Raw::isNil(self.pCreateDescriptorPool)) {
+            return "vkCreateDescriptorPool";
+        }
+        self.pDestroyDescriptorPool = self.proc(instance, "vkDestroyDescriptorPool");
+        if (Raw::isNil(self.pDestroyDescriptorPool)) {
+            return "vkDestroyDescriptorPool";
+        }
+        self.pAllocateDescriptorSets = self.proc(instance, "vkAllocateDescriptorSets");
+        if (Raw::isNil(self.pAllocateDescriptorSets)) {
+            return "vkAllocateDescriptorSets";
+        }
+        self.pFreeDescriptorSets = self.proc(instance, "vkFreeDescriptorSets");
+        if (Raw::isNil(self.pFreeDescriptorSets)) {
+            return "vkFreeDescriptorSets";
+        }
+        self.pUpdateDescriptorSets = self.proc(instance, "vkUpdateDescriptorSets");
+        if (Raw::isNil(self.pUpdateDescriptorSets)) {
+            return "vkUpdateDescriptorSets";
+        }
+        self.pCreateSwapchainKHR = self.proc(instance, "vkCreateSwapchainKHR");
+        if (Raw::isNil(self.pCreateSwapchainKHR)) {
+            return "vkCreateSwapchainKHR";
+        }
+        self.pDestroySwapchainKHR = self.proc(instance, "vkDestroySwapchainKHR");
+        if (Raw::isNil(self.pDestroySwapchainKHR)) {
+            return "vkDestroySwapchainKHR";
+        }
+        self.pGetSwapchainImagesKHR = self.proc(instance, "vkGetSwapchainImagesKHR");
+        if (Raw::isNil(self.pGetSwapchainImagesKHR)) {
+            return "vkGetSwapchainImagesKHR";
+        }
+        self.pAcquireNextImageKHR = self.proc(instance, "vkAcquireNextImageKHR");
+        if (Raw::isNil(self.pAcquireNextImageKHR)) {
+            return "vkAcquireNextImageKHR";
+        }
+        self.pQueuePresentKHR = self.proc(instance, "vkQueuePresentKHR");
+        if (Raw::isNil(self.pQueuePresentKHR)) {
+            return "vkQueuePresentKHR";
+        }
+        self.pCmdBeginRenderPass = self.proc(instance, "vkCmdBeginRenderPass");
+        if (Raw::isNil(self.pCmdBeginRenderPass)) {
+            return "vkCmdBeginRenderPass";
+        }
+        self.pCmdEndRenderPass = self.proc(instance, "vkCmdEndRenderPass");
+        if (Raw::isNil(self.pCmdEndRenderPass)) {
+            return "vkCmdEndRenderPass";
+        }
+        self.pCmdBindPipeline = self.proc(instance, "vkCmdBindPipeline");
+        if (Raw::isNil(self.pCmdBindPipeline)) {
+            return "vkCmdBindPipeline";
+        }
+        self.pCmdBindDescriptorSets = self.proc(instance, "vkCmdBindDescriptorSets");
+        if (Raw::isNil(self.pCmdBindDescriptorSets)) {
+            return "vkCmdBindDescriptorSets";
+        }
+        self.pCmdBindVertexBuffers = self.proc(instance, "vkCmdBindVertexBuffers");
+        if (Raw::isNil(self.pCmdBindVertexBuffers)) {
+            return "vkCmdBindVertexBuffers";
+        }
+        self.pCmdBindIndexBuffer = self.proc(instance, "vkCmdBindIndexBuffer");
+        if (Raw::isNil(self.pCmdBindIndexBuffer)) {
+            return "vkCmdBindIndexBuffer";
+        }
+        self.pCmdPushConstants = self.proc(instance, "vkCmdPushConstants");
+        if (Raw::isNil(self.pCmdPushConstants)) {
+            return "vkCmdPushConstants";
+        }
+        self.pCmdDrawIndexed = self.proc(instance, "vkCmdDrawIndexed");
+        if (Raw::isNil(self.pCmdDrawIndexed)) {
+            return "vkCmdDrawIndexed";
+        }
+        self.pCmdDraw = self.proc(instance, "vkCmdDraw");
+        if (Raw::isNil(self.pCmdDraw)) {
+            return "vkCmdDraw";
+        }
+        self.pCmdSetViewport = self.proc(instance, "vkCmdSetViewport");
+        if (Raw::isNil(self.pCmdSetViewport)) {
+            return "vkCmdSetViewport";
+        }
+        self.pCmdSetScissor = self.proc(instance, "vkCmdSetScissor");
+        if (Raw::isNil(self.pCmdSetScissor)) {
+            return "vkCmdSetScissor";
+        }
+        self.pCmdCopyBufferToImage = self.proc(instance, "vkCmdCopyBufferToImage");
+        if (Raw::isNil(self.pCmdCopyBufferToImage)) {
+            return "vkCmdCopyBufferToImage";
+        }
+        self.pCmdPipelineBarrier = self.proc(instance, "vkCmdPipelineBarrier");
+        if (Raw::isNil(self.pCmdPipelineBarrier)) {
+            return "vkCmdPipelineBarrier";
+        }
+        self.pCmdBlitImage = self.proc(instance, "vkCmdBlitImage");
+        if (Raw::isNil(self.pCmdBlitImage)) {
+            return "vkCmdBlitImage";
+        }
+        return "";
+    }
+
+    /** `VkResult vkCreateInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkInstance* pInstance)`. */
+    pub fn createInstance(self, pCreateInfo : VkInstanceCreateInfo, pInstance : ptr) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkInstanceCreateInfo = pCreateInfo;
+            let f : extern "C" (ptr, ptr, ptr) => i32 = self.pCreateInstance as extern "C" (ptr, ptr, ptr) => i32;
+            return f((&pCreateInfo_) as ptr, Raw::nil(), pInstance);
+        }
+    }
+
+    /** `void vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyInstance(self, instance : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, ptr) => void = self.pDestroyInstance as extern "C" (i64, ptr) => void;
+            f(instance, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkEnumeratePhysicalDevices(VkInstance instance, uint32_t* pPhysicalDeviceCount, VkPhysicalDevice* pPhysicalDevices)`. */
+    pub fn enumeratePhysicalDevices(
+        self,
+        instance : i64,
+        pPhysicalDeviceCount : ptr,
+        pPhysicalDevices : ptr
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, ptr, ptr) => i32 = self.pEnumeratePhysicalDevices as extern "C" (i64, ptr, ptr) => i32;
+            return f(instance, pPhysicalDeviceCount, pPhysicalDevices);
+        }
+    }
+
+    /** `void vkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice, VkPhysicalDeviceProperties* pProperties)`. */
+    pub fn getPhysicalDeviceProperties(self, physicalDevice : i64, pProperties : ptr) : void {
+        unsafe {
+            let f : extern "C" (i64, ptr) => void = self.pGetPhysicalDeviceProperties as extern "C" (i64, ptr) => void;
+            f(physicalDevice, pProperties);
+        }
+    }
+
+    /** `void vkGetPhysicalDeviceFeatures(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures* pFeatures)`. */
+    pub fn getPhysicalDeviceFeatures(self, physicalDevice : i64, pFeatures : ptr) : void {
+        unsafe {
+            let f : extern "C" (i64, ptr) => void = self.pGetPhysicalDeviceFeatures as extern "C" (i64, ptr) => void;
+            f(physicalDevice, pFeatures);
+        }
+    }
+
+    /** `void vkGetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevice physicalDevice, uint32_t* pQueueFamilyPropertyCount, VkQueueFamilyProperties* pQueueFamilyProperties)`. */
+    pub fn getPhysicalDeviceQueueFamilyProperties(
+        self,
+        physicalDevice : i64,
+        pQueueFamilyPropertyCount : ptr,
+        pQueueFamilyProperties : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, ptr, ptr) => void = self.pGetPhysicalDeviceQueueFamilyProperties as extern "C" (i64, ptr, ptr) => void;
+            f(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+        }
+    }
+
+    /** `void vkGetPhysicalDeviceMemoryProperties(VkPhysicalDevice physicalDevice, VkPhysicalDeviceMemoryProperties* pMemoryProperties)`. */
+    pub fn getPhysicalDeviceMemoryProperties(
+        self,
+        physicalDevice : i64,
+        pMemoryProperties : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, ptr) => void = self.pGetPhysicalDeviceMemoryProperties as extern "C" (i64, ptr) => void;
+            f(physicalDevice, pMemoryProperties);
+        }
+    }
+
+    /** `void vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat format, VkFormatProperties* pFormatProperties)`. */
+    pub fn getPhysicalDeviceFormatProperties(
+        self,
+        physicalDevice : i64,
+        format : i32,
+        pFormatProperties : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i32, ptr) => void = self.pGetPhysicalDeviceFormatProperties as extern "C" (i64, i32, ptr) => void;
+            f(physicalDevice, format, pFormatProperties);
+        }
+    }
+
+    /** `VkResult vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDevice* pDevice)`. */
+    pub fn createDevice(
+        self,
+        physicalDevice : i64,
+        pCreateInfo : VkDeviceCreateInfo,
+        pDevice : ptr
+    ) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkDeviceCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateDevice as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(physicalDevice, (&pCreateInfo_) as ptr, Raw::nil(), pDevice);
+        }
+    }
+
+    /** `void vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroySurfaceKHR(self, instance : i64, surface : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroySurfaceKHR as extern "C" (i64, i64, ptr) => void;
+            f(instance, surface, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkGetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, VkSurfaceKHR surface, VkBool32* pSupported)`. */
+    pub fn getPhysicalDeviceSurfaceSupportKHR(
+        self,
+        physicalDevice : i64,
+        queueFamilyIndex : i32,
+        surface : i64,
+        pSupported : ptr
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i32, i64, ptr) => i32 = self.pGetPhysicalDeviceSurfaceSupportKHR as extern "C" (i64, i32, i64, ptr) => i32;
+            return f(physicalDevice, queueFamilyIndex, surface, pSupported);
+        }
+    }
+
+    /** `VkResult vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* pSurfaceCapabilities)`. */
+    pub fn getPhysicalDeviceSurfaceCapabilitiesKHR(
+        self,
+        physicalDevice : i64,
+        surface : i64,
+        pSurfaceCapabilities : ptr
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => i32 = self.pGetPhysicalDeviceSurfaceCapabilitiesKHR as extern "C" (i64, i64, ptr) => i32;
+            return f(physicalDevice, surface, pSurfaceCapabilities);
+        }
+    }
+
+    /** `VkResult vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, uint32_t* pSurfaceFormatCount, VkSurfaceFormatKHR* pSurfaceFormats)`. */
+    pub fn getPhysicalDeviceSurfaceFormatsKHR(
+        self,
+        physicalDevice : i64,
+        surface : i64,
+        pSurfaceFormatCount : ptr,
+        pSurfaceFormats : ptr
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr, ptr) => i32 = self.pGetPhysicalDeviceSurfaceFormatsKHR as extern "C" (i64, i64, ptr, ptr) => i32;
+            return f(physicalDevice, surface, pSurfaceFormatCount, pSurfaceFormats);
+        }
+    }
+
+    /** `VkResult vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, uint32_t* pPresentModeCount, VkPresentModeKHR* pPresentModes)`. */
+    pub fn getPhysicalDeviceSurfacePresentModesKHR(
+        self,
+        physicalDevice : i64,
+        surface : i64,
+        pPresentModeCount : ptr,
+        pPresentModes : ptr
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr, ptr) => i32 = self.pGetPhysicalDeviceSurfacePresentModesKHR as extern "C" (i64, i64, ptr, ptr) => i32;
+            return f(physicalDevice, surface, pPresentModeCount, pPresentModes);
+        }
+    }
+
+    /** `void vkDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyDevice(self, device : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, ptr) => void = self.pDestroyDevice as extern "C" (i64, ptr) => void;
+            f(device, Raw::nil());
+        }
+    }
+
+    /** `void vkGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue)`. */
+    pub fn getDeviceQueue(
+        self,
+        device : i64,
+        queueFamilyIndex : i32,
+        queueIndex : i32,
+        pQueue : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i32, i32, ptr) => void = self.pGetDeviceQueue as extern "C" (i64, i32, i32, ptr) => void;
+            f(device, queueFamilyIndex, queueIndex, pQueue);
+        }
+    }
+
+    /** `VkResult vkDeviceWaitIdle(VkDevice device)`. */
+    pub fn deviceWaitIdle(self, device : i64) : i32 {
+        unsafe {
+            let f : extern "C" (i64) => i32 = self.pDeviceWaitIdle as extern "C" (i64) => i32;
+            return f(device);
+        }
+    }
+
+    /** `VkResult vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)`. */
+    pub fn queueSubmit(self, queue : i64, submitCount : i32, pSubmits : ptr, fence : i64) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i32, ptr, i64) => i32 = self.pQueueSubmit as extern "C" (i64, i32, ptr, i64) => i32;
+            return f(queue, submitCount, pSubmits, fence);
+        }
+    }
+
+    /** `VkResult vkQueueWaitIdle(VkQueue queue)`. */
+    pub fn queueWaitIdle(self, queue : i64) : i32 {
+        unsafe {
+            let f : extern "C" (i64) => i32 = self.pQueueWaitIdle as extern "C" (i64) => i32;
+            return f(queue);
+        }
+    }
+
+    /** `VkResult vkAllocateMemory(VkDevice device, const VkMemoryAllocateInfo* pAllocateInfo, const VkAllocationCallbacks* pAllocator, VkDeviceMemory* pMemory)`. */
+    pub fn allocateMemory(
+        self,
+        device : i64,
+        pAllocateInfo : VkMemoryAllocateInfo,
+        pMemory : ptr
+    ) : i32 {
+        unsafe {
+            let pAllocateInfo_ : VkMemoryAllocateInfo = pAllocateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pAllocateMemory as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pAllocateInfo_) as ptr, Raw::nil(), pMemory);
+        }
+    }
+
+    /** `void vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn freeMemory(self, device : i64, memory : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pFreeMemory as extern "C" (i64, i64, ptr) => void;
+            f(device, memory, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkMapMemory(VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void* ppData)`. */
+    pub fn mapMemory(
+        self,
+        device : i64,
+        memory : i64,
+        offset : i64,
+        size : i64,
+        flags : i32,
+        ppData : ptr
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i64, i64, i64, i32, ptr) => i32 = self.pMapMemory as extern "C" (i64, i64, i64, i64, i32, ptr) => i32;
+            return f(device, memory, offset, size, flags, ppData);
+        }
+    }
+
+    /** `VkResult vkBindBufferMemory(VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset)`. */
+    pub fn bindBufferMemory(
+        self,
+        device : i64,
+        buffer : i64,
+        memory : i64,
+        memoryOffset : i64
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i64, i64, i64) => i32 = self.pBindBufferMemory as extern "C" (i64, i64, i64, i64) => i32;
+            return f(device, buffer, memory, memoryOffset);
+        }
+    }
+
+    /** `VkResult vkBindImageMemory(VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset)`. */
+    pub fn bindImageMemory(
+        self,
+        device : i64,
+        image : i64,
+        memory : i64,
+        memoryOffset : i64
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i64, i64, i64) => i32 = self.pBindImageMemory as extern "C" (i64, i64, i64, i64) => i32;
+            return f(device, image, memory, memoryOffset);
+        }
+    }
+
+    /** `void vkGetBufferMemoryRequirements(VkDevice device, VkBuffer buffer, VkMemoryRequirements* pMemoryRequirements)`. */
+    pub fn getBufferMemoryRequirements(
+        self,
+        device : i64,
+        buffer : i64,
+        pMemoryRequirements : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pGetBufferMemoryRequirements as extern "C" (i64, i64, ptr) => void;
+            f(device, buffer, pMemoryRequirements);
+        }
+    }
+
+    /** `void vkGetImageMemoryRequirements(VkDevice device, VkImage image, VkMemoryRequirements* pMemoryRequirements)`. */
+    pub fn getImageMemoryRequirements(
+        self,
+        device : i64,
+        image : i64,
+        pMemoryRequirements : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pGetImageMemoryRequirements as extern "C" (i64, i64, ptr) => void;
+            f(device, image, pMemoryRequirements);
+        }
+    }
+
+    /** `VkResult vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)`. */
+    pub fn createBuffer(self, device : i64, pCreateInfo : VkBufferCreateInfo, pBuffer : ptr) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkBufferCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateBuffer as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pBuffer);
+        }
+    }
+
+    /** `void vkDestroyBuffer(VkDevice device, VkBuffer buffer, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyBuffer(self, device : i64, buffer : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroyBuffer as extern "C" (i64, i64, ptr) => void;
+            f(device, buffer, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkCreateImage(VkDevice device, const VkImageCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkImage* pImage)`. */
+    pub fn createImage(self, device : i64, pCreateInfo : VkImageCreateInfo, pImage : ptr) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkImageCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateImage as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pImage);
+        }
+    }
+
+    /** `void vkDestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyImage(self, device : i64, image : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroyImage as extern "C" (i64, i64, ptr) => void;
+            f(device, image, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkCreateImageView(VkDevice device, const VkImageViewCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkImageView* pView)`. */
+    pub fn createImageView(
+        self,
+        device : i64,
+        pCreateInfo : VkImageViewCreateInfo,
+        pView : ptr
+    ) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkImageViewCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateImageView as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pView);
+        }
+    }
+
+    /** `void vkDestroyImageView(VkDevice device, VkImageView imageView, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyImageView(self, device : i64, imageView : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroyImageView as extern "C" (i64, i64, ptr) => void;
+            f(device, imageView, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkCreateSampler(VkDevice device, const VkSamplerCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSampler* pSampler)`. */
+    pub fn createSampler(
+        self,
+        device : i64,
+        pCreateInfo : VkSamplerCreateInfo,
+        pSampler : ptr
+    ) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkSamplerCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateSampler as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pSampler);
+        }
+    }
+
+    /** `void vkDestroySampler(VkDevice device, VkSampler sampler, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroySampler(self, device : i64, sampler : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroySampler as extern "C" (i64, i64, ptr) => void;
+            f(device, sampler, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule)`. */
+    pub fn createShaderModule(
+        self,
+        device : i64,
+        pCreateInfo : VkShaderModuleCreateInfo,
+        pShaderModule : ptr
+    ) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkShaderModuleCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateShaderModule as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pShaderModule);
+        }
+    }
+
+    /** `void vkDestroyShaderModule(VkDevice device, VkShaderModule shaderModule, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyShaderModule(self, device : i64, shaderModule : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroyShaderModule as extern "C" (i64, i64, ptr) => void;
+            f(device, shaderModule, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkCreateDescriptorSetLayout(VkDevice device, const VkDescriptorSetLayoutCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDescriptorSetLayout* pSetLayout)`. */
+    pub fn createDescriptorSetLayout(
+        self,
+        device : i64,
+        pCreateInfo : VkDescriptorSetLayoutCreateInfo,
+        pSetLayout : ptr
+    ) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkDescriptorSetLayoutCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateDescriptorSetLayout as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pSetLayout);
+        }
+    }
+
+    /** `void vkDestroyDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout descriptorSetLayout, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyDescriptorSetLayout(self, device : i64, descriptorSetLayout : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroyDescriptorSetLayout as extern "C" (i64, i64, ptr) => void;
+            f(device, descriptorSetLayout, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkCreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkPipelineLayout* pPipelineLayout)`. */
+    pub fn createPipelineLayout(
+        self,
+        device : i64,
+        pCreateInfo : VkPipelineLayoutCreateInfo,
+        pPipelineLayout : ptr
+    ) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkPipelineLayoutCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreatePipelineLayout as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pPipelineLayout);
+        }
+    }
+
+    /** `void vkDestroyPipelineLayout(VkDevice device, VkPipelineLayout pipelineLayout, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyPipelineLayout(self, device : i64, pipelineLayout : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroyPipelineLayout as extern "C" (i64, i64, ptr) => void;
+            f(device, pipelineLayout, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkRenderPass* pRenderPass)`. */
+    pub fn createRenderPass(
+        self,
+        device : i64,
+        pCreateInfo : VkRenderPassCreateInfo,
+        pRenderPass : ptr
+    ) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkRenderPassCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateRenderPass as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pRenderPass);
+        }
+    }
+
+    /** `void vkDestroyRenderPass(VkDevice device, VkRenderPass renderPass, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyRenderPass(self, device : i64, renderPass : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroyRenderPass as extern "C" (i64, i64, ptr) => void;
+            f(device, renderPass, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkCreateFramebuffer(VkDevice device, const VkFramebufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkFramebuffer* pFramebuffer)`. */
+    pub fn createFramebuffer(
+        self,
+        device : i64,
+        pCreateInfo : VkFramebufferCreateInfo,
+        pFramebuffer : ptr
+    ) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkFramebufferCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateFramebuffer as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pFramebuffer);
+        }
+    }
+
+    /** `void vkDestroyFramebuffer(VkDevice device, VkFramebuffer framebuffer, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyFramebuffer(self, device : i64, framebuffer : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroyFramebuffer as extern "C" (i64, i64, ptr) => void;
+            f(device, framebuffer, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount, const VkGraphicsPipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)`. */
+    pub fn createGraphicsPipelines(
+        self,
+        device : i64,
+        pipelineCache : i64,
+        createInfoCount : i32,
+        pCreateInfos : ptr,
+        pPipelines : ptr
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i64, i32, ptr, ptr, ptr) => i32 = self.pCreateGraphicsPipelines as extern "C" (i64, i64, i32, ptr, ptr, ptr) => i32;
+            return f(device, pipelineCache, createInfoCount, pCreateInfos, Raw::nil(), pPipelines);
+        }
+    }
+
+    /** `void vkDestroyPipeline(VkDevice device, VkPipeline pipeline, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyPipeline(self, device : i64, pipeline : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroyPipeline as extern "C" (i64, i64, ptr) => void;
+            f(device, pipeline, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkCommandPool* pCommandPool)`. */
+    pub fn createCommandPool(
+        self,
+        device : i64,
+        pCreateInfo : VkCommandPoolCreateInfo,
+        pCommandPool : ptr
+    ) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkCommandPoolCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateCommandPool as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pCommandPool);
+        }
+    }
+
+    /** `void vkDestroyCommandPool(VkDevice device, VkCommandPool commandPool, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyCommandPool(self, device : i64, commandPool : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroyCommandPool as extern "C" (i64, i64, ptr) => void;
+            f(device, commandPool, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo* pAllocateInfo, VkCommandBuffer* pCommandBuffers)`. */
+    pub fn allocateCommandBuffers(
+        self,
+        device : i64,
+        pAllocateInfo : VkCommandBufferAllocateInfo,
+        pCommandBuffers : ptr
+    ) : i32 {
+        unsafe {
+            let pAllocateInfo_ : VkCommandBufferAllocateInfo = pAllocateInfo;
+            let f : extern "C" (i64, ptr, ptr) => i32 = self.pAllocateCommandBuffers as extern "C" (i64, ptr, ptr) => i32;
+            return f(device, (&pAllocateInfo_) as ptr, pCommandBuffers);
+        }
+    }
+
+    /** `void vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool, uint32_t commandBufferCount, const VkCommandBuffer* pCommandBuffers)`. */
+    pub fn freeCommandBuffers(
+        self,
+        device : i64,
+        commandPool : i64,
+        commandBufferCount : i32,
+        pCommandBuffers : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, i32, ptr) => void = self.pFreeCommandBuffers as extern "C" (i64, i64, i32, ptr) => void;
+            f(device, commandPool, commandBufferCount, pCommandBuffers);
+        }
+    }
+
+    /** `VkResult vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags)`. */
+    pub fn resetCommandBuffer(self, commandBuffer : i64, flags : i32) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i32) => i32 = self.pResetCommandBuffer as extern "C" (i64, i32) => i32;
+            return f(commandBuffer, flags);
+        }
+    }
+
+    /** `VkResult vkBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo* pBeginInfo)`. */
+    pub fn beginCommandBuffer(
+        self,
+        commandBuffer : i64,
+        pBeginInfo : VkCommandBufferBeginInfo
+    ) : i32 {
+        unsafe {
+            let pBeginInfo_ : VkCommandBufferBeginInfo = pBeginInfo;
+            let f : extern "C" (i64, ptr) => i32 = self.pBeginCommandBuffer as extern "C" (i64, ptr) => i32;
+            return f(commandBuffer, (&pBeginInfo_) as ptr);
+        }
+    }
+
+    /** `VkResult vkEndCommandBuffer(VkCommandBuffer commandBuffer)`. */
+    pub fn endCommandBuffer(self, commandBuffer : i64) : i32 {
+        unsafe {
+            let f : extern "C" (i64) => i32 = self.pEndCommandBuffer as extern "C" (i64) => i32;
+            return f(commandBuffer);
+        }
+    }
+
+    /** `VkResult vkCreateSemaphore(VkDevice device, const VkSemaphoreCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSemaphore* pSemaphore)`. */
+    pub fn createSemaphore(
+        self,
+        device : i64,
+        pCreateInfo : VkSemaphoreCreateInfo,
+        pSemaphore : ptr
+    ) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkSemaphoreCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateSemaphore as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pSemaphore);
+        }
+    }
+
+    /** `void vkDestroySemaphore(VkDevice device, VkSemaphore semaphore, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroySemaphore(self, device : i64, semaphore : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroySemaphore as extern "C" (i64, i64, ptr) => void;
+            f(device, semaphore, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkCreateFence(VkDevice device, const VkFenceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkFence* pFence)`. */
+    pub fn createFence(self, device : i64, pCreateInfo : VkFenceCreateInfo, pFence : ptr) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkFenceCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateFence as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pFence);
+        }
+    }
+
+    /** `void vkDestroyFence(VkDevice device, VkFence fence, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyFence(self, device : i64, fence : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroyFence as extern "C" (i64, i64, ptr) => void;
+            f(device, fence, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll, uint64_t timeout)`. */
+    pub fn waitForFences(
+        self,
+        device : i64,
+        fenceCount : i32,
+        pFences : ptr,
+        waitAll : i32,
+        timeout : i64
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i32, ptr, i32, i64) => i32 = self.pWaitForFences as extern "C" (i64, i32, ptr, i32, i64) => i32;
+            return f(device, fenceCount, pFences, waitAll, timeout);
+        }
+    }
+
+    /** `VkResult vkResetFences(VkDevice device, uint32_t fenceCount, const VkFence* pFences)`. */
+    pub fn resetFences(self, device : i64, fenceCount : i32, pFences : ptr) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i32, ptr) => i32 = self.pResetFences as extern "C" (i64, i32, ptr) => i32;
+            return f(device, fenceCount, pFences);
+        }
+    }
+
+    /** `VkResult vkCreateDescriptorPool(VkDevice device, const VkDescriptorPoolCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDescriptorPool* pDescriptorPool)`. */
+    pub fn createDescriptorPool(
+        self,
+        device : i64,
+        pCreateInfo : VkDescriptorPoolCreateInfo,
+        pDescriptorPool : ptr
+    ) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkDescriptorPoolCreateInfo = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateDescriptorPool as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pDescriptorPool);
+        }
+    }
+
+    /** `void vkDestroyDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroyDescriptorPool(self, device : i64, descriptorPool : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroyDescriptorPool as extern "C" (i64, i64, ptr) => void;
+            f(device, descriptorPool, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkAllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo* pAllocateInfo, VkDescriptorSet* pDescriptorSets)`. */
+    pub fn allocateDescriptorSets(
+        self,
+        device : i64,
+        pAllocateInfo : VkDescriptorSetAllocateInfo,
+        pDescriptorSets : ptr
+    ) : i32 {
+        unsafe {
+            let pAllocateInfo_ : VkDescriptorSetAllocateInfo = pAllocateInfo;
+            let f : extern "C" (i64, ptr, ptr) => i32 = self.pAllocateDescriptorSets as extern "C" (i64, ptr, ptr) => i32;
+            return f(device, (&pAllocateInfo_) as ptr, pDescriptorSets);
+        }
+    }
+
+    /** `VkResult vkFreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool, uint32_t descriptorSetCount, const VkDescriptorSet* pDescriptorSets)`. */
+    pub fn freeDescriptorSets(
+        self,
+        device : i64,
+        descriptorPool : i64,
+        descriptorSetCount : i32,
+        pDescriptorSets : ptr
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i64, i32, ptr) => i32 = self.pFreeDescriptorSets as extern "C" (i64, i64, i32, ptr) => i32;
+            return f(device, descriptorPool, descriptorSetCount, pDescriptorSets);
+        }
+    }
+
+    /** `void vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, uint32_t descriptorCopyCount, const VkCopyDescriptorSet* pDescriptorCopies)`. */
+    pub fn updateDescriptorSets(
+        self,
+        device : i64,
+        descriptorWriteCount : i32,
+        pDescriptorWrites : ptr,
+        descriptorCopyCount : i32,
+        pDescriptorCopies : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i32, ptr, i32, ptr) => void = self.pUpdateDescriptorSets as extern "C" (i64, i32, ptr, i32, ptr) => void;
+            f(
+                device,
+                descriptorWriteCount,
+                pDescriptorWrites,
+                descriptorCopyCount,
+                pDescriptorCopies
+            );
+        }
+    }
+
+    /** `VkResult vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain)`. */
+    pub fn createSwapchainKHR(
+        self,
+        device : i64,
+        pCreateInfo : VkSwapchainCreateInfoKHR,
+        pSwapchain : ptr
+    ) : i32 {
+        unsafe {
+            let pCreateInfo_ : VkSwapchainCreateInfoKHR = pCreateInfo;
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = self.pCreateSwapchainKHR as extern "C" (i64, ptr, ptr, ptr) => i32;
+            return f(device, (&pCreateInfo_) as ptr, Raw::nil(), pSwapchain);
+        }
+    }
+
+    /** `void vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks* pAllocator)`. */
+    pub fn destroySwapchainKHR(self, device : i64, swapchain : i64) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr) => void = self.pDestroySwapchainKHR as extern "C" (i64, i64, ptr) => void;
+            f(device, swapchain, Raw::nil());
+        }
+    }
+
+    /** `VkResult vkGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain, uint32_t* pSwapchainImageCount, VkImage* pSwapchainImages)`. */
+    pub fn getSwapchainImagesKHR(
+        self,
+        device : i64,
+        swapchain : i64,
+        pSwapchainImageCount : ptr,
+        pSwapchainImages : ptr
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i64, ptr, ptr) => i32 = self.pGetSwapchainImagesKHR as extern "C" (i64, i64, ptr, ptr) => i32;
+            return f(device, swapchain, pSwapchainImageCount, pSwapchainImages);
+        }
+    }
+
+    /** `VkResult vkAcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex)`. */
+    pub fn acquireNextImageKHR(
+        self,
+        device : i64,
+        swapchain : i64,
+        timeout : i64,
+        semaphore : i64,
+        fence : i64,
+        pImageIndex : ptr
+    ) : i32 {
+        unsafe {
+            let f : extern "C" (i64, i64, i64, i64, i64, ptr) => i32 = self.pAcquireNextImageKHR as extern "C" (i64, i64, i64, i64, i64, ptr) => i32;
+            return f(device, swapchain, timeout, semaphore, fence, pImageIndex);
+        }
+    }
+
+    /** `VkResult vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo)`. */
+    pub fn queuePresentKHR(self, queue : i64, pPresentInfo : VkPresentInfoKHR) : i32 {
+        unsafe {
+            let pPresentInfo_ : VkPresentInfoKHR = pPresentInfo;
+            let f : extern "C" (i64, ptr) => i32 = self.pQueuePresentKHR as extern "C" (i64, ptr) => i32;
+            return f(queue, (&pPresentInfo_) as ptr);
+        }
+    }
+
+    /** `void vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin, VkSubpassContents contents)`. */
+    pub fn cmdBeginRenderPass(
+        self,
+        commandBuffer : i64,
+        pRenderPassBegin : VkRenderPassBeginInfo,
+        contents : i32
+    ) : void {
+        unsafe {
+            let pRenderPassBegin_ : VkRenderPassBeginInfo = pRenderPassBegin;
+            let f : extern "C" (i64, ptr, i32) => void = self.pCmdBeginRenderPass as extern "C" (i64, ptr, i32) => void;
+            f(commandBuffer, (&pRenderPassBegin_) as ptr, contents);
+        }
+    }
+
+    /** `void vkCmdEndRenderPass(VkCommandBuffer commandBuffer)`. */
+    pub fn cmdEndRenderPass(self, commandBuffer : i64) : void {
+        unsafe {
+            let f : extern "C" (i64) => void = self.pCmdEndRenderPass as extern "C" (i64) => void;
+            f(commandBuffer);
+        }
+    }
+
+    /** `void vkCmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline)`. */
+    pub fn cmdBindPipeline(
+        self,
+        commandBuffer : i64,
+        pipelineBindPoint : i32,
+        pipeline : i64
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i32, i64) => void = self.pCmdBindPipeline as extern "C" (i64, i32, i64) => void;
+            f(commandBuffer, pipelineBindPoint, pipeline);
+        }
+    }
+
+    /** `void vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t firstSet, uint32_t descriptorSetCount, const VkDescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount, const uint32_t* pDynamicOffsets)`. */
+    pub fn cmdBindDescriptorSets(
+        self,
+        commandBuffer : i64,
+        pipelineBindPoint : i32,
+        layout : i64,
+        firstSet : i32,
+        descriptorSetCount : i32,
+        pDescriptorSets : ptr,
+        dynamicOffsetCount : i32,
+        pDynamicOffsets : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i32, i64, i32, i32, ptr, i32, ptr) => void = self.pCmdBindDescriptorSets as extern "C" (i64, i32, i64, i32, i32, ptr, i32, ptr) => void;
+            f(
+                commandBuffer,
+                pipelineBindPoint,
+                layout,
+                firstSet,
+                descriptorSetCount,
+                pDescriptorSets,
+                dynamicOffsetCount,
+                pDynamicOffsets
+            );
+        }
+    }
+
+    /** `void vkCmdBindVertexBuffers(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount, const VkBuffer* pBuffers, const VkDeviceSize* pOffsets)`. */
+    pub fn cmdBindVertexBuffers(
+        self,
+        commandBuffer : i64,
+        firstBinding : i32,
+        bindingCount : i32,
+        pBuffers : ptr,
+        pOffsets : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i32, i32, ptr, ptr) => void = self.pCmdBindVertexBuffers as extern "C" (i64, i32, i32, ptr, ptr) => void;
+            f(commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets);
+        }
+    }
+
+    /** `void vkCmdBindIndexBuffer(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkIndexType indexType)`. */
+    pub fn cmdBindIndexBuffer(
+        self,
+        commandBuffer : i64,
+        buffer : i64,
+        offset : i64,
+        indexType : i32
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, i64, i32) => void = self.pCmdBindIndexBuffer as extern "C" (i64, i64, i64, i32) => void;
+            f(commandBuffer, buffer, offset, indexType);
+        }
+    }
+
+    /** `void vkCmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout layout, VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size, const void* pValues)`. */
+    pub fn cmdPushConstants(
+        self,
+        commandBuffer : i64,
+        layout : i64,
+        stageFlags : i32,
+        offset : i32,
+        size : i32,
+        pValues : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, i32, i32, i32, ptr) => void = self.pCmdPushConstants as extern "C" (i64, i64, i32, i32, i32, ptr) => void;
+            f(commandBuffer, layout, stageFlags, offset, size, pValues);
+        }
+    }
+
+    /** `void vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance)`. */
+    pub fn cmdDrawIndexed(
+        self,
+        commandBuffer : i64,
+        indexCount : i32,
+        instanceCount : i32,
+        firstIndex : i32,
+        vertexOffset : i32,
+        firstInstance : i32
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i32, i32, i32, i32, i32) => void = self.pCmdDrawIndexed as extern "C" (i64, i32, i32, i32, i32, i32) => void;
+            f(commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+        }
+    }
+
+    /** `void vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance)`. */
+    pub fn cmdDraw(
+        self,
+        commandBuffer : i64,
+        vertexCount : i32,
+        instanceCount : i32,
+        firstVertex : i32,
+        firstInstance : i32
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i32, i32, i32, i32) => void = self.pCmdDraw as extern "C" (i64, i32, i32, i32, i32) => void;
+            f(commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+        }
+    }
+
+    /** `void vkCmdSetViewport(VkCommandBuffer commandBuffer, uint32_t firstViewport, uint32_t viewportCount, const VkViewport* pViewports)`. */
+    pub fn cmdSetViewport(
+        self,
+        commandBuffer : i64,
+        firstViewport : i32,
+        viewportCount : i32,
+        pViewports : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i32, i32, ptr) => void = self.pCmdSetViewport as extern "C" (i64, i32, i32, ptr) => void;
+            f(commandBuffer, firstViewport, viewportCount, pViewports);
+        }
+    }
+
+    /** `void vkCmdSetScissor(VkCommandBuffer commandBuffer, uint32_t firstScissor, uint32_t scissorCount, const VkRect2D* pScissors)`. */
+    pub fn cmdSetScissor(
+        self,
+        commandBuffer : i64,
+        firstScissor : i32,
+        scissorCount : i32,
+        pScissors : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i32, i32, ptr) => void = self.pCmdSetScissor as extern "C" (i64, i32, i32, ptr) => void;
+            f(commandBuffer, firstScissor, scissorCount, pScissors);
+        }
+    }
+
+    /** `void vkCmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount, const VkBufferImageCopy* pRegions)`. */
+    pub fn cmdCopyBufferToImage(
+        self,
+        commandBuffer : i64,
+        srcBuffer : i64,
+        dstImage : i64,
+        dstImageLayout : i32,
+        regionCount : i32,
+        pRegions : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, i64, i32, i32, ptr) => void = self.pCmdCopyBufferToImage as extern "C" (i64, i64, i64, i32, i32, ptr) => void;
+            f(commandBuffer, srcBuffer, dstImage, dstImageLayout, regionCount, pRegions);
+        }
+    }
+
+    /** `void vkCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags, uint32_t memoryBarrierCount, const VkMemoryBarrier* pMemoryBarriers, uint32_t bufferMemoryBarrierCount, const VkBufferMemoryBarrier* pBufferMemoryBarriers, uint32_t imageMemoryBarrierCount, const VkImageMemoryBarrier* pImageMemoryBarriers)`. */
+    pub fn cmdPipelineBarrier(
+        self,
+        commandBuffer : i64,
+        srcStageMask : i32,
+        dstStageMask : i32,
+        dependencyFlags : i32,
+        memoryBarrierCount : i32,
+        pMemoryBarriers : ptr,
+        bufferMemoryBarrierCount : i32,
+        pBufferMemoryBarriers : ptr,
+        imageMemoryBarrierCount : i32,
+        pImageMemoryBarriers : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i32, i32, i32, i32, ptr, i32, ptr, i32, ptr) => void = self.pCmdPipelineBarrier as extern "C" (i64, i32, i32, i32, i32, ptr, i32, ptr, i32, ptr) => void;
+            f(
+                commandBuffer,
+                srcStageMask,
+                dstStageMask,
+                dependencyFlags,
+                memoryBarrierCount,
+                pMemoryBarriers,
+                bufferMemoryBarrierCount,
+                pBufferMemoryBarriers,
+                imageMemoryBarrierCount,
+                pImageMemoryBarriers
+            );
+        }
+    }
+
+    /** `void vkCmdBlitImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout, VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount, const VkImageBlit* pRegions, VkFilter filter)`. */
+    pub fn cmdBlitImage(
+        self,
+        commandBuffer : i64,
+        srcImage : i64,
+        srcImageLayout : i32,
+        dstImage : i64,
+        dstImageLayout : i32,
+        regionCount : i32,
+        pRegions : ptr,
+        filter : i32
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, i32, i64, i32, i32, ptr, i32) => void = self.pCmdBlitImage as extern "C" (i64, i64, i32, i64, i32, i32, ptr, i32) => void;
+            f(
+                commandBuffer,
+                srcImage,
+                srcImageLayout,
+                dstImage,
+                dstImageLayout,
+                regionCount,
+                pRegions,
+                filter
+            );
+        }
+    }
+}
+
+/**
+ * The address of the first element of an array the caller built.
+ *
+ * A creation record names its arrays by pointer (`pAttachments`, `pSetLayouts`)
+ * and the array has to outlive the call that reads it — which is why these take
+ * the array and not an address stored for later: the caller's local is alive
+ * for the statement that builds the record and the one that submits it. An
+ * empty array is a null pointer, which is what a count of zero goes with.
+ */
+pub class VkAddr {
+    /** The address of `a[0]`, for a `i64[]` the driver reads. */
+    pub static fn handles(a : i64[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `i32[]` the driver reads. */
+    pub static fn ints(a : i32[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `f32[]` the driver reads. */
+    pub static fn floats(a : f32[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkApplicationInfo[]` the driver reads. */
+    pub static fn applicationInfo(a : VkApplicationInfo[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkAttachmentDescription[]` the driver reads. */
+    pub static fn attachmentDescription(a : VkAttachmentDescription[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkAttachmentReference[]` the driver reads. */
+    pub static fn attachmentReference(a : VkAttachmentReference[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkBufferImageCopy[]` the driver reads. */
+    pub static fn bufferImageCopy(a : VkBufferImageCopy[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkDescriptorBufferInfo[]` the driver reads. */
+    pub static fn descriptorBufferInfo(a : VkDescriptorBufferInfo[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkDescriptorImageInfo[]` the driver reads. */
+    pub static fn descriptorImageInfo(a : VkDescriptorImageInfo[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkDescriptorPoolSize[]` the driver reads. */
+    pub static fn descriptorPoolSize(a : VkDescriptorPoolSize[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkDescriptorSetLayoutBinding[]` the driver reads. */
+    pub static fn descriptorSetLayoutBinding(a : VkDescriptorSetLayoutBinding[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkDeviceQueueCreateInfo[]` the driver reads. */
+    pub static fn deviceQueueCreateInfo(a : VkDeviceQueueCreateInfo[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkGraphicsPipelineCreateInfo[]` the driver reads. */
+    pub static fn graphicsPipelineCreateInfo(a : VkGraphicsPipelineCreateInfo[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkImageBlit[]` the driver reads. */
+    pub static fn imageBlit(a : VkImageBlit[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkImageMemoryBarrier[]` the driver reads. */
+    pub static fn imageMemoryBarrier(a : VkImageMemoryBarrier[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkPhysicalDeviceFeatures[]` the driver reads. */
+    pub static fn physicalDeviceFeatures(a : VkPhysicalDeviceFeatures[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkPipelineColorBlendAttachmentState[]` the driver reads. */
+    pub static fn pipelineColorBlendAttachmentState(
+        a : VkPipelineColorBlendAttachmentState[]
+    ) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkPipelineColorBlendStateCreateInfo[]` the driver reads. */
+    pub static fn pipelineColorBlendStateCreateInfo(
+        a : VkPipelineColorBlendStateCreateInfo[]
+    ) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkPipelineDepthStencilStateCreateInfo[]` the driver reads. */
+    pub static fn pipelineDepthStencilStateCreateInfo(
+        a : VkPipelineDepthStencilStateCreateInfo[]
+    ) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkPipelineDynamicStateCreateInfo[]` the driver reads. */
+    pub static fn pipelineDynamicStateCreateInfo(a : VkPipelineDynamicStateCreateInfo[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkPipelineInputAssemblyStateCreateInfo[]` the driver reads. */
+    pub static fn pipelineInputAssemblyStateCreateInfo(
+        a : VkPipelineInputAssemblyStateCreateInfo[]
+    ) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkPipelineMultisampleStateCreateInfo[]` the driver reads. */
+    pub static fn pipelineMultisampleStateCreateInfo(
+        a : VkPipelineMultisampleStateCreateInfo[]
+    ) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkPipelineRasterizationStateCreateInfo[]` the driver reads. */
+    pub static fn pipelineRasterizationStateCreateInfo(
+        a : VkPipelineRasterizationStateCreateInfo[]
+    ) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkPipelineShaderStageCreateInfo[]` the driver reads. */
+    pub static fn pipelineShaderStageCreateInfo(a : VkPipelineShaderStageCreateInfo[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkPipelineVertexInputStateCreateInfo[]` the driver reads. */
+    pub static fn pipelineVertexInputStateCreateInfo(
+        a : VkPipelineVertexInputStateCreateInfo[]
+    ) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkPipelineViewportStateCreateInfo[]` the driver reads. */
+    pub static fn pipelineViewportStateCreateInfo(a : VkPipelineViewportStateCreateInfo[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkPushConstantRange[]` the driver reads. */
+    pub static fn pushConstantRange(a : VkPushConstantRange[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkRect2D[]` the driver reads. */
+    pub static fn rect2D(a : VkRect2D[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkSubmitInfo[]` the driver reads. */
+    pub static fn submitInfo(a : VkSubmitInfo[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkSubpassDependency[]` the driver reads. */
+    pub static fn subpassDependency(a : VkSubpassDependency[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkSubpassDescription[]` the driver reads. */
+    pub static fn subpassDescription(a : VkSubpassDescription[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkVertexInputAttributeDescription[]` the driver reads. */
+    pub static fn vertexInputAttributeDescription(a : VkVertexInputAttributeDescription[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkVertexInputBindingDescription[]` the driver reads. */
+    pub static fn vertexInputBindingDescription(a : VkVertexInputBindingDescription[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkViewport[]` the driver reads. */
+    pub static fn viewport(a : VkViewport[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkWriteDescriptorSet[]` the driver reads. */
+    pub static fn writeDescriptorSet(a : VkWriteDescriptorSet[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+}

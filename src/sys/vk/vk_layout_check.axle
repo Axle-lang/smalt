@@ -1,0 +1,1628 @@
+// vk_layout_check — the numbers, asserted against the declarations.
+//
+// Written from the Khronos registry (`vk.xml`) for the commands and records the
+// backend uses, each size and offset measured by a C compiler against
+// `<vulkan/vulkan.h>`. The script that first produced it is not part of this
+// tree: the file is maintained by hand, and `vk_layout_check` is what holds the
+// records to C — at start-up, before the first one reaches a driver, and in
+// `examples/gpu_check`.
+
+// `vk_types` declares the records; this file holds what the C compiler measured
+// from the real `<vulkan/vulkan.h>`, and asserts the Axle compiler agrees. A
+// mismatch is a creation record the driver reads at the wrong offset — no error,
+// just garbage — so it is a returned number here, and a renderer that gets one
+// does not open the GPU (`VkContext`). A record added to `vk_types` gets its size
+// and every offset here, in the same shape, numbered on from the last check.
+
+use crate::sys::vk::vk_types::{
+    VkApplicationInfo, VkAttachmentDescription, VkAttachmentReference, VkBufferCopy,
+    VkBufferCreateInfo, VkBufferImageCopy, VkCommandBufferAllocateInfo, VkCommandBufferBeginInfo,
+    VkCommandPoolCreateInfo, VkComponentMapping, VkDescriptorBufferInfo, VkDescriptorImageInfo,
+    VkDescriptorPoolCreateInfo, VkDescriptorPoolSize, VkDescriptorSetAllocateInfo,
+    VkDescriptorSetLayoutBinding, VkDescriptorSetLayoutCreateInfo, VkDeviceCreateInfo,
+    VkDeviceQueueCreateInfo, VkExtent2D, VkExtent3D, VkFenceCreateInfo, VkFramebufferCreateInfo,
+    VkGraphicsPipelineCreateInfo, VkImageBlit, VkImageCreateInfo, VkImageMemoryBarrier,
+    VkImageSubresourceLayers, VkImageSubresourceRange, VkImageViewCreateInfo, VkInstanceCreateInfo,
+    VkMemoryAllocateInfo, VkOffset2D, VkOffset3D, VkPhysicalDeviceFeatures,
+    VkPipelineColorBlendAttachmentState, VkPipelineColorBlendStateCreateInfo,
+    VkPipelineDepthStencilStateCreateInfo, VkPipelineDynamicStateCreateInfo,
+    VkPipelineInputAssemblyStateCreateInfo, VkPipelineLayoutCreateInfo,
+    VkPipelineMultisampleStateCreateInfo, VkPipelineRasterizationStateCreateInfo,
+    VkPipelineShaderStageCreateInfo, VkPipelineVertexInputStateCreateInfo,
+    VkPipelineViewportStateCreateInfo, VkPresentInfoKHR, VkPushConstantRange, VkRect2D,
+    VkRenderPassBeginInfo, VkRenderPassCreateInfo, VkSamplerCreateInfo, VkSemaphoreCreateInfo,
+    VkShaderModuleCreateInfo, VkStencilOpState, VkSubmitInfo, VkSubpassDependency,
+    VkSubpassDescription, VkSwapchainCreateInfoKHR, VkVertexInputAttributeDescription,
+    VkVertexInputBindingDescription, VkViewport, VkWriteDescriptorSet, VkClearValue,
+};
+
+/** Sizes and offsets of the Vulkan records, checked against the C headers. */
+pub(crate) class VkLayout {
+    /**
+     * 0 when every record matches, otherwise the number of the first check
+     * that failed. A number rather than a boolean, so the record that moved
+     * is the only thing worth knowing.
+     */
+    pub(crate) static fn verify() : i32 {
+        if (sizeof<VkApplicationInfo>() != 48) {
+            return 1;
+        }
+        if (offsetof(VkApplicationInfo, sType) != 0) {
+            return 2;
+        }
+        if (offsetof(VkApplicationInfo, pNext) != 8) {
+            return 3;
+        }
+        if (offsetof(VkApplicationInfo, pApplicationName) != 16) {
+            return 4;
+        }
+        if (offsetof(VkApplicationInfo, applicationVersion) != 24) {
+            return 5;
+        }
+        if (offsetof(VkApplicationInfo, pEngineName) != 32) {
+            return 6;
+        }
+        if (offsetof(VkApplicationInfo, engineVersion) != 40) {
+            return 7;
+        }
+        if (offsetof(VkApplicationInfo, apiVersion) != 44) {
+            return 8;
+        }
+        if (sizeof<VkInstanceCreateInfo>() != 64) {
+            return 9;
+        }
+        if (offsetof(VkInstanceCreateInfo, sType) != 0) {
+            return 10;
+        }
+        if (offsetof(VkInstanceCreateInfo, pNext) != 8) {
+            return 11;
+        }
+        if (offsetof(VkInstanceCreateInfo, flags) != 16) {
+            return 12;
+        }
+        if (offsetof(VkInstanceCreateInfo, pApplicationInfo) != 24) {
+            return 13;
+        }
+        if (offsetof(VkInstanceCreateInfo, enabledLayerCount) != 32) {
+            return 14;
+        }
+        if (offsetof(VkInstanceCreateInfo, ppEnabledLayerNames) != 40) {
+            return 15;
+        }
+        if (offsetof(VkInstanceCreateInfo, enabledExtensionCount) != 48) {
+            return 16;
+        }
+        if (offsetof(VkInstanceCreateInfo, ppEnabledExtensionNames) != 56) {
+            return 17;
+        }
+        if (sizeof<VkDeviceQueueCreateInfo>() != 40) {
+            return 18;
+        }
+        if (offsetof(VkDeviceQueueCreateInfo, sType) != 0) {
+            return 19;
+        }
+        if (offsetof(VkDeviceQueueCreateInfo, pNext) != 8) {
+            return 20;
+        }
+        if (offsetof(VkDeviceQueueCreateInfo, flags) != 16) {
+            return 21;
+        }
+        if (offsetof(VkDeviceQueueCreateInfo, queueFamilyIndex) != 20) {
+            return 22;
+        }
+        if (offsetof(VkDeviceQueueCreateInfo, queueCount) != 24) {
+            return 23;
+        }
+        if (offsetof(VkDeviceQueueCreateInfo, pQueuePriorities) != 32) {
+            return 24;
+        }
+        if (sizeof<VkDeviceCreateInfo>() != 72) {
+            return 25;
+        }
+        if (offsetof(VkDeviceCreateInfo, sType) != 0) {
+            return 26;
+        }
+        if (offsetof(VkDeviceCreateInfo, pNext) != 8) {
+            return 27;
+        }
+        if (offsetof(VkDeviceCreateInfo, flags) != 16) {
+            return 28;
+        }
+        if (offsetof(VkDeviceCreateInfo, queueCreateInfoCount) != 20) {
+            return 29;
+        }
+        if (offsetof(VkDeviceCreateInfo, pQueueCreateInfos) != 24) {
+            return 30;
+        }
+        if (offsetof(VkDeviceCreateInfo, enabledLayerCount) != 32) {
+            return 31;
+        }
+        if (offsetof(VkDeviceCreateInfo, ppEnabledLayerNames) != 40) {
+            return 32;
+        }
+        if (offsetof(VkDeviceCreateInfo, enabledExtensionCount) != 48) {
+            return 33;
+        }
+        if (offsetof(VkDeviceCreateInfo, ppEnabledExtensionNames) != 56) {
+            return 34;
+        }
+        if (offsetof(VkDeviceCreateInfo, pEnabledFeatures) != 64) {
+            return 35;
+        }
+        if (sizeof<VkPhysicalDeviceFeatures>() != 220) {
+            return 36;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, robustBufferAccess) != 0) {
+            return 37;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, fullDrawIndexUint32) != 4) {
+            return 38;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, imageCubeArray) != 8) {
+            return 39;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, independentBlend) != 12) {
+            return 40;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, geometryShader) != 16) {
+            return 41;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, tessellationShader) != 20) {
+            return 42;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, sampleRateShading) != 24) {
+            return 43;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, dualSrcBlend) != 28) {
+            return 44;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, logicOp) != 32) {
+            return 45;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, multiDrawIndirect) != 36) {
+            return 46;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, drawIndirectFirstInstance) != 40) {
+            return 47;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, depthClamp) != 44) {
+            return 48;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, depthBiasClamp) != 48) {
+            return 49;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, fillModeNonSolid) != 52) {
+            return 50;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, depthBounds) != 56) {
+            return 51;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, wideLines) != 60) {
+            return 52;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, largePoints) != 64) {
+            return 53;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, alphaToOne) != 68) {
+            return 54;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, multiViewport) != 72) {
+            return 55;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, samplerAnisotropy) != 76) {
+            return 56;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, textureCompressionETC2) != 80) {
+            return 57;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, textureCompressionASTC_LDR) != 84) {
+            return 58;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, textureCompressionBC) != 88) {
+            return 59;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, occlusionQueryPrecise) != 92) {
+            return 60;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, pipelineStatisticsQuery) != 96) {
+            return 61;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, vertexPipelineStoresAndAtomics) != 100) {
+            return 62;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, fragmentStoresAndAtomics) != 104) {
+            return 63;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderTessellationAndGeometryPointSize) != 108) {
+            return 64;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderImageGatherExtended) != 112) {
+            return 65;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderStorageImageExtendedFormats) != 116) {
+            return 66;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderStorageImageMultisample) != 120) {
+            return 67;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderStorageImageReadWithoutFormat) != 124) {
+            return 68;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderStorageImageWriteWithoutFormat) != 128) {
+            return 69;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderUniformBufferArrayDynamicIndexing) != 132) {
+            return 70;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderSampledImageArrayDynamicIndexing) != 136) {
+            return 71;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderStorageBufferArrayDynamicIndexing) != 140) {
+            return 72;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderStorageImageArrayDynamicIndexing) != 144) {
+            return 73;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderClipDistance) != 148) {
+            return 74;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderCullDistance) != 152) {
+            return 75;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderFloat64) != 156) {
+            return 76;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderInt64) != 160) {
+            return 77;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderInt16) != 164) {
+            return 78;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderResourceResidency) != 168) {
+            return 79;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, shaderResourceMinLod) != 172) {
+            return 80;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, sparseBinding) != 176) {
+            return 81;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, sparseResidencyBuffer) != 180) {
+            return 82;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, sparseResidencyImage2D) != 184) {
+            return 83;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, sparseResidencyImage3D) != 188) {
+            return 84;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, sparseResidency2Samples) != 192) {
+            return 85;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, sparseResidency4Samples) != 196) {
+            return 86;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, sparseResidency8Samples) != 200) {
+            return 87;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, sparseResidency16Samples) != 204) {
+            return 88;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, sparseResidencyAliased) != 208) {
+            return 89;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, variableMultisampleRate) != 212) {
+            return 90;
+        }
+        if (offsetof(VkPhysicalDeviceFeatures, inheritedQueries) != 216) {
+            return 91;
+        }
+        if (sizeof<VkExtent2D>() != 8) { return 92; }
+        if (offsetof(VkExtent2D, width) != 0) {
+            return 93;
+        }
+        if (offsetof(VkExtent2D, height) != 4) {
+            return 94;
+        }
+        if (sizeof<VkExtent3D>() != 12) { return 95; }
+        if (offsetof(VkExtent3D, width) != 0) {
+            return 96;
+        }
+        if (offsetof(VkExtent3D, height) != 4) {
+            return 97;
+        }
+        if (offsetof(VkExtent3D, depth) != 8) {
+            return 98;
+        }
+        if (sizeof<VkOffset2D>() != 8) { return 99; }
+        if (offsetof(VkOffset2D, x) != 0) { return 100; }
+        if (offsetof(VkOffset2D, y) != 4) { return 101; }
+        if (sizeof<VkOffset3D>() != 12) { return 102; }
+        if (offsetof(VkOffset3D, x) != 0) { return 103; }
+        if (offsetof(VkOffset3D, y) != 4) { return 104; }
+        if (offsetof(VkOffset3D, z) != 8) { return 105; }
+        if (sizeof<VkRect2D>() != 16) { return 106; }
+        if (offsetof(VkRect2D, offset) != 0) {
+            return 107;
+        }
+        if (offsetof(VkRect2D, extent) != 8) {
+            return 108;
+        }
+        if (sizeof<VkViewport>() != 24) { return 109; }
+        if (offsetof(VkViewport, x) != 0) { return 110; }
+        if (offsetof(VkViewport, y) != 4) { return 111; }
+        if (offsetof(VkViewport, width) != 8) {
+            return 112;
+        }
+        if (offsetof(VkViewport, height) != 12) {
+            return 113;
+        }
+        if (offsetof(VkViewport, minDepth) != 16) {
+            return 114;
+        }
+        if (offsetof(VkViewport, maxDepth) != 20) {
+            return 115;
+        }
+        if (sizeof<VkMemoryAllocateInfo>() != 32) {
+            return 116;
+        }
+        if (offsetof(VkMemoryAllocateInfo, sType) != 0) {
+            return 117;
+        }
+        if (offsetof(VkMemoryAllocateInfo, pNext) != 8) {
+            return 118;
+        }
+        if (offsetof(VkMemoryAllocateInfo, allocationSize) != 16) {
+            return 119;
+        }
+        if (offsetof(VkMemoryAllocateInfo, memoryTypeIndex) != 24) {
+            return 120;
+        }
+        if (sizeof<VkBufferCreateInfo>() != 56) {
+            return 121;
+        }
+        if (offsetof(VkBufferCreateInfo, sType) != 0) {
+            return 122;
+        }
+        if (offsetof(VkBufferCreateInfo, pNext) != 8) {
+            return 123;
+        }
+        if (offsetof(VkBufferCreateInfo, flags) != 16) {
+            return 124;
+        }
+        if (offsetof(VkBufferCreateInfo, size) != 24) {
+            return 125;
+        }
+        if (offsetof(VkBufferCreateInfo, usage) != 32) {
+            return 126;
+        }
+        if (offsetof(VkBufferCreateInfo, sharingMode) != 36) {
+            return 127;
+        }
+        if (offsetof(VkBufferCreateInfo, queueFamilyIndexCount) != 40) {
+            return 128;
+        }
+        if (offsetof(VkBufferCreateInfo, pQueueFamilyIndices) != 48) {
+            return 129;
+        }
+        if (sizeof<VkImageCreateInfo>() != 88) {
+            return 130;
+        }
+        if (offsetof(VkImageCreateInfo, sType) != 0) {
+            return 131;
+        }
+        if (offsetof(VkImageCreateInfo, pNext) != 8) {
+            return 132;
+        }
+        if (offsetof(VkImageCreateInfo, flags) != 16) {
+            return 133;
+        }
+        if (offsetof(VkImageCreateInfo, imageType) != 20) {
+            return 134;
+        }
+        if (offsetof(VkImageCreateInfo, format) != 24) {
+            return 135;
+        }
+        if (offsetof(VkImageCreateInfo, extent) != 28) {
+            return 136;
+        }
+        if (offsetof(VkImageCreateInfo, mipLevels) != 40) {
+            return 137;
+        }
+        if (offsetof(VkImageCreateInfo, arrayLayers) != 44) {
+            return 138;
+        }
+        if (offsetof(VkImageCreateInfo, samples) != 48) {
+            return 139;
+        }
+        if (offsetof(VkImageCreateInfo, tiling) != 52) {
+            return 140;
+        }
+        if (offsetof(VkImageCreateInfo, usage) != 56) {
+            return 141;
+        }
+        if (offsetof(VkImageCreateInfo, sharingMode) != 60) {
+            return 142;
+        }
+        if (offsetof(VkImageCreateInfo, queueFamilyIndexCount) != 64) {
+            return 143;
+        }
+        if (offsetof(VkImageCreateInfo, pQueueFamilyIndices) != 72) {
+            return 144;
+        }
+        if (offsetof(VkImageCreateInfo, initialLayout) != 80) {
+            return 145;
+        }
+        if (sizeof<VkImageSubresourceRange>() != 20) {
+            return 146;
+        }
+        if (offsetof(VkImageSubresourceRange, aspectMask) != 0) {
+            return 147;
+        }
+        if (offsetof(VkImageSubresourceRange, baseMipLevel) != 4) {
+            return 148;
+        }
+        if (offsetof(VkImageSubresourceRange, levelCount) != 8) {
+            return 149;
+        }
+        if (offsetof(VkImageSubresourceRange, baseArrayLayer) != 12) {
+            return 150;
+        }
+        if (offsetof(VkImageSubresourceRange, layerCount) != 16) {
+            return 151;
+        }
+        if (sizeof<VkImageSubresourceLayers>() != 16) {
+            return 152;
+        }
+        if (offsetof(VkImageSubresourceLayers, aspectMask) != 0) {
+            return 153;
+        }
+        if (offsetof(VkImageSubresourceLayers, mipLevel) != 4) {
+            return 154;
+        }
+        if (offsetof(VkImageSubresourceLayers, baseArrayLayer) != 8) {
+            return 155;
+        }
+        if (offsetof(VkImageSubresourceLayers, layerCount) != 12) {
+            return 156;
+        }
+        if (sizeof<VkComponentMapping>() != 16) {
+            return 157;
+        }
+        if (offsetof(VkComponentMapping, r) != 0) {
+            return 158;
+        }
+        if (offsetof(VkComponentMapping, g) != 4) {
+            return 159;
+        }
+        if (offsetof(VkComponentMapping, b) != 8) {
+            return 160;
+        }
+        if (offsetof(VkComponentMapping, a) != 12) {
+            return 161;
+        }
+        if (sizeof<VkImageViewCreateInfo>() != 80) {
+            return 162;
+        }
+        if (offsetof(VkImageViewCreateInfo, sType) != 0) {
+            return 163;
+        }
+        if (offsetof(VkImageViewCreateInfo, pNext) != 8) {
+            return 164;
+        }
+        if (offsetof(VkImageViewCreateInfo, flags) != 16) {
+            return 165;
+        }
+        if (offsetof(VkImageViewCreateInfo, image) != 24) {
+            return 166;
+        }
+        if (offsetof(VkImageViewCreateInfo, viewType) != 32) {
+            return 167;
+        }
+        if (offsetof(VkImageViewCreateInfo, format) != 36) {
+            return 168;
+        }
+        if (offsetof(VkImageViewCreateInfo, components) != 40) {
+            return 169;
+        }
+        if (offsetof(VkImageViewCreateInfo, subresourceRange) != 56) {
+            return 170;
+        }
+        if (sizeof<VkSamplerCreateInfo>() != 80) {
+            return 171;
+        }
+        if (offsetof(VkSamplerCreateInfo, sType) != 0) {
+            return 172;
+        }
+        if (offsetof(VkSamplerCreateInfo, pNext) != 8) {
+            return 173;
+        }
+        if (offsetof(VkSamplerCreateInfo, flags) != 16) {
+            return 174;
+        }
+        if (offsetof(VkSamplerCreateInfo, magFilter) != 20) {
+            return 175;
+        }
+        if (offsetof(VkSamplerCreateInfo, minFilter) != 24) {
+            return 176;
+        }
+        if (offsetof(VkSamplerCreateInfo, mipmapMode) != 28) {
+            return 177;
+        }
+        if (offsetof(VkSamplerCreateInfo, addressModeU) != 32) {
+            return 178;
+        }
+        if (offsetof(VkSamplerCreateInfo, addressModeV) != 36) {
+            return 179;
+        }
+        if (offsetof(VkSamplerCreateInfo, addressModeW) != 40) {
+            return 180;
+        }
+        if (offsetof(VkSamplerCreateInfo, mipLodBias) != 44) {
+            return 181;
+        }
+        if (offsetof(VkSamplerCreateInfo, anisotropyEnable) != 48) {
+            return 182;
+        }
+        if (offsetof(VkSamplerCreateInfo, maxAnisotropy) != 52) {
+            return 183;
+        }
+        if (offsetof(VkSamplerCreateInfo, compareEnable) != 56) {
+            return 184;
+        }
+        if (offsetof(VkSamplerCreateInfo, compareOp) != 60) {
+            return 185;
+        }
+        if (offsetof(VkSamplerCreateInfo, minLod) != 64) {
+            return 186;
+        }
+        if (offsetof(VkSamplerCreateInfo, maxLod) != 68) {
+            return 187;
+        }
+        if (offsetof(VkSamplerCreateInfo, borderColor) != 72) {
+            return 188;
+        }
+        if (offsetof(VkSamplerCreateInfo, unnormalizedCoordinates) != 76) {
+            return 189;
+        }
+        if (sizeof<VkShaderModuleCreateInfo>() != 40) {
+            return 190;
+        }
+        if (offsetof(VkShaderModuleCreateInfo, sType) != 0) {
+            return 191;
+        }
+        if (offsetof(VkShaderModuleCreateInfo, pNext) != 8) {
+            return 192;
+        }
+        if (offsetof(VkShaderModuleCreateInfo, flags) != 16) {
+            return 193;
+        }
+        if (offsetof(VkShaderModuleCreateInfo, codeSize) != 24) {
+            return 194;
+        }
+        if (offsetof(VkShaderModuleCreateInfo, pCode) != 32) {
+            return 195;
+        }
+        if (sizeof<VkDescriptorSetLayoutBinding>() != 24) {
+            return 196;
+        }
+        if (offsetof(VkDescriptorSetLayoutBinding, binding) != 0) {
+            return 197;
+        }
+        if (offsetof(VkDescriptorSetLayoutBinding, descriptorType) != 4) {
+            return 198;
+        }
+        if (offsetof(VkDescriptorSetLayoutBinding, descriptorCount) != 8) {
+            return 199;
+        }
+        if (offsetof(VkDescriptorSetLayoutBinding, stageFlags) != 12) {
+            return 200;
+        }
+        if (offsetof(VkDescriptorSetLayoutBinding, pImmutableSamplers) != 16) {
+            return 201;
+        }
+        if (sizeof<VkDescriptorSetLayoutCreateInfo>() != 32) {
+            return 202;
+        }
+        if (offsetof(VkDescriptorSetLayoutCreateInfo, sType) != 0) {
+            return 203;
+        }
+        if (offsetof(VkDescriptorSetLayoutCreateInfo, pNext) != 8) {
+            return 204;
+        }
+        if (offsetof(VkDescriptorSetLayoutCreateInfo, flags) != 16) {
+            return 205;
+        }
+        if (offsetof(VkDescriptorSetLayoutCreateInfo, bindingCount) != 20) {
+            return 206;
+        }
+        if (offsetof(VkDescriptorSetLayoutCreateInfo, pBindings) != 24) {
+            return 207;
+        }
+        if (sizeof<VkPushConstantRange>() != 12) {
+            return 208;
+        }
+        if (offsetof(VkPushConstantRange, stageFlags) != 0) {
+            return 209;
+        }
+        if (offsetof(VkPushConstantRange, offset) != 4) {
+            return 210;
+        }
+        if (offsetof(VkPushConstantRange, size) != 8) {
+            return 211;
+        }
+        if (sizeof<VkPipelineLayoutCreateInfo>() != 48) {
+            return 212;
+        }
+        if (offsetof(VkPipelineLayoutCreateInfo, sType) != 0) {
+            return 213;
+        }
+        if (offsetof(VkPipelineLayoutCreateInfo, pNext) != 8) {
+            return 214;
+        }
+        if (offsetof(VkPipelineLayoutCreateInfo, flags) != 16) {
+            return 215;
+        }
+        if (offsetof(VkPipelineLayoutCreateInfo, setLayoutCount) != 20) {
+            return 216;
+        }
+        if (offsetof(VkPipelineLayoutCreateInfo, pSetLayouts) != 24) {
+            return 217;
+        }
+        if (offsetof(VkPipelineLayoutCreateInfo, pushConstantRangeCount) != 32) {
+            return 218;
+        }
+        if (offsetof(VkPipelineLayoutCreateInfo, pPushConstantRanges) != 40) {
+            return 219;
+        }
+        if (sizeof<VkAttachmentDescription>() != 36) {
+            return 220;
+        }
+        if (offsetof(VkAttachmentDescription, flags) != 0) {
+            return 221;
+        }
+        if (offsetof(VkAttachmentDescription, format) != 4) {
+            return 222;
+        }
+        if (offsetof(VkAttachmentDescription, samples) != 8) {
+            return 223;
+        }
+        if (offsetof(VkAttachmentDescription, loadOp) != 12) {
+            return 224;
+        }
+        if (offsetof(VkAttachmentDescription, storeOp) != 16) {
+            return 225;
+        }
+        if (offsetof(VkAttachmentDescription, stencilLoadOp) != 20) {
+            return 226;
+        }
+        if (offsetof(VkAttachmentDescription, stencilStoreOp) != 24) {
+            return 227;
+        }
+        if (offsetof(VkAttachmentDescription, initialLayout) != 28) {
+            return 228;
+        }
+        if (offsetof(VkAttachmentDescription, finalLayout) != 32) {
+            return 229;
+        }
+        if (sizeof<VkAttachmentReference>() != 8) {
+            return 230;
+        }
+        if (offsetof(VkAttachmentReference, attachment) != 0) {
+            return 231;
+        }
+        if (offsetof(VkAttachmentReference, layout) != 4) {
+            return 232;
+        }
+        if (sizeof<VkSubpassDescription>() != 72) {
+            return 233;
+        }
+        if (offsetof(VkSubpassDescription, flags) != 0) {
+            return 234;
+        }
+        if (offsetof(VkSubpassDescription, pipelineBindPoint) != 4) {
+            return 235;
+        }
+        if (offsetof(VkSubpassDescription, inputAttachmentCount) != 8) {
+            return 236;
+        }
+        if (offsetof(VkSubpassDescription, pInputAttachments) != 16) {
+            return 237;
+        }
+        if (offsetof(VkSubpassDescription, colorAttachmentCount) != 24) {
+            return 238;
+        }
+        if (offsetof(VkSubpassDescription, pColorAttachments) != 32) {
+            return 239;
+        }
+        if (offsetof(VkSubpassDescription, pResolveAttachments) != 40) {
+            return 240;
+        }
+        if (offsetof(VkSubpassDescription, pDepthStencilAttachment) != 48) {
+            return 241;
+        }
+        if (offsetof(VkSubpassDescription, preserveAttachmentCount) != 56) {
+            return 242;
+        }
+        if (offsetof(VkSubpassDescription, pPreserveAttachments) != 64) {
+            return 243;
+        }
+        if (sizeof<VkSubpassDependency>() != 28) {
+            return 244;
+        }
+        if (offsetof(VkSubpassDependency, srcSubpass) != 0) {
+            return 245;
+        }
+        if (offsetof(VkSubpassDependency, dstSubpass) != 4) {
+            return 246;
+        }
+        if (offsetof(VkSubpassDependency, srcStageMask) != 8) {
+            return 247;
+        }
+        if (offsetof(VkSubpassDependency, dstStageMask) != 12) {
+            return 248;
+        }
+        if (offsetof(VkSubpassDependency, srcAccessMask) != 16) {
+            return 249;
+        }
+        if (offsetof(VkSubpassDependency, dstAccessMask) != 20) {
+            return 250;
+        }
+        if (offsetof(VkSubpassDependency, dependencyFlags) != 24) {
+            return 251;
+        }
+        if (sizeof<VkRenderPassCreateInfo>() != 64) {
+            return 252;
+        }
+        if (offsetof(VkRenderPassCreateInfo, sType) != 0) {
+            return 253;
+        }
+        if (offsetof(VkRenderPassCreateInfo, pNext) != 8) {
+            return 254;
+        }
+        if (offsetof(VkRenderPassCreateInfo, flags) != 16) {
+            return 255;
+        }
+        if (offsetof(VkRenderPassCreateInfo, attachmentCount) != 20) {
+            return 256;
+        }
+        if (offsetof(VkRenderPassCreateInfo, pAttachments) != 24) {
+            return 257;
+        }
+        if (offsetof(VkRenderPassCreateInfo, subpassCount) != 32) {
+            return 258;
+        }
+        if (offsetof(VkRenderPassCreateInfo, pSubpasses) != 40) {
+            return 259;
+        }
+        if (offsetof(VkRenderPassCreateInfo, dependencyCount) != 48) {
+            return 260;
+        }
+        if (offsetof(VkRenderPassCreateInfo, pDependencies) != 56) {
+            return 261;
+        }
+        if (sizeof<VkFramebufferCreateInfo>() != 64) {
+            return 262;
+        }
+        if (offsetof(VkFramebufferCreateInfo, sType) != 0) {
+            return 263;
+        }
+        if (offsetof(VkFramebufferCreateInfo, pNext) != 8) {
+            return 264;
+        }
+        if (offsetof(VkFramebufferCreateInfo, flags) != 16) {
+            return 265;
+        }
+        if (offsetof(VkFramebufferCreateInfo, renderPass) != 24) {
+            return 266;
+        }
+        if (offsetof(VkFramebufferCreateInfo, attachmentCount) != 32) {
+            return 267;
+        }
+        if (offsetof(VkFramebufferCreateInfo, pAttachments) != 40) {
+            return 268;
+        }
+        if (offsetof(VkFramebufferCreateInfo, width) != 48) {
+            return 269;
+        }
+        if (offsetof(VkFramebufferCreateInfo, height) != 52) {
+            return 270;
+        }
+        if (offsetof(VkFramebufferCreateInfo, layers) != 56) {
+            return 271;
+        }
+        if (sizeof<VkPipelineShaderStageCreateInfo>() != 48) {
+            return 272;
+        }
+        if (offsetof(VkPipelineShaderStageCreateInfo, sType) != 0) {
+            return 273;
+        }
+        if (offsetof(VkPipelineShaderStageCreateInfo, pNext) != 8) {
+            return 274;
+        }
+        if (offsetof(VkPipelineShaderStageCreateInfo, flags) != 16) {
+            return 275;
+        }
+        if (offsetof(VkPipelineShaderStageCreateInfo, stage) != 20) {
+            return 276;
+        }
+        if (offsetof(VkPipelineShaderStageCreateInfo, module_) != 24) {
+            return 277;
+        }
+        if (offsetof(VkPipelineShaderStageCreateInfo, pName) != 32) {
+            return 278;
+        }
+        if (offsetof(VkPipelineShaderStageCreateInfo, pSpecializationInfo) != 40) {
+            return 279;
+        }
+        if (sizeof<VkVertexInputBindingDescription>() != 12) {
+            return 280;
+        }
+        if (offsetof(VkVertexInputBindingDescription, binding) != 0) {
+            return 281;
+        }
+        if (offsetof(VkVertexInputBindingDescription, stride) != 4) {
+            return 282;
+        }
+        if (offsetof(VkVertexInputBindingDescription, inputRate) != 8) {
+            return 283;
+        }
+        if (sizeof<VkVertexInputAttributeDescription>() != 16) {
+            return 284;
+        }
+        if (offsetof(VkVertexInputAttributeDescription, location) != 0) {
+            return 285;
+        }
+        if (offsetof(VkVertexInputAttributeDescription, binding) != 4) {
+            return 286;
+        }
+        if (offsetof(VkVertexInputAttributeDescription, format) != 8) {
+            return 287;
+        }
+        if (offsetof(VkVertexInputAttributeDescription, offset) != 12) {
+            return 288;
+        }
+        if (sizeof<VkPipelineVertexInputStateCreateInfo>() != 48) {
+            return 289;
+        }
+        if (offsetof(VkPipelineVertexInputStateCreateInfo, sType) != 0) {
+            return 290;
+        }
+        if (offsetof(VkPipelineVertexInputStateCreateInfo, pNext) != 8) {
+            return 291;
+        }
+        if (offsetof(VkPipelineVertexInputStateCreateInfo, flags) != 16) {
+            return 292;
+        }
+        if (offsetof(VkPipelineVertexInputStateCreateInfo, vertexBindingDescriptionCount) != 20) {
+            return 293;
+        }
+        if (offsetof(VkPipelineVertexInputStateCreateInfo, pVertexBindingDescriptions) != 24) {
+            return 294;
+        }
+        if (offsetof(VkPipelineVertexInputStateCreateInfo, vertexAttributeDescriptionCount) != 32) {
+            return 295;
+        }
+        if (offsetof(VkPipelineVertexInputStateCreateInfo, pVertexAttributeDescriptions) != 40) {
+            return 296;
+        }
+        if (sizeof<VkPipelineInputAssemblyStateCreateInfo>() != 32) {
+            return 297;
+        }
+        if (offsetof(VkPipelineInputAssemblyStateCreateInfo, sType) != 0) {
+            return 298;
+        }
+        if (offsetof(VkPipelineInputAssemblyStateCreateInfo, pNext) != 8) {
+            return 299;
+        }
+        if (offsetof(VkPipelineInputAssemblyStateCreateInfo, flags) != 16) {
+            return 300;
+        }
+        if (offsetof(VkPipelineInputAssemblyStateCreateInfo, topology) != 20) {
+            return 301;
+        }
+        if (offsetof(VkPipelineInputAssemblyStateCreateInfo, primitiveRestartEnable) != 24) {
+            return 302;
+        }
+        if (sizeof<VkPipelineViewportStateCreateInfo>() != 48) {
+            return 303;
+        }
+        if (offsetof(VkPipelineViewportStateCreateInfo, sType) != 0) {
+            return 304;
+        }
+        if (offsetof(VkPipelineViewportStateCreateInfo, pNext) != 8) {
+            return 305;
+        }
+        if (offsetof(VkPipelineViewportStateCreateInfo, flags) != 16) {
+            return 306;
+        }
+        if (offsetof(VkPipelineViewportStateCreateInfo, viewportCount) != 20) {
+            return 307;
+        }
+        if (offsetof(VkPipelineViewportStateCreateInfo, pViewports) != 24) {
+            return 308;
+        }
+        if (offsetof(VkPipelineViewportStateCreateInfo, scissorCount) != 32) {
+            return 309;
+        }
+        if (offsetof(VkPipelineViewportStateCreateInfo, pScissors) != 40) {
+            return 310;
+        }
+        if (sizeof<VkPipelineRasterizationStateCreateInfo>() != 64) {
+            return 311;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, sType) != 0) {
+            return 312;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, pNext) != 8) {
+            return 313;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, flags) != 16) {
+            return 314;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, depthClampEnable) != 20) {
+            return 315;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, rasterizerDiscardEnable) != 24) {
+            return 316;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, polygonMode) != 28) {
+            return 317;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, cullMode) != 32) {
+            return 318;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, frontFace) != 36) {
+            return 319;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, depthBiasEnable) != 40) {
+            return 320;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, depthBiasConstantFactor) != 44) {
+            return 321;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, depthBiasClamp) != 48) {
+            return 322;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, depthBiasSlopeFactor) != 52) {
+            return 323;
+        }
+        if (offsetof(VkPipelineRasterizationStateCreateInfo, lineWidth) != 56) {
+            return 324;
+        }
+        if (sizeof<VkPipelineMultisampleStateCreateInfo>() != 48) {
+            return 325;
+        }
+        if (offsetof(VkPipelineMultisampleStateCreateInfo, sType) != 0) {
+            return 326;
+        }
+        if (offsetof(VkPipelineMultisampleStateCreateInfo, pNext) != 8) {
+            return 327;
+        }
+        if (offsetof(VkPipelineMultisampleStateCreateInfo, flags) != 16) {
+            return 328;
+        }
+        if (offsetof(VkPipelineMultisampleStateCreateInfo, rasterizationSamples) != 20) {
+            return 329;
+        }
+        if (offsetof(VkPipelineMultisampleStateCreateInfo, sampleShadingEnable) != 24) {
+            return 330;
+        }
+        if (offsetof(VkPipelineMultisampleStateCreateInfo, minSampleShading) != 28) {
+            return 331;
+        }
+        if (offsetof(VkPipelineMultisampleStateCreateInfo, pSampleMask) != 32) {
+            return 332;
+        }
+        if (offsetof(VkPipelineMultisampleStateCreateInfo, alphaToCoverageEnable) != 40) {
+            return 333;
+        }
+        if (offsetof(VkPipelineMultisampleStateCreateInfo, alphaToOneEnable) != 44) {
+            return 334;
+        }
+        if (sizeof<VkStencilOpState>() != 28) {
+            return 335;
+        }
+        if (offsetof(VkStencilOpState, failOp) != 0) {
+            return 336;
+        }
+        if (offsetof(VkStencilOpState, passOp) != 4) {
+            return 337;
+        }
+        if (offsetof(VkStencilOpState, depthFailOp) != 8) {
+            return 338;
+        }
+        if (offsetof(VkStencilOpState, compareOp) != 12) {
+            return 339;
+        }
+        if (offsetof(VkStencilOpState, compareMask) != 16) {
+            return 340;
+        }
+        if (offsetof(VkStencilOpState, writeMask) != 20) {
+            return 341;
+        }
+        if (offsetof(VkStencilOpState, reference) != 24) {
+            return 342;
+        }
+        if (sizeof<VkPipelineDepthStencilStateCreateInfo>() != 104) {
+            return 343;
+        }
+        if (offsetof(VkPipelineDepthStencilStateCreateInfo, sType) != 0) {
+            return 344;
+        }
+        if (offsetof(VkPipelineDepthStencilStateCreateInfo, pNext) != 8) {
+            return 345;
+        }
+        if (offsetof(VkPipelineDepthStencilStateCreateInfo, flags) != 16) {
+            return 346;
+        }
+        if (offsetof(VkPipelineDepthStencilStateCreateInfo, depthTestEnable) != 20) {
+            return 347;
+        }
+        if (offsetof(VkPipelineDepthStencilStateCreateInfo, depthWriteEnable) != 24) {
+            return 348;
+        }
+        if (offsetof(VkPipelineDepthStencilStateCreateInfo, depthCompareOp) != 28) {
+            return 349;
+        }
+        if (offsetof(VkPipelineDepthStencilStateCreateInfo, depthBoundsTestEnable) != 32) {
+            return 350;
+        }
+        if (offsetof(VkPipelineDepthStencilStateCreateInfo, stencilTestEnable) != 36) {
+            return 351;
+        }
+        if (offsetof(VkPipelineDepthStencilStateCreateInfo, front) != 40) {
+            return 352;
+        }
+        if (offsetof(VkPipelineDepthStencilStateCreateInfo, back) != 68) {
+            return 353;
+        }
+        if (offsetof(VkPipelineDepthStencilStateCreateInfo, minDepthBounds) != 96) {
+            return 354;
+        }
+        if (offsetof(VkPipelineDepthStencilStateCreateInfo, maxDepthBounds) != 100) {
+            return 355;
+        }
+        if (sizeof<VkPipelineColorBlendAttachmentState>() != 32) {
+            return 356;
+        }
+        if (offsetof(VkPipelineColorBlendAttachmentState, blendEnable) != 0) {
+            return 357;
+        }
+        if (offsetof(VkPipelineColorBlendAttachmentState, srcColorBlendFactor) != 4) {
+            return 358;
+        }
+        if (offsetof(VkPipelineColorBlendAttachmentState, dstColorBlendFactor) != 8) {
+            return 359;
+        }
+        if (offsetof(VkPipelineColorBlendAttachmentState, colorBlendOp) != 12) {
+            return 360;
+        }
+        if (offsetof(VkPipelineColorBlendAttachmentState, srcAlphaBlendFactor) != 16) {
+            return 361;
+        }
+        if (offsetof(VkPipelineColorBlendAttachmentState, dstAlphaBlendFactor) != 20) {
+            return 362;
+        }
+        if (offsetof(VkPipelineColorBlendAttachmentState, alphaBlendOp) != 24) {
+            return 363;
+        }
+        if (offsetof(VkPipelineColorBlendAttachmentState, colorWriteMask) != 28) {
+            return 364;
+        }
+        if (sizeof<VkPipelineColorBlendStateCreateInfo>() != 56) {
+            return 365;
+        }
+        if (offsetof(VkPipelineColorBlendStateCreateInfo, sType) != 0) {
+            return 366;
+        }
+        if (offsetof(VkPipelineColorBlendStateCreateInfo, pNext) != 8) {
+            return 367;
+        }
+        if (offsetof(VkPipelineColorBlendStateCreateInfo, flags) != 16) {
+            return 368;
+        }
+        if (offsetof(VkPipelineColorBlendStateCreateInfo, logicOpEnable) != 20) {
+            return 369;
+        }
+        if (offsetof(VkPipelineColorBlendStateCreateInfo, logicOp) != 24) {
+            return 370;
+        }
+        if (offsetof(VkPipelineColorBlendStateCreateInfo, attachmentCount) != 28) {
+            return 371;
+        }
+        if (offsetof(VkPipelineColorBlendStateCreateInfo, pAttachments) != 32) {
+            return 372;
+        }
+        if (offsetof(VkPipelineColorBlendStateCreateInfo, blendConstants0) != 40) {
+            return 373;
+        }
+        if (offsetof(VkPipelineColorBlendStateCreateInfo, blendConstants1) != 44) {
+            return 374;
+        }
+        if (offsetof(VkPipelineColorBlendStateCreateInfo, blendConstants2) != 48) {
+            return 375;
+        }
+        if (offsetof(VkPipelineColorBlendStateCreateInfo, blendConstants3) != 52) {
+            return 376;
+        }
+        if (sizeof<VkPipelineDynamicStateCreateInfo>() != 32) {
+            return 377;
+        }
+        if (offsetof(VkPipelineDynamicStateCreateInfo, sType) != 0) {
+            return 378;
+        }
+        if (offsetof(VkPipelineDynamicStateCreateInfo, pNext) != 8) {
+            return 379;
+        }
+        if (offsetof(VkPipelineDynamicStateCreateInfo, flags) != 16) {
+            return 380;
+        }
+        if (offsetof(VkPipelineDynamicStateCreateInfo, dynamicStateCount) != 20) {
+            return 381;
+        }
+        if (offsetof(VkPipelineDynamicStateCreateInfo, pDynamicStates) != 24) {
+            return 382;
+        }
+        if (sizeof<VkGraphicsPipelineCreateInfo>() != 144) {
+            return 383;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, sType) != 0) {
+            return 384;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, pNext) != 8) {
+            return 385;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, flags) != 16) {
+            return 386;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, stageCount) != 20) {
+            return 387;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, pStages) != 24) {
+            return 388;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, pVertexInputState) != 32) {
+            return 389;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, pInputAssemblyState) != 40) {
+            return 390;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, pTessellationState) != 48) {
+            return 391;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, pViewportState) != 56) {
+            return 392;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, pRasterizationState) != 64) {
+            return 393;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, pMultisampleState) != 72) {
+            return 394;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, pDepthStencilState) != 80) {
+            return 395;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, pColorBlendState) != 88) {
+            return 396;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, pDynamicState) != 96) {
+            return 397;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, layout) != 104) {
+            return 398;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, renderPass) != 112) {
+            return 399;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, subpass) != 120) {
+            return 400;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, basePipelineHandle) != 128) {
+            return 401;
+        }
+        if (offsetof(VkGraphicsPipelineCreateInfo, basePipelineIndex) != 136) {
+            return 402;
+        }
+        if (sizeof<VkCommandPoolCreateInfo>() != 24) {
+            return 403;
+        }
+        if (offsetof(VkCommandPoolCreateInfo, sType) != 0) {
+            return 404;
+        }
+        if (offsetof(VkCommandPoolCreateInfo, pNext) != 8) {
+            return 405;
+        }
+        if (offsetof(VkCommandPoolCreateInfo, flags) != 16) {
+            return 406;
+        }
+        if (offsetof(VkCommandPoolCreateInfo, queueFamilyIndex) != 20) {
+            return 407;
+        }
+        if (sizeof<VkCommandBufferAllocateInfo>() != 32) {
+            return 408;
+        }
+        if (offsetof(VkCommandBufferAllocateInfo, sType) != 0) {
+            return 409;
+        }
+        if (offsetof(VkCommandBufferAllocateInfo, pNext) != 8) {
+            return 410;
+        }
+        if (offsetof(VkCommandBufferAllocateInfo, commandPool) != 16) {
+            return 411;
+        }
+        if (offsetof(VkCommandBufferAllocateInfo, level) != 24) {
+            return 412;
+        }
+        if (offsetof(VkCommandBufferAllocateInfo, commandBufferCount) != 28) {
+            return 413;
+        }
+        if (sizeof<VkCommandBufferBeginInfo>() != 32) {
+            return 414;
+        }
+        if (offsetof(VkCommandBufferBeginInfo, sType) != 0) {
+            return 415;
+        }
+        if (offsetof(VkCommandBufferBeginInfo, pNext) != 8) {
+            return 416;
+        }
+        if (offsetof(VkCommandBufferBeginInfo, flags) != 16) {
+            return 417;
+        }
+        if (offsetof(VkCommandBufferBeginInfo, pInheritanceInfo) != 24) {
+            return 418;
+        }
+        if (sizeof<VkSemaphoreCreateInfo>() != 24) {
+            return 419;
+        }
+        if (offsetof(VkSemaphoreCreateInfo, sType) != 0) {
+            return 420;
+        }
+        if (offsetof(VkSemaphoreCreateInfo, pNext) != 8) {
+            return 421;
+        }
+        if (offsetof(VkSemaphoreCreateInfo, flags) != 16) {
+            return 422;
+        }
+        if (sizeof<VkFenceCreateInfo>() != 24) {
+            return 423;
+        }
+        if (offsetof(VkFenceCreateInfo, sType) != 0) {
+            return 424;
+        }
+        if (offsetof(VkFenceCreateInfo, pNext) != 8) {
+            return 425;
+        }
+        if (offsetof(VkFenceCreateInfo, flags) != 16) {
+            return 426;
+        }
+        if (sizeof<VkDescriptorPoolSize>() != 8) {
+            return 427;
+        }
+        if (offsetof(VkDescriptorPoolSize, type_) != 0) {
+            return 428;
+        }
+        if (offsetof(VkDescriptorPoolSize, descriptorCount) != 4) {
+            return 429;
+        }
+        if (sizeof<VkDescriptorPoolCreateInfo>() != 40) {
+            return 430;
+        }
+        if (offsetof(VkDescriptorPoolCreateInfo, sType) != 0) {
+            return 431;
+        }
+        if (offsetof(VkDescriptorPoolCreateInfo, pNext) != 8) {
+            return 432;
+        }
+        if (offsetof(VkDescriptorPoolCreateInfo, flags) != 16) {
+            return 433;
+        }
+        if (offsetof(VkDescriptorPoolCreateInfo, maxSets) != 20) {
+            return 434;
+        }
+        if (offsetof(VkDescriptorPoolCreateInfo, poolSizeCount) != 24) {
+            return 435;
+        }
+        if (offsetof(VkDescriptorPoolCreateInfo, pPoolSizes) != 32) {
+            return 436;
+        }
+        if (sizeof<VkDescriptorSetAllocateInfo>() != 40) {
+            return 437;
+        }
+        if (offsetof(VkDescriptorSetAllocateInfo, sType) != 0) {
+            return 438;
+        }
+        if (offsetof(VkDescriptorSetAllocateInfo, pNext) != 8) {
+            return 439;
+        }
+        if (offsetof(VkDescriptorSetAllocateInfo, descriptorPool) != 16) {
+            return 440;
+        }
+        if (offsetof(VkDescriptorSetAllocateInfo, descriptorSetCount) != 24) {
+            return 441;
+        }
+        if (offsetof(VkDescriptorSetAllocateInfo, pSetLayouts) != 32) {
+            return 442;
+        }
+        if (sizeof<VkDescriptorBufferInfo>() != 24) {
+            return 443;
+        }
+        if (offsetof(VkDescriptorBufferInfo, buffer) != 0) {
+            return 444;
+        }
+        if (offsetof(VkDescriptorBufferInfo, offset) != 8) {
+            return 445;
+        }
+        if (offsetof(VkDescriptorBufferInfo, range) != 16) {
+            return 446;
+        }
+        if (sizeof<VkDescriptorImageInfo>() != 24) {
+            return 447;
+        }
+        if (offsetof(VkDescriptorImageInfo, sampler) != 0) {
+            return 448;
+        }
+        if (offsetof(VkDescriptorImageInfo, imageView) != 8) {
+            return 449;
+        }
+        if (offsetof(VkDescriptorImageInfo, imageLayout) != 16) {
+            return 450;
+        }
+        if (sizeof<VkWriteDescriptorSet>() != 64) {
+            return 451;
+        }
+        if (offsetof(VkWriteDescriptorSet, sType) != 0) {
+            return 452;
+        }
+        if (offsetof(VkWriteDescriptorSet, pNext) != 8) {
+            return 453;
+        }
+        if (offsetof(VkWriteDescriptorSet, dstSet) != 16) {
+            return 454;
+        }
+        if (offsetof(VkWriteDescriptorSet, dstBinding) != 24) {
+            return 455;
+        }
+        if (offsetof(VkWriteDescriptorSet, dstArrayElement) != 28) {
+            return 456;
+        }
+        if (offsetof(VkWriteDescriptorSet, descriptorCount) != 32) {
+            return 457;
+        }
+        if (offsetof(VkWriteDescriptorSet, descriptorType) != 36) {
+            return 458;
+        }
+        if (offsetof(VkWriteDescriptorSet, pImageInfo) != 40) {
+            return 459;
+        }
+        if (offsetof(VkWriteDescriptorSet, pBufferInfo) != 48) {
+            return 460;
+        }
+        if (offsetof(VkWriteDescriptorSet, pTexelBufferView) != 56) {
+            return 461;
+        }
+        if (sizeof<VkBufferCopy>() != 24) { return 462; }
+        if (offsetof(VkBufferCopy, srcOffset) != 0) {
+            return 463;
+        }
+        if (offsetof(VkBufferCopy, dstOffset) != 8) {
+            return 464;
+        }
+        if (offsetof(VkBufferCopy, size) != 16) {
+            return 465;
+        }
+        if (sizeof<VkBufferImageCopy>() != 56) {
+            return 466;
+        }
+        if (offsetof(VkBufferImageCopy, bufferOffset) != 0) {
+            return 467;
+        }
+        if (offsetof(VkBufferImageCopy, bufferRowLength) != 8) {
+            return 468;
+        }
+        if (offsetof(VkBufferImageCopy, bufferImageHeight) != 12) {
+            return 469;
+        }
+        if (offsetof(VkBufferImageCopy, imageSubresource) != 16) {
+            return 470;
+        }
+        if (offsetof(VkBufferImageCopy, imageOffset) != 32) {
+            return 471;
+        }
+        if (offsetof(VkBufferImageCopy, imageExtent) != 44) {
+            return 472;
+        }
+        if (sizeof<VkImageMemoryBarrier>() != 72) {
+            return 473;
+        }
+        if (offsetof(VkImageMemoryBarrier, sType) != 0) {
+            return 474;
+        }
+        if (offsetof(VkImageMemoryBarrier, pNext) != 8) {
+            return 475;
+        }
+        if (offsetof(VkImageMemoryBarrier, srcAccessMask) != 16) {
+            return 476;
+        }
+        if (offsetof(VkImageMemoryBarrier, dstAccessMask) != 20) {
+            return 477;
+        }
+        if (offsetof(VkImageMemoryBarrier, oldLayout) != 24) {
+            return 478;
+        }
+        if (offsetof(VkImageMemoryBarrier, newLayout) != 28) {
+            return 479;
+        }
+        if (offsetof(VkImageMemoryBarrier, srcQueueFamilyIndex) != 32) {
+            return 480;
+        }
+        if (offsetof(VkImageMemoryBarrier, dstQueueFamilyIndex) != 36) {
+            return 481;
+        }
+        if (offsetof(VkImageMemoryBarrier, image) != 40) {
+            return 482;
+        }
+        if (offsetof(VkImageMemoryBarrier, subresourceRange) != 48) {
+            return 483;
+        }
+        if (sizeof<VkImageBlit>() != 80) { return 484; }
+        if (offsetof(VkImageBlit, srcSubresource) != 0) {
+            return 485;
+        }
+        if (offsetof(VkImageBlit, srcOffsets0) != 16) {
+            return 486;
+        }
+        if (offsetof(VkImageBlit, srcOffsets1) != 28) {
+            return 487;
+        }
+        if (offsetof(VkImageBlit, dstSubresource) != 40) {
+            return 488;
+        }
+        if (offsetof(VkImageBlit, dstOffsets0) != 56) {
+            return 489;
+        }
+        if (offsetof(VkImageBlit, dstOffsets1) != 68) {
+            return 490;
+        }
+        if (sizeof<VkRenderPassBeginInfo>() != 64) {
+            return 491;
+        }
+        if (offsetof(VkRenderPassBeginInfo, sType) != 0) {
+            return 492;
+        }
+        if (offsetof(VkRenderPassBeginInfo, pNext) != 8) {
+            return 493;
+        }
+        if (offsetof(VkRenderPassBeginInfo, renderPass) != 16) {
+            return 494;
+        }
+        if (offsetof(VkRenderPassBeginInfo, framebuffer) != 24) {
+            return 495;
+        }
+        if (offsetof(VkRenderPassBeginInfo, renderArea) != 32) {
+            return 496;
+        }
+        if (offsetof(VkRenderPassBeginInfo, clearValueCount) != 48) {
+            return 497;
+        }
+        if (offsetof(VkRenderPassBeginInfo, pClearValues) != 56) {
+            return 498;
+        }
+        if (sizeof<VkSubmitInfo>() != 72) { return 499; }
+        if (offsetof(VkSubmitInfo, sType) != 0) {
+            return 500;
+        }
+        if (offsetof(VkSubmitInfo, pNext) != 8) {
+            return 501;
+        }
+        if (offsetof(VkSubmitInfo, waitSemaphoreCount) != 16) {
+            return 502;
+        }
+        if (offsetof(VkSubmitInfo, pWaitSemaphores) != 24) {
+            return 503;
+        }
+        if (offsetof(VkSubmitInfo, pWaitDstStageMask) != 32) {
+            return 504;
+        }
+        if (offsetof(VkSubmitInfo, commandBufferCount) != 40) {
+            return 505;
+        }
+        if (offsetof(VkSubmitInfo, pCommandBuffers) != 48) {
+            return 506;
+        }
+        if (offsetof(VkSubmitInfo, signalSemaphoreCount) != 56) {
+            return 507;
+        }
+        if (offsetof(VkSubmitInfo, pSignalSemaphores) != 64) {
+            return 508;
+        }
+        if (sizeof<VkPresentInfoKHR>() != 64) {
+            return 509;
+        }
+        if (offsetof(VkPresentInfoKHR, sType) != 0) {
+            return 510;
+        }
+        if (offsetof(VkPresentInfoKHR, pNext) != 8) {
+            return 511;
+        }
+        if (offsetof(VkPresentInfoKHR, waitSemaphoreCount) != 16) {
+            return 512;
+        }
+        if (offsetof(VkPresentInfoKHR, pWaitSemaphores) != 24) {
+            return 513;
+        }
+        if (offsetof(VkPresentInfoKHR, swapchainCount) != 32) {
+            return 514;
+        }
+        if (offsetof(VkPresentInfoKHR, pSwapchains) != 40) {
+            return 515;
+        }
+        if (offsetof(VkPresentInfoKHR, pImageIndices) != 48) {
+            return 516;
+        }
+        if (offsetof(VkPresentInfoKHR, pResults) != 56) {
+            return 517;
+        }
+        if (sizeof<VkSwapchainCreateInfoKHR>() != 104) {
+            return 518;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, sType) != 0) {
+            return 519;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, pNext) != 8) {
+            return 520;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, flags) != 16) {
+            return 521;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, surface) != 24) {
+            return 522;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, minImageCount) != 32) {
+            return 523;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, imageFormat) != 36) {
+            return 524;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, imageColorSpace) != 40) {
+            return 525;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, imageExtent) != 44) {
+            return 526;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, imageArrayLayers) != 52) {
+            return 527;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, imageUsage) != 56) {
+            return 528;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, imageSharingMode) != 60) {
+            return 529;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, queueFamilyIndexCount) != 64) {
+            return 530;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, pQueueFamilyIndices) != 72) {
+            return 531;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, preTransform) != 80) {
+            return 532;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, compositeAlpha) != 84) {
+            return 533;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, presentMode) != 88) {
+            return 534;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, clipped) != 92) {
+            return 535;
+        }
+        if (offsetof(VkSwapchainCreateInfoKHR, oldSwapchain) != 96) {
+            return 536;
+        }
+        if (sizeof<VkClearValue>() != 16) {
+            return 537;
+        }
+        return 0;
+    }
+}
