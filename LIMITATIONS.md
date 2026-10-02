@@ -23,46 +23,54 @@ already in the source; follow the reference and you will find it.
 
 ## 1. The library's own scope
 
-### 1.1 No GPU backend
+### 1.1 The GPU backend
 
-Nothing here touches a graphics driver. Everything is rasterised on the
-CPU.
+There is one, and it is Vulkan 1.0. [`doc/GPU.md`](doc/GPU.md) is the design; this is the
+account of what it does not do.
 
-**The reason usually given for this is now wrong and is worth correcting,
-because it discouraged the work.** smalt's own comments said, in five
-places, that Axle could not call a function address obtained at run
-time — which would rule out modern OpenGL, Vulkan, D3D and Metal, since
-all of them are reached through addresses a loader hands back. That has
-not been true since the C function-pointer cast landed:
+**It builds and runs on Windows.** With axle 0.14.1 every example builds, `examples/gpu_check`
+passes, and `gpu_cube --gpu --smoke` (and `--software --smoke`) draws, releases and re-uploads
+while frames are in flight, and tears down — on a discrete GPU, and under the Khronos validation
+layer with synchronization checks without one message. Not established: that a real driver's
+picture is right (nothing asserts its pixels), that the committed SPIR-V is what the GLSL
+compiles to (it is recompiled by hand — `doc/GPU.md`, "Changing a shader"), the sub-allocator
+under random traffic, a Linux build and run (both ports only type-check), and X11 / Wayland
+surface creation, which has never executed (the records' layouts are checked).
 
-```rs
-unsafe {
-    // The loader hands back an untyped address; the cast gives it a C
-    // signature, and from there it is called like any other function.
-    let draw : extern "C" (u32, i32, i32) => void =
-        GetProcAddress(gl, name) as extern "C" (u32, i32, i32) => void;
-
-    draw(0, 0, 0);
-}
-```
-
-The compiler carries a passing test for exactly this shape
-(`tests/samples/compile_pass/ffi/c_function_pointer_round_trip.axle`),
-and smalt already imports `GetProcAddress`
-(`src/sys/win32/win32_kernel.axle`). So a GPU backend is **work that has
-not been done**, not work that cannot be.
-
-What it would actually cost, in the order the costs bite:
+What the GPU path does *not* have:
 
 | | |
 |---|---|
-| **OpenGL 3.3 Core** | The cheapest by a wide margin. ~350 entry points behind `wglGetProcAddress` / `glXGetProcAddress`, no creation structs, no unions, every argument a scalar. Nothing below blocks it. `RenderDevice` (`src/render/device.axle`) is already the seam it would implement. |
-| **Vulkan 1.0** | More tractable than it first looks. Creation records are ordinary `extern "C" struct` literals passed with `&` (§2.9), and arrays of them likewise, so the bulk of a binding is mechanical. What is left is §2.10 (no unions — `VkClearValue` needs a hand-laid record) and the sheer count: ~1500 functions and structs, which wants a `vk.xml` generator rather than a person. |
-| **Direct3D 12** | Reachable — a COM vtable slot is pointer arithmetic and a cast — but ~100 slots per interface, by hand, with nothing checking them. This is the argument for *not* targeting it. |
-| **WebGPU (`wgpu-native`)** | Closest to "the universal API", and the same shape as Vulkan but far smaller. Its cost is not the language at all: it reintroduces a shared library to ship, which is the one thing this library is built not to need. |
+| **Other APIs** | OpenGL, Direct3D and Metal are not written. The costs recorded when this entry was "no GPU backend" still stand for them: GL 3.3 Core is the cheapest (no creation structs, no unions); D3D12 is ~100 vtable slots per interface by hand; WebGPU reintroduces a shared library. `GpuBackend` (`src/gpu/backend.axle`) is the seam one would implement. |
+| **Custom shaders** | One lit pipeline and the overlay's. A `Material` that carries a pipeline would be the hook; the pipeline layout, descriptor sets and frame block are already shaped for it. |
+| **Render targets, post effects, shadows, MSAA, HDR, instancing** | None. One render pass, drawing into the swapchain. A voxel game's bloom, god-rays and underwater tint need render-to-texture first. |
+| **Sky** | Clear colour plus fog. A gradient, discs or a cloud dome are CPU code in the one program that has them, or a future pass. |
+| **Mesh memory** | Host-visible and coherent, written by `memcpy`. A discrete GPU reads it across the bus unless the heap finds device-local host-visible memory (an integrated GPU, or resizable BAR). A staged upload to device-only memory is the next step for large static scenes. |
+| **Texture upload** | Synchronous: a one-shot submit and a wait. Right for load time, wrong for streaming textures every frame. |
+| **Point lights** | Eight per frame, per-pixel, no shadows. |
+| **Device name** | Only the *kind* of device (discrete, integrated, software) is reported: turning the driver's C string into an Axle `string` has no precedent in this library yet. |
+| **Lost devices** | Permanent: `render` answers false from then on and `Renderer::isLost()` turns true (device lost, surface lost, or out of memory); the program drops the renderer and makes a `Backend::Software` one. No attempt to rebuild a device that was reset or removed. |
+| **Threads** | Everything belongs to the window's thread; Vulkan would allow more, the window system does not. |
+| **High-DPI, several monitors** | Not handled; the swapchain is the window's pixel size. |
+| **Wayland** | The window already carries a shared-memory buffer from its CPU blit. Vulkan's swapchain attaches its own to the same surface; a program must present through one path only. `Renderer` does; `Window::show` re-attaches the CPU's buffer, so it belongs to the CPU path. |
+| **One window** | A `Renderer` draws to the window it was made on; `render` refuses another. |
+| **Translucency** | Blended draws are sorted per draw (by box centre or model origin), not per triangle: intersecting translucent meshes can sort wrong. Lighting and mip averaging run on gamma-encoded values, like the CPU path's. |
 
-Shader compilation is not a blocker either way: SPIR-V can be embedded as
-bytes, and GLSL and WGSL are text.
+What it costs in the *language*, since the old entry blamed the language and was wrong, and the
+correction is worth keeping: the C function-pointer cast (`GetProcAddress(…) as extern "C" (…) => R`)
+is all the loader needs, so nothing is linked. No unions: `VkClearValue` is a record of four floats.
+One `extern` declaration per symbol per program (§2.14): `dlsym` moved to `sys/posix/posix_dl`, shared
+by both Linux ports, because the Wayland port already declared it. A struct field named after a
+reserved word is renamed (`type` is `type_`). And ~85 commands and ~60 records were written from
+`vk.xml` with every size and offset measured against the C headers; the script that did it is not
+in the tree, so the bindings are maintained by hand now, and `vk_layout_check` — run by
+`gpu_check` and again by the renderer before it touches a driver — is what holds them to C. A
+division by zero traps rather than producing an infinity, so `gpu_check` makes its NaN and
+infinity from their bits.
+
+On the CPU fallback (`gpu/soft/backend_soft.axle`): vertex colour is dropped, there is no point
+light, fog, alpha test or blending, a texture array shows layer 0, and sampling is nearest. The list is
+in the file's header and in `doc/GPU.md`.
 
 ### 1.2 Platforms
 
@@ -142,11 +150,15 @@ no multi-threading of the raster. A non-uniform scale is transformed
 wrongly (the normal matrix would need the inverse transpose, which
 nothing here produces).
 
-**The library's own 3-D layer has no user.** Three programs built on
+**The library's own 3-D layer had no user.** Three programs built on
 smalt — a voxel game, a task manager, a network audit — all take the
 window, the event queue, the clock and the pixels, and none of them uses
 `Mesh`, `Camera`, `Material` or `drawMesh`. Treat `render/soft/` as a
 worked example rather than as the renderer you are meant to grow into.
+The GPU layer (`gpu/`, [`doc/GPU.md`](doc/GPU.md)) is aimed at the first
+of them: it has what a voxel renderer needs — baked per-vertex light, texture
+arrays, alpha test, a 2-D overlay — and a section on what a port would still
+have to write. It has no user yet either.
 
 ### 1.9 The containers in `kernel::store`
 
@@ -491,10 +503,22 @@ Neither has been observed waking on a real event.
 - `Bmp::verifyLayout()` and the two `*_layout_check` files — the OS
   records this build fills are the ones the OS reads.
 
+### 3.3b The GPU layer
+
+Held by two Axle programs and the seam script. `examples/gpu_check` is the headless self-test —
+the mesh builder's vertex layout and what a vertex refuses, handles (and two tables seeded
+apart), images and their mip chains, scene ordering (3 000 blended draws) and culling, every
+member of both shader blocks, the facts written in two places agreeing, the Vulkan and surface
+record layouts, the SPIR-V modules' headers and sizes — and passes. `examples/gpu_cube --smoke`
+is the run on a device: frames, a release and re-upload in flight, a double close, a closed
+renderer refusing to draw. `tools/check_seam.sh --selftest` plants each violation it looks for.
+The assertions in `gpu_check` have not been negative-controlled one by one.
+
 ### 3.4 Not verified
 
 - Long-running behaviour. Nothing here has been left up for hours.
 - Multi-monitor, high-DPI, and display hot-plug.
+- In the GPU layer: that it matches the C reference line for line, that a real driver's picture is right (it has run on one Windows discrete GPU, unasserted), a Linux build and run (it type-checks), and X11 / Wayland surface creation.
 - Wayland against more than one compositor.
 - `BytePool` and `SlotIndex` at their capacity limits under real load —
   the refusal paths are tested, the pressure is not.

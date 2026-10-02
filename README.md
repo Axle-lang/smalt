@@ -2,16 +2,16 @@
 
 # 🪟 smalt
 
-### A window, an event queue, a clock, a 2-D drawing surface with text, 3D maths and a complete software renderer — written entirely in [**Axle**](https://axle-lang.dev)
+### A window, an event queue, a clock, a 2-D drawing surface with text, 3D maths and a renderer — on the CPU, or on a GPU through Vulkan — written entirely in [**Axle**](https://axle-lang.dev)
 
-**Not a binding.** There is no `SDL2.dll` to copy, no vcpkg prefix to find, no `[link]` section to fill in. smalt speaks Win32, X11 and Wayland itself, and rasterises every triangle on the CPU.
+**Not a binding.** There is no `SDL2.dll` to copy, no vcpkg prefix to find, no `[link]` section to fill in. smalt speaks Win32, X11 and Wayland itself, rasterises every triangle on the CPU — and when the machine has a Vulkan driver, loads it at run time and draws on the GPU instead, with the same program. See [`doc/GPU.md`](doc/GPU.md).
 
 <p align="center">
   <a href="https://axle-lang.dev"><img alt="Powered by Axle" src="https://img.shields.io/badge/powered%20by-Axle-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
   <a href="https://axle-lang.dev"><img alt="Axle 0.14.0+" src="https://img.shields.io/badge/axle-0.14.0%2B-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
 </p>
 <p align="center">
-  <img alt="Rendering: 100% CPU" src="https://img.shields.io/badge/rendering-100%25%20CPU-FF7A45?style=flat-square&labelColor=1b1b2b">
+  <img alt="Rendering: CPU or Vulkan" src="https://img.shields.io/badge/rendering-CPU%20%C2%B7%20Vulkan-FF7A45?style=flat-square&labelColor=1b1b2b">
   <img alt="Dependencies: none" src="https://img.shields.io/badge/dependencies-none-2E7D32?style=flat-square&labelColor=1b1b2b">
   <img alt="Backends: Win32, X11, Wayland" src="https://img.shields.io/badge/backends-Win32%20%C2%B7%20X11%20%C2%B7%20Wayland-1D6FB8?style=flat-square&labelColor=1b1b2b">
   <img alt="Unsafe: at the OS edge only" src="https://img.shields.io/badge/unsafe-OS%20edge%20only-9C27B0?style=flat-square&labelColor=1b1b2b">
@@ -52,7 +52,7 @@
 | **Language** | 100% [Axle](https://axle-lang.dev) — no C, no bindings, no vendored library |
 | **Platforms** | Windows (Win32: `kernel32`, `user32`, `gdi32`, `winmm`) and Linux, on X11 (`X11`, `asound`, `c`) or Wayland (`wayland-client`, `asound`, `c`) — one source tree, the target picks the backend and a feature picks between the two Linux ones |
 | **Scope** | What a 3D game needs — roughly SDL3 minus gamepads, plus the maths and the renderer SDL leaves to you |
-| **Rendering** | Software rasteriser on the CPU — near-plane clipping, back-face culling, depth buffer, perspective-correct interpolation, Blinn-Phong |
+| **Rendering** | `Renderer`: a scene described once per frame and drawn by Vulkan 1.0 if the machine has a loader, by the CPU rasteriser if not — one program, both. The CPU path is a full software pipeline (near-plane clipping, culling, depth buffer, perspective-correct interpolation, Blinn-Phong); the GPU path adds vertex-colour baked light, point lights, fog, alpha test and blending, and texture arrays with mip chains; both have a 2-D overlay. See [`doc/GPU.md`](doc/GPU.md) for what is checked and what is not |
 | **2-D** | A clipped `Frame` over any surface: rectangles, rounded rectangles, rules, borders, rings, blends, traces — plus two baked anti-aliased faces and a formatter that writes figures as bytes, so a repaint allocates nothing |
 | **Idling** | `Events::wait` blocks in the OS until something happens. A program that repaints on change costs no measurable CPU between changes |
 | **Failure** | A subsystem that cannot start raises `PlatformError` **from its constructor** — there is no half-built object to test |
@@ -73,7 +73,8 @@
 - 🔢 **Figures straight to bytes** — `Fmt` and `Scratch` write a count, a percentage, a byte size, an elapsed span or a clock into a block you own and answer a length. A repaint allocates nothing at all.
 - 😴 **A loop that actually sleeps** — `Events::wait(win, clock, timeoutMs)` blocks in the OS until something arrives. A tool that repaints on change idles at no measurable CPU, instead of choosing between spinning a core and answering input late.
 - ⏱️ **Both halves of a frame loop** — `FramePacer` hands out a variable `dt` *and* fixed simulation steps (`steps()` / `alpha()`) drained from the same measurement, so the simulation and the frame cannot drift apart into two timelines.
-- 🎨 **A complete software 3D pipeline** — clip, project, cull, half-space fill with a reciprocal depth buffer, perspective-correct attributes, one directional light. No GPU touched, nothing to install.
+- 🎨 **A complete software 3D pipeline** — clip, project, cull, half-space fill with a reciprocal depth buffer, perspective-correct attributes, one directional light. Nothing to install.
+- 🖥️ **A GPU path that is not a binding** — `Renderer` loads Vulkan with `dlopen` / `LoadLibraryExW` (no `-lvulkan`, no SDK), draws a `Scene` you described, and falls back to the CPU rasteriser on a machine with no driver. A game never sees an instance, a queue or a barrier. The bindings were written from the Khronos registry with every record measured against the real C headers, and that layout is checked again before a driver sees one; `gpu_cube --gpu --smoke` runs on real hardware, clean under the Khronos validation layer. [Design →](doc/GPU.md)
 - 🔊 **Sound with no callback** — every low-latency audio API wants to call *you*, and Axle cannot hand out a function address. `waveOut` opened with `CALLBACK_NULL` reports a finished block as a flag you poll; ALSA's `snd_pcm_avail_update` answers the same question. One three-call cycle, both platforms.
 - 🧯 **Failure and teardown are the compiler's business** — constructors raise, `Closeable` is enforced, and `defer` covers the six ways out of `Bmp::read`.
 - 🪶 **Nothing to ship** — the produced binary runs on a stock Windows box, or against the `libX11` / `libwayland-client` and `libasound` any Linux desktop already has. No runtime DLL, no redistributable, no vendored library.
@@ -199,11 +200,13 @@ A textured cube on a tiled floor, lit and depth-tested, at a locked 60 fps. `WAS
 | Example | What it drives |
 |---|---|
 | `spinning_cube` | the full 3D pipeline — camera, meshes, textures, lights, the rasteriser |
+| `gpu_cube` | the same through `Renderer` — a scene, baked vertex light, a lamp, fog, glass, a 2-D overlay — on a GPU or on the CPU fallback (`--software`, `--gpu`); R releases and re-uploads the crate, a lost GPU carries on on the CPU, and `--smoke` draws 120 frames and checks the teardown |
 | `ui_panel` | the 2-D surface — a clipped card, rounded corners, anti-aliased text, a live figure, `Events::wait`, and `F12` to a BMP |
 | `donut3d` | **its own** renderer, over `SoftDevice::pixels()` — smalt is only the window |
 | `mario3d` | same: a game that already had a renderer and just wanted a framebuffer |
 | `hello_window` | the smallest thing that opens and closes cleanly |
 | `self_check` | asserts the maths, the frame pacer, the clip, the glyph metrics, the formatters and the containers — runs headless, no display needed |
+| `gpu_check` | asserts what surrounds the driver — the mesh builder's vertex layout, handles, images and their mip chains, the scene's ordering and culling, the shader blocks' byte offsets, the Vulkan record layouts — headless, no GPU needed |
 | `audio_check` | asserts the WAV decode and the device's block cycle |
 | `proc_check` | asserts the window procedure — headless, under a second |
 
@@ -242,8 +245,8 @@ A program that already has a renderer should not have to adopt one to get a wind
 | *(SDL ships no font; SDL_ttf is a separate library and a C dependency)* | `BitmapFont::baked(Face::Ui)` — two faces baked in, anti-aliased; `draw` for a label, `drawBytes` for a figure, `fromTables` for a face of your own |
 | *(SDL ships no formatter)* | `Fmt` / `Scratch` — figures to bytes, so a repaint allocates nothing |
 | *(nor a byte pool or a slot index)* | `BytePool` / `SlotIndex`, both `Closeable` |
-| `SDL_GPUDevice` | `SoftDevice`, behind the `RenderDevice` trait |
-| `SDL_BeginGPURenderPass` … `SDL_SubmitGPUCommandBuffer` | `beginFrame` … `endFrame` |
+| `SDL_GPUDevice` | `Renderer` — Vulkan or the CPU, behind the `GpuBackend` trait; `SoftDevice` behind the lower-level `RenderDevice` |
+| `SDL_BeginGPURenderPass` … `SDL_SubmitGPUCommandBuffer` | `Renderer::render` is the whole pass; `beginFrame` … `endFrame` on `SoftDevice` |
 | `SDL_PushGPUVertexUniformData` (the MVP) | `setCamera` + a draw's `model` argument |
 | *(SDL ships no maths)* | `Vec2` `Vec3` `Vec4` `Mat4` `Quat` `Aabb` `Plane` `Frustum` |
 | `SDL_OpenAudioDevice` | `new Mixer()` — opens the default output |
@@ -251,7 +254,7 @@ A program that already has a renderer should not have to adopt one to get a wind
 | `SDL_PutAudioStreamData` | `mixer.pump()` — call it far more often than a block lasts |
 | *(SDL mixes nothing itself)* | `Mixer` — 32 voices, summed, clamped |
 | *(SDL has no 3D audio)* | `playRandPos` + `setListener` — attenuated live, every block |
-| *(SDL ships no 3D renderer)* | `Mesh` `Primitives` `Texture` `Camera` `Material` `DirectionalLight` |
+| *(SDL ships no 3D renderer)* | `Mesh` `Primitives` `Texture` `Camera` `Material` `DirectionalLight` — and for a GPU: `Renderer` `Scene` `MeshBuilder` `Image` `PointLight` `Fog` |
 
 **Dropped on purpose:** the multi-platform driver vtable and `bootstrap[]`, `dynapi`, every callback API (`SDL_AddTimer`, `SDL_SetEventFilter`, `SDL_AddEventWatch`) — where SDL calls back, smalt polls — and the 2D `SDL_Renderer`, which has no depth buffer and no 3D transform and so cannot draw a 3D game.
 
@@ -263,10 +266,14 @@ Layers, bottom to top. **A module never reaches upward.**
 
 ```
    ┌───────────────────────────── your game ─────────────────────────────┐
-   │            use smalt::{Platform, Window, Events, SoftDevice, …}      │
+   │         use smalt::{Platform, Window, Events, Renderer, Scene, …}    │
    └──────────────────────────────┬──────────────────────────────────────┘
                                   │
    ┌──────────────────────────────▼──────────────────────────────────────┐
+   │  gpu/      renderer · scene · mesh_builder · image · handle · light  │
+   │            backend (trait) · soft/ (the CPU, behind it)              │
+   │            vk/ the Vulkan backend            → doc/GPU.md            │
+   ├─────────────────────────────────────────────────────────────────────┤
    │  render/   device (trait) · color · vertex · mesh · texture · camera │
    │            frame (2-D) · glyphs · text · surface                     │
    │            soft/ target · present · raster · shade · device_soft     │
@@ -277,6 +284,7 @@ Layers, bottom to top. **A module never reaches upward.**
    ├─────────────────────────────────────────────────────────────────────┤
    │  video/    window · display · scancode_set1                          │
    │            SEAM  sys_window · sys_drain · sys_cursor                 │
+   │                  sys_vk_surface   (a window → a VkSurfaceKHR)        │
    │            win32/   class · window · proc · keymap · const           │
    │            x11/     x_window_ops · x_decode · x_keymap               │
    │            wayland/ wl_window_ops · wl_win_state · wl_win_events     │
@@ -287,7 +295,7 @@ Layers, bottom to top. **A module never reaches upward.**
    ├─────────────────────────────────────────────────────────────────────┤
    │  platform/ audio_format                                              │
    │            SEAM  sys_app · sys_clock · sys_screen · sys_blit         │
-   │                  sys_audio                                           │
+   │                  sys_audio · sys_gpu_loader (find the Vulkan loader) │
    │            wayland/ wl_drawable · wl_blit_header · wl_screen_probe   │
    │            posix/   sys_clock · blit_scale  ← both Linux ports       │
    ├─────────────────────────────────────────────────────────────────────┤
@@ -300,7 +308,8 @@ Layers, bottom to top. **A module never reaches upward.**
    │            wayland/ wl_lib · wl_libc · wl_request · wl_core          │
    │                     wl_table · wl_args · wl_token · wl_globals       │
    │                     wl_app · xdg_shell · xdg_decoration              │
-   │            alsa/    alsa_lib          posix/  posix_time             │
+   │            alsa/    alsa_lib          posix/  posix_time · posix_dl  │
+   │            vk/      the Vulkan ABI — from the registry, portable     │
    ├─────────────────────────────────────────────────────────────────────┤
    │  kernel/   raw ← the pointer accessors · blob · mem · store          │
    └─────────────────────────────────────────────────────────────────────┘
@@ -398,7 +407,7 @@ not beside the window that fills it — `x_surface`, the
 `HDC`, and `wl_drawable`, which holds more than either because Wayland
 has no server-side drawable at all.
 
-**The eight seams, and what each costs on each side.**
+**The ten seams, and what each costs on each side.** (`sys_gpu_loader` and `sys_vk_surface`, at the foot of the table, are the two a GPU adds.)
 
 | Seam | Win32 | X11 | Wayland |
 |---|---|---|---|
@@ -410,6 +419,8 @@ has no server-side drawable at all.
 | `sys_window` | `HWND` + `HDC`; the latches are written by our window procedure | `Window` + `GC`; the latches are written by the drain | three objects — `wl_surface`, `xdg_surface`, `xdg_toplevel` — and a handshake: the first commit carries no buffer, it *asks* |
 | `sys_drain` | `PeekMessageW` over the thread queue | `XPending` / `XNextEvent` — one stream for input *and* window notices | `poll` on the connection, then `dispatch_pending`; the events arrive as C callbacks that leave records on a ring |
 | `sys_cursor` | `ClientToScreen` + `SetCursorPos`; `ShowCursor`'s balanced counter | `XWarpPointer` (window-relative); hiding is a cursor with no pixels | hiding is `set_cursor` with no surface; **there is no warp at all** — see below |
+| `sys_gpu_loader` | `LoadLibraryExW` of System32's `vulkan-1.dll` + `GetProcAddress` | `dlopen("libvulkan.so.1")` + `dlsym` — shared with Wayland, in `posix/` | ⟵ the same file |
+| `sys_vk_surface` | `vkCreateWin32SurfaceKHR(HINSTANCE, HWND)` | `vkCreateXlibSurfaceKHR(Display *, Window)` | `vkCreateWaylandSurfaceKHR(wl_display *, wl_surface *)` |
 
 What is deliberately **not** duplicated: the PS/2 set-1 code block
 (`video/scancode_set1`), which Windows reads out of `lParam` bits 16..23
@@ -538,16 +549,18 @@ A frame-driven game should keep calling `pump` and pace with `FramePacer`: waiti
 
 The depth buffer stores **reciprocal** depth and the test is *greater wins*, because only the reciprocal interpolates linearly in screen space.
 
+That is the CPU rasteriser. The GPU path — `Renderer`, `Scene`, the Vulkan backend and how a CPU-rasterised game such as voxel-axle moves onto it — is in [`doc/GPU.md`](doc/GPU.md).
+
 ## 🚧 Not covered
 
-Gamepads, touch, clipboard, dialogs, IME, threads — and macOS. Also, deliberately, **any GPU backend**.
+Gamepads, touch, clipboard, dialogs, IME, threads — and macOS. On the GPU side: **only Vulkan 1.0 exists** (no OpenGL, Direct3D or Metal), it **type-checks for Linux but has not been built or run there**, and it has no custom shaders, render targets or post effects. [`doc/GPU.md`](doc/GPU.md) says exactly what is there and what is checked.
 
 On Wayland specifically: pointer warping, key repeat, text input, cursor
 restoration after a hide, and fractional scaling. Each is an addition
 rather than a fix, and the [Wayland backend](#the-wayland-backend)
 section says which extension or library each one needs.
 
-**The GPU one used to be described here as a limit of the language. That was true and is not any more, and the correction matters because it discouraged the work.** These pages said Axle could not call a function address obtained at run time, which would rule out modern OpenGL, Vulkan, D3D and Metal at a stroke. The C function-pointer cast has since landed — the compiler carries a passing test for the `GetProcAddress` round trip, and smalt already imports `GetProcAddress` — so a GPU backend is work nobody has done rather than work nobody can do. [`LIMITATIONS.md §1.1`](LIMITATIONS.md#11-no-gpu-backend) sets out what each API would actually cost; the short version is that **OpenGL 3.3 Core needs nothing further from the language**, and Vulkan needs only one small thing (no unions, so `VkClearValue` is a hand-laid record) plus a generator for its fifteen hundred declarations.
+**The GPU one used to be described here as a limit of the language. That was true and is not any more, and the correction matters because it discouraged the work.** These pages said Axle could not call a function address obtained at run time, which would rule out modern OpenGL, Vulkan, D3D and Metal at a stroke. The C function-pointer cast has since landed, and a Vulkan backend now exists on top of it: the loader is opened with `dlopen` / `LoadLibraryExW` and every entry point is a cast address, so nothing is linked. What the language still costs there is small and recorded — no unions (`VkClearValue` is a record of four floats), one `extern` declaration per symbol (so `dlsym` moved to `sys/posix/posix_dl`), and bindings transcribed from the registry and checked against measured layouts. [`LIMITATIONS.md §1.1`](LIMITATIONS.md#11-the-gpu-backend) has the account.
 
 Threads were described here as blocked for the same reason. They are not: `spawn` and `Task<T>` are the language's, and smalt uses them itself — `mixerLoop` pumps the audio device on a thread of its own, and `Mixer` takes its own lock so a game can play a sound from one thread while another pumps. Everything *else* here — the window, the event queue, the surfaces — still belongs to the thread that created the window, which is what both platforms' event paths require.
 
