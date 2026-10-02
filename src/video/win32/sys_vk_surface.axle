@@ -1,0 +1,78 @@
+// sys_vk_surface — the platform seam for turning a window into a Vulkan surface.
+//
+// THE CONTRACT, which a port honours and nothing above it may look behind:
+//
+//   extension()                   the instance extension that makes a surface for
+//                                 this window system
+//   create(table, instance,      write the `VkSurfaceKHR` for `win` at address `out`;
+//          win, out)             the `VkResult` — VK_ERROR_EXTENSION_NOT_PRESENT when
+//                                 the loader has no creation command for it
+//
+// See `video/x11/sys_vk_surface` for why the surface is the one platform-shaped
+// piece of Vulkan.
+//
+// Windows: `VK_KHR_win32_surface`, from the window's `HWND` and the module's
+// `HINSTANCE` — the same module handle `Platform` took at the start, read again
+// with `GetModuleHandleW(NULL)` because the surface seam is handed the window and
+// not the token it was made from.
+
+use crate::kernel::raw::Raw;
+use crate::sys::vk::vk_const::{
+    VK_ERROR_EXTENSION_NOT_PRESENT, VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
+    VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
+};
+use crate::sys::vk::vk_table::VkTable;
+use crate::sys::win32_kernel::GetModuleHandleW;
+use crate::video::sys_window::SysWindow;
+use crate::video::win_surface_record::VkWin32SurfaceCreateInfoKHR;
+
+/** A Vulkan surface, from a Win32 window. */
+pub(crate) class SysVkSurface {
+    /** The instance extension a surface on this window system needs. */
+    pub(crate) static fn extension() : string {
+        return VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+    }
+
+    /**
+     * 0 when `VkWin32SurfaceCreateInfoKHR` has the size and offsets the C header gives it, else the
+     * number of the first check that failed — the record `create` fills, held to the
+     * same check as the generated ones (`GpuCheck::surfaceRecord`).
+     */
+    pub(crate) static fn recordLayout() : i32 {
+        if (offsetof(VkWin32SurfaceCreateInfoKHR, pNext) != 8) {
+            return 1;
+        }
+        if (offsetof(VkWin32SurfaceCreateInfoKHR, flags) != 16) {
+            return 2;
+        }
+        if (offsetof(VkWin32SurfaceCreateInfoKHR, hinstance) != 24) {
+            return 3;
+        }
+        if (offsetof(VkWin32SurfaceCreateInfoKHR, hwnd) != 32) {
+            return 4;
+        }
+        if (sizeof<VkWin32SurfaceCreateInfoKHR>() != 40) {
+            return 5;
+        }
+        return 0;
+    }
+
+    /** Write the surface for `win` at `out`; the `VkResult` (see the contract). */
+    pub(crate) static fn create(table : VkTable, instance : i64, win : SysWindow, out : i64) : i32 {
+        unsafe {
+            let p : ptr = table.proc(instance, "vkCreateWin32SurfaceKHR");
+            if (Raw::isNil(p)) {
+                return VK_ERROR_EXTENSION_NOT_PRESENT;
+            }
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = p as extern "C" (i64, ptr, ptr, ptr) => i32;
+            let info : VkWin32SurfaceCreateInfoKHR = VkWin32SurfaceCreateInfoKHR {
+                sType: VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
+                pNext: Raw::nil(),
+                flags: 0,
+                hinstance: GetModuleHandleW(Raw::nil()),
+                hwnd: win.handle(),
+            };
+            return f(instance, (&info) as ptr, Raw::nil(), Raw::at(out));
+        }
+    }
+}

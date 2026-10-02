@@ -61,7 +61,11 @@ portable_files() {
 # Rule 1 — an OS import outside a port directory.
 check_no_os_import() {
     local root=$1 hits
-    hits=$(portable_files "$root" | xargs grep -nE 'extern[[:space:]]+"C"[[:space:]]+from|@link[[:space:]]*\(|native[[:space:]]+fn' 2>/dev/null)
+    # A bare `extern "C" fn` is an import too — the symbol is found by name at link
+    # time — while `extern "C" struct` and the function-pointer type `extern "C" (`
+    # only describe a layout. Comment lines are not code.
+    hits=$(portable_files "$root" | xargs grep -nE 'extern[[:space:]]+"C"[[:space:]]+(from|fn)|@link[[:space:]]*\(|native[[:space:]]+fn' 2>/dev/null \
+        | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//')
     if [ -n "$hits" ]; then
         note "FAIL: an OS import outside a port directory:"
         note "$hits"
@@ -131,6 +135,14 @@ selftest() {
         >> "$tmp/src/core/timer.axle"
     if run_checks "$tmp" >/dev/null 2>&1; then
         note "SELFTEST FAIL: rule 1 accepted an OS import in a portable file"
+        rc=1
+    fi
+    rm -rf "$tmp/src"; cp -r "$root/src" "$tmp/src"
+
+    # Rule 1, the declaration with no library named: still a symbol to link.
+    printf '\npub extern "C" fn getpid() : i32;\n' >> "$tmp/src/core/timer.axle"
+    if run_checks "$tmp" >/dev/null 2>&1; then
+        note "SELFTEST FAIL: rule 1 accepted a bare extern \"C\" fn in a portable file"
         rc=1
     fi
     rm -rf "$tmp/src"; cp -r "$root/src" "$tmp/src"

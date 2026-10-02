@@ -22,8 +22,17 @@ extern "C" from "kernel32" {
      */
     fn GetProcAddress(module : ptr, name : string) : ptr;
 
-    /** `HMODULE LoadLibraryW(LPCWSTR)`. */
-    fn LoadLibraryW(name : ptr) : ptr;
+    /**
+     * `UINT GetSystemDirectoryW(LPWSTR, UINT)` — the System32 path, in code units not
+     * counting the terminator; 0 on failure, more than `units` when it did not fit.
+     */
+    fn GetSystemDirectoryW(out : ptr, units : i32) : i32;
+
+    /**
+     * `HMODULE LoadLibraryExW(LPCWSTR, HANDLE, DWORD)` — the reserved handle is NULL;
+     * `flags` takes a `LOAD_LIBRARY_SEARCH_*` value to narrow where the DLL is looked for.
+     */
+    fn LoadLibraryExW(name : ptr, reserved : ptr, flags : i32) : ptr;
 
     /**
      * `BOOL QueryPerformanceCounter(LARGE_INTEGER *)` — the monotonic tick.

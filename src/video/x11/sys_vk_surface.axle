@@ -1,0 +1,86 @@
+// sys_vk_surface — the platform seam for turning a window into a Vulkan surface.
+//
+// THE CONTRACT, which a port honours and nothing above it may look behind:
+//
+//   extension()                   the instance extension that makes a surface for
+//                                 this window system, to be enabled when the
+//                                 instance is created
+//   create(table, instance,      write the `VkSurfaceKHR` for `win` at address `out`;
+//          win, out)             the `VkResult` — VK_ERROR_EXTENSION_NOT_PRESENT when
+//                                 the loader has no creation command for it
+//
+// A surface is the one place Vulkan meets the window system, and every window
+// system spells it differently — which is why the *portable* Vulkan code never
+// names a platform and this file exists once per port. Everything after the
+// surface (the swapchain, the frame loop) is the same on all three.
+//
+// X11: `VK_KHR_xlib_surface`, built from the `Display *` the window was created
+// on and its `Window` id — both already public inside the crate, because the blit
+// reads them. The creation command is not in the portable table (a Windows build
+// has no `vkCreateXlibSurfaceKHR`), so it is asked of the loader by name here.
+//
+// The creation record is declared beside this file (`xlib_surface_record`) and not
+// generated with the rest of `sys/vk`: it is the one Vulkan record whose layout
+// depends on an Xlib type (`Window` is an `unsigned long`).
+// `recordLayout` checks this port's record against the numbers the real header
+// gives; each port has the same check for its own.
+
+use crate::kernel::raw::Raw;
+use crate::sys::vk::vk_const::{
+    VK_ERROR_EXTENSION_NOT_PRESENT, VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
+    VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+};
+use crate::sys::vk::vk_table::VkTable;
+use crate::video::sys_window::SysWindow;
+use crate::video::xlib_surface_record::VkXlibSurfaceCreateInfoKHR;
+
+/** A Vulkan surface, from an X11 window. */
+pub(crate) class SysVkSurface {
+    /** The instance extension a surface on this window system needs. */
+    pub(crate) static fn extension() : string {
+        return VK_KHR_XLIB_SURFACE_EXTENSION_NAME;
+    }
+
+    /**
+     * 0 when `VkXlibSurfaceCreateInfoKHR` has the size and offsets the C header gives it, else the
+     * number of the first check that failed — the record `create` fills, held to the
+     * same check as the generated ones (`GpuCheck::surfaceRecord`).
+     */
+    pub(crate) static fn recordLayout() : i32 {
+        if (offsetof(VkXlibSurfaceCreateInfoKHR, pNext) != 8) {
+            return 1;
+        }
+        if (offsetof(VkXlibSurfaceCreateInfoKHR, flags) != 16) {
+            return 2;
+        }
+        if (offsetof(VkXlibSurfaceCreateInfoKHR, dpy) != 24) {
+            return 3;
+        }
+        if (offsetof(VkXlibSurfaceCreateInfoKHR, window) != 32) {
+            return 4;
+        }
+        if (sizeof<VkXlibSurfaceCreateInfoKHR>() != 40) {
+            return 5;
+        }
+        return 0;
+    }
+
+    /** Write the surface for `win` at `out`; the `VkResult` (see the contract). */
+    pub(crate) static fn create(table : VkTable, instance : i64, win : SysWindow, out : i64) : i32 {
+        unsafe {
+            let p : ptr = table.proc(instance, "vkCreateXlibSurfaceKHR");
+            if (Raw::isNil(p)) {
+                return VK_ERROR_EXTENSION_NOT_PRESENT;
+            }
+            let f : extern "C" (i64, ptr, ptr, ptr) => i32 = p as extern "C" (i64, ptr, ptr, ptr) => i32;
+            let info : VkXlibSurfaceCreateInfoKHR = VkXlibSurfaceCreateInfoKHR {
+                sType: VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+                pNext: Raw::nil(),
+                flags: 0,
+                dpy: win.display,
+                window: win.window,
+            };
+            return f(instance, (&info) as ptr, Raw::nil(), Raw::at(out));
+        }
+    }
+}

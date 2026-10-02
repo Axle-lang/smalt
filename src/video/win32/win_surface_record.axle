@@ -1,0 +1,29 @@
+// win_surface_record — the Vulkan surface-creation record for this window system.
+//
+// Declared here, not generated with the rest of `sys/vk`, because the record
+// names a window-system type (`Display *`, `wl_display *`, `HWND`) the
+// registry-driven generator has no business knowing. It is a file of its own
+// rather than part of `sys_vk_surface` because that file is a *seam*: every
+// port must offer it with the same surface (`axle ports` checks), and a record
+// only this port has would be a difference in it.
+//
+// `SysVkSurface::recordLayout` checks its size and offsets (against the numbers the
+// real header gives), and the renderer asks before it creates a surface.
+
+/** `VkWin32SurfaceCreateInfoKHR`. */
+pub extern "C" struct VkWin32SurfaceCreateInfoKHR {
+    /** `VkStructureType sType`. */
+    pub sType     : i32;
+
+    /** `const void *pNext`. */
+    pub pNext     : ptr;
+
+    /** `VkWin32SurfaceCreateFlagsKHR flags`. */
+    pub flags     : i32;
+
+    /** `HINSTANCE hinstance`. */
+    pub hinstance : ptr;
+
+    /** `HWND hwnd`. */
+    pub hwnd      : ptr;
+}

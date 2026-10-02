@@ -1,0 +1,32 @@
+// posix_dl — the dynamic loader's two calls, declared once for both Linux ports.
+//
+// `dlopen` finds a shared object by name and `dlsym` finds a symbol in it. The
+// GPU loader seam uses both (it opens `libvulkan.so.1`), and the Wayland port
+// already needed `dlsym` for the protocol's interface tables, which are data
+// libwayland exports and Axle cannot import as a function.
+//
+// They live here, in a directory both Linux ports name, because one `extern`
+// declaration per symbol per program is a rule (LIMITATIONS §2.14): two
+// declarations of `dlsym` in one build are two distinct declarations of the same
+// name, and the linker is handed `dlsym.1`. The X11 port has no use for `dlsym`
+// of its own and the Wayland one had its own; with this file neither declares it
+// and both read the same one.
+//
+// `from "dl"` names `libdl`, which on a current glibc is an empty stub (the
+// functions moved into libc in 2.34) and on an older one is where they are. The
+// stub is always present with the C library's development files, so the same
+// line links both.
+
+extern "C" from "dl" {
+    /** `void *dlopen(const char *filename, int flags)` — NULL when it cannot be found. */
+    fn dlopen(path : string, flags : i32) : ptr;
+
+    /** `void *dlsym(void *handle, const char *symbol)`; a null handle is `RTLD_DEFAULT`. */
+    fn dlsym(handle : ptr, symbol : string) : ptr;
+
+    /** `int dlclose(void *handle)` — gives back one reference `dlopen` took. */
+    fn dlclose(handle : ptr) : i32;
+}
+
+/** `RTLD_NOW` — resolve every symbol of the library when it is opened. */
+pub(crate) const RTLD_NOW : i32 = 2;

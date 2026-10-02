@@ -1,0 +1,56 @@
+// sys_gpu_loader — the platform seam for finding the Vulkan loader.
+//
+// THE CONTRACT, which a port honours and nothing above it may look behind:
+//
+//   entry()   the address of `vkGetInstanceProcAddr`, or nil when this machine
+//             has no Vulkan loader
+//
+// See `platform/posix/sys_gpu_loader` for why that one address is the whole of
+// the seam and why nothing is linked.
+//
+// Windows: `vulkan-1.dll`, which the GPU vendor's driver installs into System32,
+// asked for `vkGetInstanceProcAddr` with `GetProcAddress`. It is opened by its *full
+// path* in System32 (`GetSystemDirectoryW` + the name), with `LoadLibraryExW(…,
+// LOAD_LIBRARY_SEARCH_SYSTEM32)` as well: a bare name would be matched against any
+// `vulkan-1.dll` the process already holds, wherever it came from, and the default
+// search order would take one planted next to the program first. The path is UTF-16,
+// built in a block that lives for the call. The module is not freed: every address the
+// loader returns points into it, and it is the process's for the process's life. Each
+// `entry()` — one per renderer made — counts one more reference to a module already
+// loaded, which maps nothing new.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::sys::win32_kernel::{GetProcAddress, GetSystemDirectoryW, LoadLibraryExW};
+
+/** The Vulkan loader, as it is named in System32, with the separator that joins it on. */
+const LOADER_DLL : string = "\\vulkan-1.dll";
+
+/** The one export the whole API is reached through. */
+const LOADER_ENTRY : string = "vkGetInstanceProcAddr";
+
+/** `LOAD_LIBRARY_SEARCH_SYSTEM32`: look in System32 and nowhere else. */
+const LOADER_SEARCH_SYSTEM32 : i32 = 2048;
+
+/** UTF-16 code units the path's block holds: `MAX_PATH`, which a System32 path fits in. */
+const LOADER_PATH_UNITS : i32 = 260;
+
+/** Where the Vulkan loader is found. */
+pub(crate) class SysGpuLoader {
+    /** The address of `vkGetInstanceProcAddr`, or nil. */
+    pub(crate) static fn entry() : ptr {
+        let path = new Blob((LOADER_PATH_UNITS as i64) * 2);
+        defer path.close();
+        let dir : i32 = GetSystemDirectoryW(path.at(), LOADER_PATH_UNITS);
+        if (dir <= 0 || dir >= LOADER_PATH_UNITS - 16) {
+            return Raw::nil();
+        }
+        Mem::wideFrom(Raw::addr(path.at()) + (dir as i64) * 2, LOADER_DLL, LOADER_PATH_UNITS - dir);
+        let lib : ptr = LoadLibraryExW(path.at(), Raw::nil(), LOADER_SEARCH_SYSTEM32);
+        if (Raw::isNil(lib)) {
+            return Raw::nil();
+        }
+        return GetProcAddress(lib, LOADER_ENTRY);
+    }
+}

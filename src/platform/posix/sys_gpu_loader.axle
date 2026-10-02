@@ -1,0 +1,57 @@
+// sys_gpu_loader — the platform seam for finding the Vulkan loader.
+//
+// THE CONTRACT, which a port honours and nothing above it may look behind:
+//
+//   entry()   the address of `vkGetInstanceProcAddr`, or nil when this machine
+//             has no Vulkan loader
+//
+// That one address is the whole of the seam. Everything else Vulkan offers is
+// asked of it by name (`sys/vk/vk_table`), so no library is *linked*: there is
+// no `[link]` section, no `-lvulkan`, and a program built here runs on a machine
+// with no Vulkan driver at all — `entry()` answers nil and `Renderer` takes the
+// software device. A linked Vulkan would be a binary that refuses to start on
+// the very machines a CPU rasteriser exists for.
+//
+// Linux, X11 and Wayland alike: `dlopen("libvulkan.so.1")`, which is the loader's
+// soname, with the unversioned name as a second try for a system that only
+// carries the development symlink. A library that opens but does not export the
+// entry point is closed again at once. Otherwise the handle is never closed: every address the
+// loader hands out points into it, so closing it would turn each later call into
+// a jump into unmapped memory; it lives as long as the process, which is as long
+// as anything can still be using it. Each `entry()` — one per renderer made — is
+// another `dlopen` of a library already loaded: it maps nothing new, only counts
+// one more reference that is never given back.
+//
+// The Windows twin is `platform/win32/sys_gpu_loader` — `vulkan-1.dll` through
+// `LoadLibraryExW` (System32 only) and `GetProcAddress`.
+
+use crate::kernel::raw::Raw;
+use crate::sys::posix_dl::{dlclose, dlopen, dlsym, RTLD_NOW};
+
+/** The Vulkan loader's soname. */
+const LOADER_SONAME : string = "libvulkan.so.1";
+
+/** The development symlink, for a system that has only that. */
+const LOADER_LINKNAME : string = "libvulkan.so";
+
+/** The one export the whole API is reached through. */
+const LOADER_ENTRY : string = "vkGetInstanceProcAddr";
+
+/** Where the Vulkan loader is found. */
+pub(crate) class SysGpuLoader {
+    /** The address of `vkGetInstanceProcAddr`, or nil. */
+    pub(crate) static fn entry() : ptr {
+        let lib : ptr = dlopen(LOADER_SONAME, RTLD_NOW);
+        if (Raw::isNil(lib)) {
+            lib = dlopen(LOADER_LINKNAME, RTLD_NOW);
+        }
+        if (Raw::isNil(lib)) {
+            return Raw::nil();
+        }
+        let entry : ptr = dlsym(lib, LOADER_ENTRY);
+        if (Raw::isNil(entry)) {
+            dlclose(lib);
+        }
+        return entry;
+    }
+}

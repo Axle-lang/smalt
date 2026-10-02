@@ -14,7 +14,7 @@
 // [`loadCore`] answers with one test for the caller.
 
 use crate::kernel::raw::Raw;
-use crate::sys::wl_libc::dlsym;
+use crate::sys::posix_dl::dlsym;
 
 /** The core tables, looked up once and read for the run. */
 pub extern "C" struct WlCore {
