@@ -1,0 +1,296 @@
+// vk_overlay — the 2-D layer, drawn by the CPU and laid over the finished 3-D frame.
+//
+// `Renderer::overlay()` hands the program a `Frame` over a buffer of `0x00RRGGBB` words
+// the size of the window. On the GPU that buffer has to become a texture every frame it
+// was drawn on: it is copied into this frame slot's staging buffer, the copy into the
+// overlay texture is recorded ahead of the render pass, and the overlay pipeline draws one
+// triangle over the screen sampling it. A word that is entirely zero is transparent — the
+// colour key `shaders/overlay.frag` applies, so black is drawn as 0x010101.
+//
+// # One texel, one pixel
+//
+// The layer is composited 1:1 from the top-left corner, as the CPU backend does: the
+// triangle's viewport is the *texture's* size, not the swapchain's, so a texel lands on
+// exactly one pixel whatever the two sizes are, and the scissor stops at the edge of the
+// layer and of the swapchain, whichever comes first. A swapchain whose extent the window
+// system clamped away from the window's size therefore crops the HUD instead of
+// stretching it.
+//
+// # Growing, never shrinking
+//
+// The texture is made with room to spare (each side rounded up to `OVL_STEP` texels) and
+// is remade only when the layer outgrows it. Its parts outside the layer hold whatever was
+// copied there last; the scissor never lets them show. So dragging a window's edge remakes
+// the texture a handful of times rather than once a frame — making one is a one-shot upload
+// that waits for the queue to go idle.
+//
+// The texture is a slot of the backend's `VkTextures`, taken when the backend is built so a
+// program's uploads can never take the one it is owed. Making and releasing it goes through
+// the backend (`VkBackend::stageOverlay`), which knows how to drain the graveyard when the
+// table is full; this file owns the staging buffers and the recording.
+
+use crate::gpu::backend::OverlayView;
+use crate::gpu::image::SamplerDesc;
+use crate::gpu::vk::vk_cmd::VkCmd;
+use crate::gpu::vk::vk_context::VkContext;
+use crate::gpu::vk::vk_frame::FRAMES_IN_FLIGHT;
+use crate::gpu::vk::vk_heap::GpuHeap;
+use crate::gpu::vk::vk_mem::{GpuBuffer, MemUse, VkMem};
+use crate::gpu::vk::vk_pipelines::VkPipelines;
+use crate::gpu::vk::vk_textures::VkTextures;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::sys::vk::vk_const::{
+    VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_BIND_POINT_GRAPHICS,
+    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+};
+use crate::sys::vk::vk_table::VkAddr;
+use crate::sys::vk::vk_types::{
+    VkBufferImageCopy, VkExtent2D, VkExtent3D, VkImageSubresourceLayers, VkOffset2D, VkOffset3D,
+    VkRect2D, VkViewport,
+};
+
+/** The overlay texture's sides are rounded up to a multiple of this many texels. */
+const OVL_STEP : i32 = 256;
+
+/** The 2-D layer's texture, staging buffers and draw. */
+pub(crate) class VkOverlay {
+    /** The texture slot in the backend's `VkTextures`; -1 when there is none. */
+    pub(crate) slot : i32 = -1;
+
+    /** The texture's size — room for the layer, not the layer's own size. */
+    texW            : i32 = 0;
+    texH            : i32 = 0;
+
+    /** The layer staged for the frame being recorded. */
+    layerW          : i32 = 0;
+    layerH          : i32 = 0;
+
+    /** Per frame in flight: the staging buffer and its size in bytes. */
+    staging         : GpuBuffer[];
+    stageBytes      : i64[];
+
+    /** Reusable one-element arrays the copy and the draw pass by address. */
+    copyArr         : VkBufferImageCopy[];
+    vp              : VkViewport[];
+    sc              : VkRect2D[];
+
+    /** No texture yet, no staging buffers. */
+    constructor() {
+        let n : i64 = FRAMES_IN_FLIGHT as i64;
+        self.staging = malloc<GpuBuffer>(n);
+        self.stageBytes = malloc<i64>(n);
+        for (i of 0..n) {
+            self.staging[i] = GpuBuffer::none();
+            self.stageBytes[i] = 0;
+        }
+        self.copyArr = malloc<VkBufferImageCopy>(1);
+        self.vp = malloc<VkViewport>(1);
+        self.sc = malloc<VkRect2D>(1);
+    }
+
+    /** How the overlay is sampled: one texel to one pixel, nothing repeated. */
+    pub(crate) static fn sampler() : SamplerDesc {
+        return SamplerDesc { nearest: true, mipmaps: false, repeat: false };
+    }
+
+    /** The texture side that holds a layer side of `v`: rounded up, at most `most`. */
+    pub(crate) static fn capacityFor(v : i32, most : i32) : i32 {
+        let up : i32 = ((v.max(1) + OVL_STEP - 1) / OVL_STEP) * OVL_STEP;
+        return up.min(most.max(1));
+    }
+
+    /** Whether a `w` x `h` layer needs a texture this one is not. */
+    pub(crate) fn needsTexture(self, w : i32, h : i32) : bool {
+        return self.slot < 0 || w > self.texW || h > self.texH;
+    }
+
+    /** Take texture `slot`, of `w` x `h`, as the overlay's (-1 for none). */
+    pub(crate) fn adopt(mut self, slot : i32, w : i32, h : i32) : void {
+        self.slot = slot;
+        self.texW = w;
+        self.texH = h;
+    }
+
+    /**
+     * Copy the layer `ov` into frame slot `f`'s staging buffer, growing the buffer if
+     * it is too small; whether the overlay can be drawn this frame.
+     *
+     * Slot `f`'s fence was waited on before this runs, so the frame that last read the
+     * old buffer is finished and it can be destroyed on the spot.
+     */
+    pub(crate) fn stage(
+        mut self,
+        ctx : VkContext,
+        heap : GpuHeap,
+        f : i32,
+        ov : OverlayView
+    ) : bool {
+        if (self.slot < 0 || ov.w <= 0 || ov.h <= 0) {
+            return false;
+        }
+        let k : i64 = f as i64;
+        let bytes : i64 = (ov.w as i64) * (ov.h as i64) * 4;
+        if (self.stageBytes[k] < bytes) {
+            if (!self.staging[k].isNone()) {
+                VkMem::destroyBuffer(ctx, heap, self.staging[k]);
+                self.staging[k] = GpuBuffer::none();
+                self.stageBytes[k] = 0;
+            }
+            let b : GpuBuffer = VkMem::makeBuffer(
+                ctx,
+                heap,
+                bytes,
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                MemUse::Staging
+            );
+            if (b.isNone() || b.mapped() == 0) {
+                VkMem::destroyBuffer(ctx, heap, b);
+                return false;
+            }
+            self.staging[k] = b;
+            self.stageBytes[k] = bytes;
+        }
+        Mem::copy(self.staging[k].mapped(), ov.base, bytes);
+        self.layerW = ov.w;
+        self.layerH = ov.h;
+        return true;
+    }
+
+    /**
+     * Record the copy of slot `f`'s staging buffer into the texture, bracketed by the two
+     * barriers that make it safe.
+     *
+     * The first barrier's source is the *fragment shader* stage: the previous frame may
+     * still be sampling the texture while this frame's copy wants to write it, and an
+     * execution dependency from those reads to this write is what stops it.
+     */
+    pub(crate) fn recordUpload(
+        mut self,
+        ctx : VkContext,
+        cmd : VkCmd,
+        textures : VkTextures,
+        cb : i64,
+        f : i32
+    ) : void {
+        let image : i64 = textures.imageOf(self.slot);
+        let color : i32 = VK_IMAGE_ASPECT_COLOR_BIT;
+        cmd.imageBarrier(
+            ctx,
+            cb,
+            image,
+            color,
+            0,
+            1,
+            1,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            0,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT
+        );
+        // The buffer holds the whole layer row by row; only what fits the texture is copied.
+        self.copyArr[0] = VkBufferImageCopy {
+            bufferOffset: 0,
+            bufferRowLength: self.layerW,
+            bufferImageHeight: self.layerH,
+            imageSubresource: VkImageSubresourceLayers {
+                aspectMask: color,
+                mipLevel: 0,
+                baseArrayLayer: 0,
+                layerCount: 1,
+            },
+            imageOffset: VkOffset3D { x: 0, y: 0, z: 0 },
+            imageExtent: VkExtent3D {
+                width: self.layerW.min(self.texW),
+                height: self.layerH.min(self.texH),
+                depth: 1,
+            },
+        };
+        ctx.table.cmdCopyBufferToImage(
+            cb,
+            self.staging[f as i64].buffer,
+            image,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1,
+            VkAddr::bufferImageCopy(self.copyArr)
+        );
+        cmd.imageBarrier(
+            ctx,
+            cb,
+            image,
+            color,
+            0,
+            1,
+            1,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+        );
+    }
+
+    /**
+     * Record the overlay's draw inside the render pass, over a `swapW` x `swapH` target:
+     * the texture's size as the viewport, the layer cut to the target as the scissor.
+     * `setAt` is the address of an 8-byte slot the descriptor-set bind reads from.
+     */
+    pub(crate) fn recordDraw(
+        mut self,
+        ctx : VkContext,
+        pipes : VkPipelines,
+        textures : VkTextures,
+        cb : i64,
+        setAt : i64,
+        swapW : i32,
+        swapH : i32
+    ) : void {
+        ctx.table.cmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipes.overlayPipeline());
+        Mem::putQword(setAt, 0, textures.setOf(self.slot));
+        ctx.table.cmdBindDescriptorSets(
+            cb,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipes.layout,
+            1,
+            1,
+            Raw::at(setAt),
+            0,
+            Raw::nil()
+        );
+        self.vp[0] = VkViewport {
+            x: (0.0 as f32),
+            y: (0.0 as f32),
+            width: ((self.texW as f64) as f32),
+            height: ((self.texH as f64) as f32),
+            minDepth: (0.0 as f32),
+            maxDepth: (1.0 as f32),
+        };
+        self.sc[0] = VkRect2D {
+            offset: VkOffset2D { x: 0, y: 0 },
+            extent: VkExtent2D {
+                width: self.layerW.min(self.texW).min(swapW),
+                height: self.layerH.min(self.texH).min(swapH),
+            },
+        };
+        ctx.table.cmdSetViewport(cb, 0, 1, VkAddr::viewport(self.vp));
+        ctx.table.cmdSetScissor(cb, 0, 1, VkAddr::rect2D(self.sc));
+        ctx.table.cmdDraw(cb, 3, 1, 0, 0);
+    }
+
+    /** Destroy the staging buffers. The texture is the texture table's to destroy. */
+    pub(crate) fn release(mut self, ctx : VkContext, heap : GpuHeap) : void {
+        for (i of 0..FRAMES_IN_FLIGHT) {
+            let k : i64 = i as i64;
+            if (!self.staging[k].isNone()) {
+                VkMem::destroyBuffer(ctx, heap, self.staging[k]);
+                self.staging[k] = GpuBuffer::none();
+                self.stageBytes[k] = 0;
+            }
+        }
+    }
+}

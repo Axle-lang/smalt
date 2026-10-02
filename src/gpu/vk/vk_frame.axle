@@ -1,0 +1,183 @@
+// vk_frame — the two blocks the scene shaders read, and who writes them.
+//
+// `shaders/frame.glsl` declares a 432-byte `Frame` uniform block (std140) and a
+// 112-byte `Draw` push-constant block. This file is the other side: the byte offset
+// of every member, and the code that fills them from a `Scene` and a `DrawItem`.
+//
+// The offsets are not trusted to be right because someone counted. `GpuCheck` asserts
+// that the members follow one another with no gap or overlap and that the light arrays
+// are `Scene::MAX_POINT_LIGHTS` long, and `examples/gpu_check` reads every member back
+// at the byte the GLSL comment gives it. What no Axle code can read is the compiled
+// module: a member added to `frame.glsl` must be added here too, and its offset read
+// back out of the SPIR-V (`OpMemberDecorate … Offset`, see `doc/GPU.md`) — the
+// constants are named `FRAME_` / `DRAW_` plus the member, in capitals, so that lookup
+// is mechanical.
+//
+// # Why only `vec4` and `mat4`
+//
+// std140 pads a `vec3` to 16 bytes and gives every array element a 16-byte stride,
+// and a CPU writer that forgets either puts the second light's colour where the
+// first one's range is. Using nothing but `vec4` and `mat4` means every member sits
+// at a multiple of 16 that anyone can count and every write is "four floats".
+//
+// # Clip space
+//
+// `Camera` and `Mat4::perspective` follow OpenGL: Y up, depth in [-w, w]. Vulkan
+// clips Y down and depth in [0, w]. The whole difference is one matrix applied once,
+// here — y' = -y, z' = (z + w) / 2 — so everything above this file, including every
+// matrix a program builds, stays in the convention the rest of the library uses. It
+// preserves counter-clockwise as the front face (`examples/gpu_check` checks both
+// halves of the matrix on points, and `gpu_cube` draws with back faces culled).
+//
+// # Matrices
+//
+// `Mat4` is row-major; GLSL's `mat4` is column-major. A matrix is written column by
+// column, so what the shader's `M * v` reads is the library's `M * v`.
+
+use crate::gpu::scene::{DrawItem, Scene};
+use crate::kernel::mem::Mem;
+use crate::math::mat::Mat4;
+use crate::render::color::Color;
+
+/**
+ * Frames the backend keeps in flight at once: one being recorded while one runs. Each
+ * has its own copy of everything a frame writes — a uniform block, a staging buffer, a
+ * fence — and the graveyard's arithmetic is in units of it.
+ */
+pub(crate) const FRAMES_IN_FLIGHT : i32 = 2;
+
+/** `Frame.viewProj`. */
+pub(crate) const FRAME_VIEW_PROJ : i64 = 0;
+
+/** `Frame.eye`. */
+pub(crate) const FRAME_EYE : i64 = 64;
+
+/** `Frame.sunDir`. */
+pub(crate) const FRAME_SUN_DIR : i64 = 80;
+
+/** `Frame.sunColor`. */
+pub(crate) const FRAME_SUN_COLOR : i64 = 96;
+
+/** `Frame.ambient`. */
+pub(crate) const FRAME_AMBIENT : i64 = 112;
+
+/** `Frame.fogColor`. */
+pub(crate) const FRAME_FOG_COLOR : i64 = 128;
+
+/** `Frame.fogRange`. */
+pub(crate) const FRAME_FOG_RANGE : i64 = 144;
+
+/** `Frame.lightPos` — eight `vec4`. */
+pub(crate) const FRAME_LIGHT_POS : i64 = 160;
+
+/** `Frame.lightCol` — eight `vec4`. */
+pub(crate) const FRAME_LIGHT_COL : i64 = 288;
+
+/** `Frame.counts` — x: point lights in use; yzw: the sky light's colour. */
+pub(crate) const FRAME_COUNTS : i64 = 416;
+
+/** Bytes in the `Frame` block. */
+pub(crate) const FRAME_BYTES : i64 = 432;
+
+/** `Draw.model`. */
+pub(crate) const DRAW_MODEL : i64 = 0;
+
+/** `Draw.albedo`. */
+pub(crate) const DRAW_ALBEDO : i64 = 64;
+
+/** `Draw.params`. */
+pub(crate) const DRAW_PARAMS : i64 = 80;
+
+/**
+ * `Draw.extra` — x: the sun's factor; y: 1 when the vertex colour is sky-lit baked light;
+ * z: the point lights' factor.
+ */
+pub(crate) const DRAW_EXTRA : i64 = 96;
+
+/** Bytes in the `Draw` push block — under the 128 every Vulkan device guarantees. */
+pub(crate) const DRAW_BYTES : i64 = 112;
+
+/** Writers for the shaders' blocks. */
+pub(crate) class VkFrame {
+    /** The pre-multiplied matrix that turns OpenGL clip space into Vulkan's. */
+    pub(crate) static fn clipFix() : Mat4 {
+        return Mat4 { m11: -1.0, m22: 0.5, m23: 0.5 };
+    }
+
+    /** Four floats at byte offset `off` of the block at `base`. */
+    pub(crate) static fn putVec4(base : i64, off : i64, x : f64, y : f64, z : f64, w : f64) : void {
+        let i : i64 = off / 4;
+        Mem::putFloatOf(base, i, x);
+        Mem::putFloatOf(base, i + 1, y);
+        Mem::putFloatOf(base, i + 2, z);
+        Mem::putFloatOf(base, i + 3, w);
+    }
+
+    /** A colour as the `xyz` of a `vec4`, with `w`. */
+    pub(crate) static fn putColor(base : i64, off : i64, c : Color, w : f64) : void {
+        VkFrame::putVec4(base, off, c.r, c.g, c.b, w);
+    }
+
+    /** A `Mat4` at byte offset `off`, column by column. */
+    pub(crate) static fn putMat4(base : i64, off : i64, m : Mat4) : void {
+        VkFrame::putVec4(base, off, m.m00, m.m10, m.m20, m.m30);
+        VkFrame::putVec4(base, off + 16, m.m01, m.m11, m.m21, m.m31);
+        VkFrame::putVec4(base, off + 32, m.m02, m.m12, m.m22, m.m32);
+        VkFrame::putVec4(base, off + 48, m.m03, m.m13, m.m23, m.m33);
+    }
+
+    /** Fill the `Frame` block at `base` (at least `FRAME_BYTES` long) from `scene`. */
+    pub(crate) static fn writeFrame(base : i64, scene : Scene) : void {
+        Mem::clear(base, FRAME_BYTES);
+        VkFrame::putMat4(base, FRAME_VIEW_PROJ, VkFrame::clipFix().mul(scene.viewProjection()));
+        let eye = scene.eye();
+        VkFrame::putVec4(base, FRAME_EYE, eye.x, eye.y, eye.z, 0.0);
+        let sun = scene.sunLight();
+        VkFrame::putVec4(
+            base,
+            FRAME_SUN_DIR,
+            sun.direction.x,
+            sun.direction.y,
+            sun.direction.z,
+            0.0
+        );
+        VkFrame::putColor(base, FRAME_SUN_COLOR, sun.color, 1.0);
+        VkFrame::putColor(base, FRAME_AMBIENT, scene.ambient(), 1.0);
+        let fog = scene.fog();
+        let fogOn : f64 = 0.0;
+        if (fog.isOn()) {
+            fogOn = 1.0;
+        }
+        VkFrame::putColor(base, FRAME_FOG_COLOR, fog.color, fogOn);
+        VkFrame::putVec4(base, FRAME_FOG_RANGE, fog.start, fog.end, 0.0, 0.0);
+        let lights : i32 = scene.lightCount();
+        for (i of 0..lights) {
+            let lamp = scene.lightAt(i);
+            let at : i64 = (i as i64) * 16;
+            VkFrame::putVec4(
+                base,
+                FRAME_LIGHT_POS + at,
+                lamp.position.x,
+                lamp.position.y,
+                lamp.position.z,
+                lamp.range
+            );
+            VkFrame::putColor(base, FRAME_LIGHT_COL + at, lamp.color, 1.0);
+        }
+        let sky = scene.skyLightColor();
+        VkFrame::putVec4(base, FRAME_COUNTS, (lights as f64), sky.r, sky.g, sky.b);
+    }
+
+    /** Fill the `Draw` push block at `base` (at least `DRAW_BYTES` long) from `item`. */
+    pub(crate) static fn writeDraw(base : i64, item : DrawItem) : void {
+        VkFrame::putMat4(base, DRAW_MODEL, item.model);
+        let m = item.material;
+        VkFrame::putColor(base, DRAW_ALBEDO, m.albedo, m.opacity);
+        VkFrame::putVec4(base, DRAW_PARAMS, m.ambient, m.specular, m.shininess, m.cutoff);
+        let sky : f64 = 0.0;
+        if (m.skyLight) {
+            sky = 1.0;
+        }
+        VkFrame::putVec4(base, DRAW_EXTRA, m.directLight, sky, m.lampLight, 0.0);
+    }
+}

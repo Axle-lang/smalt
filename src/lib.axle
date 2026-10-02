@@ -1,4 +1,4 @@
-// smalt — a window, an event queue and a software 3D renderer.
+// smalt — a window, an event queue, and a 3D renderer that is software or GPU.
 //
 // This file is the crate's wiring header: it names every module so the
 // build pulls the whole tree into the compilation unit, and carries no
@@ -17,6 +17,10 @@
 //   render   meshes, textures, the camera, and the software rasteriser
 //   audio    WAV clips, the software mixer, and banks of variants
 //   io       whole-file reads and the BMP decoder
+//   gpu      the renderer a program draws 3-D through: scenes, handles, meshes
+//            built for a GPU, and two backends behind one contract — Vulkan, and
+//            the software rasteriser as the fallback. Above render/ and video/,
+//            below nothing; the Vulkan ABI it speaks is `sys/vk`
 //
 // NOT ONE `use` BELOW NAMES AN OPERATING SYSTEM, and that is the point.
 // A module path resolves to `<path>.axle` when there is one
@@ -61,5 +65,9 @@ use crate::io::{file, fmt, bmp};
 
 use crate::sys::vk::{vk_const, vk_types, vk_out, vk_table, vk_layout_check};
 
-use crate::gpu::{handle, light, image, mesh_builder, scene};
+use crate::gpu::{handle, light, image, mesh_builder, scene, backend, renderer};
+use crate::gpu::soft::backend_soft;
+use crate::gpu::vk::{spirv, vk_error, vk_frame, vk_context, vk_heap, vk_mem, vk_graveyard};
+use crate::gpu::vk::{vk_cmd, vk_pipelines, vk_textures, vk_meshes, vk_swapchain, vk_overlay};
+use crate::gpu::vk::{vk_backend, vk_check};
 use std::numeric::math;

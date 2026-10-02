@@ -1,0 +1,304 @@
+// vk_mem — buffers and images, with memory bound.
+//
+// Vulkan makes a buffer or an image in two steps and leaves the second to the
+// program: create the object, then find memory that satisfies what the *driver*
+// says it needs (`vkGet…MemoryRequirements`) and what the *program* wants of it
+// (mappable? local to the GPU?), then bind. This file is those steps, once, so a
+// texture or a mesh asks for "a staging buffer this big" and gets one.
+//
+// # Which memory
+//
+// A buffer says what it is for with a `MemUse`, and that picks the memory:
+//
+//   * **Stream** — a mesh, a uniform block: written by the CPU, read by the GPU every
+//     frame. `HOST_VISIBLE | HOST_COHERENT` (coherent, so no flush is ever owed), and
+//     `DEVICE_LOCAL` as well when the device has such a type (an integrated GPU always
+//     does; a discrete one has its BAR window, 256 MiB without resizable BAR), so the
+//     GPU reads it at full speed. When that heap is exhausted the plain host-visible
+//     kind takes over.
+//   * **Staging** — the source of a copy, read once by the transfer: host-visible and
+//     coherent, and preferably *not* device-local, so a texture upload or the overlay's
+//     per-frame staging does not eat the small BAR heap the meshes rely on. Any
+//     host-visible coherent type when that is all there is (an integrated GPU).
+//   * **Device** — written only by the GPU: `DEVICE_LOCAL`, or whatever the driver
+//     allows if it has no such type. Images are always this.
+//
+// Everything here is destroyed *immediately*. A resource a frame in flight may still
+// be reading goes through `VkGraveyard` instead, which calls these once it is safe.
+
+use crate::gpu::vk::vk_context::{CTX_SCRATCH_REQUIREMENTS, VkContext};
+use crate::gpu::vk::vk_error::VkErr;
+use crate::gpu::vk::vk_heap::{GpuHeap, HeapAlloc};
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::sys::vk::vk_const::{
+    VK_COMPONENT_SWIZZLE_IDENTITY, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_TILING_OPTIMAL,
+    VK_IMAGE_TYPE_2D, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, VK_SAMPLE_COUNT_1_BIT, VK_SHARING_MODE_EXCLUSIVE,
+};
+use crate::sys::vk::vk_out::{
+    VKO_MEMORY_REQUIREMENTS_ALIGNMENT, VKO_MEMORY_REQUIREMENTS_MEMORY_TYPE_BITS,
+    VKO_MEMORY_REQUIREMENTS_SIZE,
+};
+use crate::sys::vk::vk_types::{
+    VkBufferCreateInfo, VkComponentMapping, VkExtent3D, VkImageCreateInfo, VkImageSubresourceRange,
+    VkImageViewCreateInfo, VkInit,
+};
+
+/** What a buffer is for, which decides the memory behind it (see the module header). */
+pub(crate) enum MemUse : i8 {
+    /** Written and read by the GPU only: device-local, not mapped. */
+    Device = 0,
+
+    /** Written by the CPU, read by the GPU every frame: mapped, device-local if it can be. */
+    Stream = 1,
+
+    /** Written by the CPU, read once by a copy: mapped, kept out of device-local memory if it can be. */
+    Staging = 2,
+}
+
+/** A buffer and the piece of memory behind it. */
+pub(crate) struct GpuBuffer {
+    /** `VkBuffer`; 0 when creation failed. */
+    pub buffer : i64 = 0;
+
+    /** The memory it is bound to. */
+    pub alloc  : HeapAlloc;
+
+    /** Bytes requested. */
+    pub size   : i64 = 0;
+
+    /** The buffer that names nothing — what a failed creation answers. */
+    pub(crate) static fn none() : GpuBuffer {
+        return GpuBuffer { buffer: 0, alloc: HeapAlloc::none(), size: 0 };
+    }
+
+    /** Whether creation failed. */
+    pub(crate) fn isNone(self) : bool {
+        return self.buffer == 0;
+    }
+
+    /** The address to write through, for a host-visible buffer; 0 for a device-local one. */
+    pub(crate) fn mapped(self) : i64 {
+        return self.alloc.mapped;
+    }
+}
+
+/** An image and the piece of memory behind it. */
+pub(crate) struct GpuImage {
+    /** `VkImage`; 0 when creation failed. */
+    pub image : i64 = 0;
+
+    /** The memory it is bound to. */
+    pub alloc : HeapAlloc;
+
+    /** The image that names nothing. */
+    pub(crate) static fn none() : GpuImage {
+        return GpuImage { image: 0, alloc: HeapAlloc::none() };
+    }
+
+    /** Whether creation failed. */
+    pub(crate) fn isNone(self) : bool {
+        return self.image == 0;
+    }
+}
+
+/** Creation and destruction of buffers and images. */
+pub(crate) class VkMem {
+    /**
+     * A buffer of `size` bytes for `usage`, in the memory `kind` calls for.
+     *
+     * `Stream` and `Staging` buffers are mapped and coherent (see the module header);
+     * `Device` ones are not mapped. `GpuBuffer::none()` when the driver, the heap or
+     * the address space is out.
+     */
+    pub(crate) static fn makeBuffer(
+        ctx : VkContext,
+        heap : GpuHeap,
+        size : i64,
+        usage : i32,
+        kind : MemUse
+    ) : GpuBuffer {
+        if (size <= 0) {
+            return GpuBuffer::none();
+        }
+        let info : VkBufferCreateInfo = VkInit::bufferCreateInfo();
+        info.size = size;
+        info.usage = usage;
+        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        let r : i32 = ctx.table.createBuffer(ctx.device, info, Raw::at(ctx.scratch));
+        if (!VkErr::ok(r)) {
+            return GpuBuffer::none();
+        }
+        let buffer : i64 = Mem::qwordAt(ctx.scratch, 0);
+        let req : i64 = ctx.scratch + CTX_SCRATCH_REQUIREMENTS;
+        ctx.table.getBufferMemoryRequirements(ctx.device, buffer, Raw::at(req));
+        let need : i64 = Mem::qwordAt(req, VKO_MEMORY_REQUIREMENTS_SIZE);
+        let align : i64 = Mem::qwordAt(req, VKO_MEMORY_REQUIREMENTS_ALIGNMENT);
+        let bits : i32 = Mem::dwordAt(req, VKO_MEMORY_REQUIREMENTS_MEMORY_TYPE_BITS);
+
+        let alloc : HeapAlloc = HeapAlloc::none();
+        if (kind == MemUse::Device) {
+            let local : i32 = heap.pick(bits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+            if (local < 0) {
+                local = heap.pick(bits, 0, 0);
+            }
+            if (local >= 0) {
+                alloc = heap.alloc(ctx, local, 1, need, align);
+            }
+        } else {
+            let both : i32 = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            let first : i32 = -1;
+            if (kind == MemUse::Stream) {
+                first = heap.pick(bits, both | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+            } else {
+                first = heap.pick(bits, both, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            }
+            if (first >= 0) {
+                alloc = heap.alloc(ctx, first, 1, need, align);
+            }
+            if (alloc.isNone()) {
+                let plain : i32 = heap.pick(bits, both, 0);
+                if (plain >= 0 && plain != first) {
+                    alloc = heap.alloc(ctx, plain, 1, need, align);
+                }
+            }
+        }
+        if (alloc.isNone()) {
+            ctx.table.destroyBuffer(ctx.device, buffer);
+            return GpuBuffer::none();
+        }
+        r = ctx.table.bindBufferMemory(
+            ctx.device,
+            buffer,
+            VkMem::memoryOf(heap, alloc),
+            alloc.offset
+        );
+        if (!VkErr::ok(r)) {
+            ctx.table.destroyBuffer(ctx.device, buffer);
+            heap.release(ctx, alloc);
+            return GpuBuffer::none();
+        }
+        return GpuBuffer { buffer: buffer, alloc: alloc, size: size };
+    }
+
+    /** The `VkDeviceMemory` an allocation lives in. */
+    pub(crate) static fn memoryOf(heap : GpuHeap, a : HeapAlloc) : i64 {
+        return heap.memoryHandle(a.block);
+    }
+
+    /** Destroy a buffer and give its memory back. Only when no submitted work can still read it. */
+    pub(crate) static fn destroyBuffer(ctx : VkContext, heap : GpuHeap, b : GpuBuffer) : void {
+        if (b.buffer != 0) {
+            ctx.table.destroyBuffer(ctx.device, b.buffer);
+            heap.release(ctx, b.alloc);
+        }
+    }
+
+    /**
+     * A 2-D image of `layers` array layers and `mips` mip levels, optimal tiling,
+     * in device-local memory. Created in `UNDEFINED` layout: the caller transitions it.
+     */
+    pub(crate) static fn makeImage(
+        ctx : VkContext,
+        heap : GpuHeap,
+        format : i32,
+        w : i32,
+        h : i32,
+        mips : i32,
+        layers : i32,
+        usage : i32
+    ) : GpuImage {
+        let info : VkImageCreateInfo = VkInit::imageCreateInfo();
+        info.imageType = VK_IMAGE_TYPE_2D;
+        info.format = format;
+        info.extent = VkExtent3D { width: w, height: h, depth: 1 };
+        info.mipLevels = mips;
+        info.arrayLayers = layers;
+        info.samples = VK_SAMPLE_COUNT_1_BIT;
+        info.tiling = VK_IMAGE_TILING_OPTIMAL;
+        info.usage = usage;
+        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        let r : i32 = ctx.table.createImage(ctx.device, info, Raw::at(ctx.scratch));
+        if (!VkErr::ok(r)) {
+            return GpuImage::none();
+        }
+        let image : i64 = Mem::qwordAt(ctx.scratch, 0);
+        let req : i64 = ctx.scratch + CTX_SCRATCH_REQUIREMENTS;
+        ctx.table.getImageMemoryRequirements(ctx.device, image, Raw::at(req));
+        let need : i64 = Mem::qwordAt(req, VKO_MEMORY_REQUIREMENTS_SIZE);
+        let align : i64 = Mem::qwordAt(req, VKO_MEMORY_REQUIREMENTS_ALIGNMENT);
+        let bits : i32 = Mem::dwordAt(req, VKO_MEMORY_REQUIREMENTS_MEMORY_TYPE_BITS);
+
+        let local : i32 = heap.pick(bits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+        if (local < 0) {
+            local = heap.pick(bits, 0, 0);
+        }
+        let alloc : HeapAlloc = HeapAlloc::none();
+        if (local >= 0) {
+            alloc = heap.alloc(ctx, local, 0, need, align);
+        }
+        if (alloc.isNone()) {
+            ctx.table.destroyImage(ctx.device, image);
+            return GpuImage::none();
+        }
+        r = ctx.table.bindImageMemory(
+            ctx.device,
+            image,
+            VkMem::memoryOf(heap, alloc),
+            alloc.offset
+        );
+        if (!VkErr::ok(r)) {
+            ctx.table.destroyImage(ctx.device, image);
+            heap.release(ctx, alloc);
+            return GpuImage::none();
+        }
+        return GpuImage { image: image, alloc: alloc };
+    }
+
+    /** Destroy an image and give its memory back. Only when no submitted work can still read it. */
+    pub(crate) static fn destroyImage(ctx : VkContext, heap : GpuHeap, i : GpuImage) : void {
+        if (i.image != 0) {
+            ctx.table.destroyImage(ctx.device, i.image);
+            heap.release(ctx, i.alloc);
+        }
+    }
+
+    /**
+     * A view of an image: 2-D or 2-D-array, `mips` levels from the first and `layers`
+     * layers from the first, identity swizzle. 0 when it could not be made.
+     */
+    pub(crate) static fn makeView(
+        ctx : VkContext,
+        image : i64,
+        format : i32,
+        viewType : i32,
+        aspect : i32,
+        mips : i32,
+        layers : i32
+    ) : i64 {
+        let info : VkImageViewCreateInfo = VkInit::imageViewCreateInfo();
+        info.image = image;
+        info.viewType = viewType;
+        info.format = format;
+        info.components = VkComponentMapping {
+            r: VK_COMPONENT_SWIZZLE_IDENTITY,
+            g: VK_COMPONENT_SWIZZLE_IDENTITY,
+            b: VK_COMPONENT_SWIZZLE_IDENTITY,
+            a: VK_COMPONENT_SWIZZLE_IDENTITY,
+        };
+        info.subresourceRange = VkImageSubresourceRange {
+            aspectMask: aspect,
+            baseMipLevel: 0,
+            levelCount: mips,
+            baseArrayLayer: 0,
+            layerCount: layers,
+        };
+        let r : i32 = ctx.table.createImageView(ctx.device, info, Raw::at(ctx.scratch));
+        if (!VkErr::ok(r)) {
+            return 0;
+        }
+        return Mem::qwordAt(ctx.scratch, 0);
+    }
+}

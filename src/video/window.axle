@@ -190,7 +190,13 @@ pub class Window : Closeable {
         return self.sys.takeMinimiseEdge();
     }
 
-    /** Make a hidden window visible and bring it forward. */
+    /**
+     * Make a hidden window visible and bring it forward.
+     *
+     * On Wayland a window is shown by attaching its software framebuffer again, so on
+     * a window a GPU `Renderer` presents to, `show` puts the CPU's last picture over the
+     * GPU's until the next frame: hide and show belong to the CPU path there.
+     */
     pub fn show(mut self) : void {
         self.sys.show();
     }

@@ -1,0 +1,271 @@
+// backend_soft — the CPU rasteriser, behind the same contract as the GPU.
+//
+// This is what makes the `Renderer` promise keepable: a program written against
+// `Scene` and handles runs on a machine with no Vulkan, and nobody had to write it
+// twice. It wraps `SoftDevice` and does the translation the GPU does natively —
+// meshes and textures are converted once at upload, the scene is walked in the
+// order `Scene::prepare` chose, and the 2-D layer is composited over the finished
+// frame.
+//
+// # What the CPU cannot show
+//
+// Said once, here, because a program should be able to predict the fallback.
+//
+//   * **Vertex colour is dropped.** The CPU `Vertex` has none (see the module
+//     header of `render/vertex`), so a mesh whose light is baked into its vertices
+//     draws evenly lit. `Material::baked` and `Material::voxel` switch the sun off
+//     for the draw, which is the closest the CPU gets; the scene's sky light colour
+//     (`Scene::setSkyLight`) has nothing to act on and is ignored.
+//   * **`Material::directLight` is on or off.** The GPU scales the sun by it; the
+//     CPU can only swap the sun out, so below 0.5 is off and the rest is on.
+//   * **No point lights, no fog.** The software shader has one directional light.
+//   * **No alpha test, no blending, no texture layers.** `Material::opacity` and
+//     `cutoff` are ignored, and a texture array shows layer 0.
+//   * **Mip chains, anisotropy and sampler choices are ignored;** the CPU samples
+//     nearest.
+//
+// Everything else — camera, sun, ambient, clear colour, the overlay — is honoured,
+// except that the ambient's hue is lost: the CPU has one white ambient, so only the
+// scene ambient's brightness is folded into the material's. The overlay is laid one
+// pixel per pixel from the top-left corner over what both it and the framebuffer
+// cover, as the GPU lays it.
+//
+// Slots are linear-scanned for a free one. That is O(capacity) per upload, which on
+// a path whose purpose is "it still works" is the right trade for not having a
+// second free list to get wrong.
+
+use crate::gpu::backend::{GpuBackend, OverlayView};
+use crate::gpu::image::{Image, SamplerDesc};
+use crate::gpu::mesh_builder::MeshBuilder;
+use crate::gpu::scene::{DrawItem, Scene};
+use crate::kernel::mem::Mem;
+use crate::render::color::Color;
+use crate::render::mesh::Mesh;
+use crate::render::soft::device_soft::SoftDevice;
+use crate::render::texture::Texture;
+use crate::render::vertex::{DirectionalLight, Material};
+use crate::video::window::Window;
+
+/** The software device, as a `GpuBackend`. */
+pub(crate) class SoftBackend : GpuBackend, Closeable {
+    device   : SoftDevice;
+    meshes   : Mesh[];
+    textures : Texture[];
+    meshLive : i32[];
+    texLive  : i32[];
+    meshCap  : i32;
+    texCap   : i32;
+    released : bool = false;
+
+    /** A software backend drawing at `w` by `h`, with room for the given resource counts. */
+    constructor(w : i32, h : i32, maxMeshes : i32, maxTextures : i32) {
+        self.device = new SoftDevice(w, h);
+        self.meshCap = maxMeshes.max(1);
+        self.texCap = maxTextures.max(1);
+        self.meshes = malloc<Mesh>(self.meshCap as i64);
+        self.textures = malloc<Texture>(self.texCap as i64);
+        self.meshLive = malloc<i32>(self.meshCap as i64);
+        self.texLive = malloc<i32>(self.texCap as i64);
+        for (i of 0..self.meshCap) {
+            self.meshLive[i as i64] = 0;
+        }
+        for (i of 0..self.texCap) {
+            self.texLive[i as i64] = 0;
+        }
+    }
+
+    /** "software". */
+    pub(crate) fn name(self) : string {
+        return "software";
+    }
+
+    /** Always false: this is the CPU. */
+    pub(crate) fn isGpu(self) : bool {
+        return false;
+    }
+
+    /** Always false: the CPU has nothing to lose. */
+    pub(crate) fn isLost(self) : bool {
+        return false;
+    }
+
+    /** Framebuffer width. */
+    pub(crate) fn width(self) : i32 {
+        return self.device.width();
+    }
+
+    /** Framebuffer height. */
+    pub(crate) fn height(self) : i32 {
+        return self.device.height();
+    }
+
+    /** Match the framebuffer to a new client size. */
+    pub(crate) fn resize(mut self, w : i32, h : i32) : void {
+        self.device.resize(w, h);
+    }
+
+    /** The first free mesh slot, or -1. */
+    pub(file) fn freeMeshSlot(self) : i32 {
+        for (i of 0..self.meshCap) {
+            if (self.meshLive[i as i64] == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** The first free texture slot, or -1. */
+    pub(file) fn freeTextureSlot(self) : i32 {
+        for (i of 0..self.texCap) {
+            if (self.texLive[i as i64] == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Convert `mesh` to a CPU mesh and keep it. */
+    pub(crate) fn createMesh(mut self, mesh : MeshBuilder) : i32 {
+        if (mesh.isEmpty()) {
+            return -1;
+        }
+        let slot : i32 = self.freeMeshSlot();
+        if (slot < 0) {
+            return -1;
+        }
+        self.meshes[slot as i64] = mesh.toMesh();
+        self.meshLive[slot as i64] = 1;
+        return slot;
+    }
+
+    /** Replace the geometry in `slot`. */
+    pub(crate) fn updateMesh(mut self, slot : i32, mesh : MeshBuilder) : bool {
+        if (slot < 0 || slot >= self.meshCap || self.meshLive[slot as i64] == 0 || mesh.isEmpty()) {
+            return false;
+        }
+        self.meshes[slot as i64] = mesh.toMesh();
+        return true;
+    }
+
+    /**
+     * Free the slot. The CPU mesh is swapped for an empty one rather than left until
+     * the slot is reused, so memory follows the meshes alive, not the most ever alive.
+     */
+    pub(crate) fn destroyMesh(mut self, slot : i32) : void {
+        if (slot >= 0 && slot < self.meshCap && self.meshLive[slot as i64] != 0) {
+            self.meshes[slot as i64] = new Mesh(0, 0);
+            self.meshLive[slot as i64] = 0;
+        }
+    }
+
+    /** Keep layer 0 of `image` as a CPU texture; the sampler choices do not apply. */
+    pub(crate) fn createTexture(mut self, image : Image, sampler : SamplerDesc) : i32 {
+        let slot : i32 = self.freeTextureSlot();
+        if (slot < 0) {
+            return -1;
+        }
+        self.textures[slot as i64] = image.toTexture(0);
+        self.texLive[slot as i64] = 1;
+        return slot;
+    }
+
+    /** Free the slot, and the CPU texture with it (swapped for a one-texel one). */
+    pub(crate) fn destroyTexture(mut self, slot : i32) : void {
+        if (slot >= 0 && slot < self.texCap && self.texLive[slot as i64] != 0) {
+            self.textures[slot as i64] = new Texture(1, 1);
+            self.texLive[slot as i64] = 0;
+        }
+    }
+
+    /**
+     * The material the CPU shades with: the program's, with the scene's ambient
+     * colour folded into its ambient factor (the CPU has one white ambient).
+     */
+    pub(file) static fn shaded(m : Material, ambient : Color) : Material {
+        let out : Material = m;
+        out.ambient = m.ambient * ((ambient.r + ambient.g + ambient.b) / 3.0);
+        return out;
+    }
+
+    /** Draw the scene with the CPU rasteriser, composite the overlay, and blit to `win`. */
+    pub(crate) fn render(mut self, scene : Scene, overlay : OverlayView, win : Window) : bool {
+        if (self.released || win.minimised() || !win.isOpen()) {
+            return false;
+        }
+        let sun : DirectionalLight = scene.sunLight();
+        let dark : DirectionalLight = DirectionalLight::make(sun.direction, Color::black());
+        let lit : bool = true;
+        self.device.setViewProjection(scene.viewProjection(), scene.eye());
+        self.device.setLight(sun);
+        self.device.beginFrame(scene.clearColor());
+        let ambient : Color = scene.ambient();
+        let n : i32 = scene.drawCount();
+        for (k of 0..n) {
+            let it : DrawItem = scene.item(scene.orderAt(k));
+            let ok : bool = it.meshSlot >= 0 && it.meshSlot < self.meshCap && it.texSlot >= 0 && it.texSlot < self.texCap;
+            if (ok) {
+                ok = self.meshLive[it.meshSlot as i64] != 0 && self.texLive[it.texSlot as i64] != 0;
+            }
+            if (ok) {
+                let wantLit : bool = it.material.directLight >= 0.5;
+                if (wantLit != lit) {
+                    if (wantLit) {
+                        self.device.setLight(sun);
+                    } else {
+                        self.device.setLight(dark);
+                    }
+                    lit = wantLit;
+                }
+                self.device.drawMesh(
+                    self.meshes[it.meshSlot as i64],
+                    it.model,
+                    self.textures[it.texSlot as i64],
+                    SoftBackend::shaded(it.material, ambient)
+                );
+            }
+        }
+        if (overlay.used) {
+            self.composite(overlay);
+        }
+        self.device.endFrame(win);
+        return true;
+    }
+
+    /**
+     * Copy every drawn (non-zero) word of the 2-D layer over the framebuffer, one pixel
+     * per pixel from the top-left, where the two overlap.
+     */
+    pub(file) fn composite(mut self, overlay : OverlayView) : void {
+        let px : i32[] = self.device.pixels();
+        let fw : i64 = self.device.width() as i64;
+        let w : i64 = (overlay.w as i64).min(fw);
+        let h : i64 = (overlay.h as i64).min(self.device.height() as i64);
+        for (y of 0..h) {
+            for (x of 0..w) {
+                let word : i32 = Mem::wordOf(overlay.base, y * (overlay.w as i64) + x);
+                if (word != 0) {
+                    px[y * fw + x] = word;
+                }
+            }
+        }
+    }
+
+    /** Release the device; a second call does nothing. */
+    pub(crate) fn release(mut self) : void {
+        if (self.released) {
+            return;
+        }
+        self.released = true;
+        self.device.close();
+    }
+
+    /**
+     * Release the device's blit path — the `Closeable` door, for a backend that was never
+     * handed to a `Renderer`. One that was is released through `release`, once.
+     */
+    pub(crate) fn close(self) : void {
+        if (!self.released) {
+            self.device.close();
+        }
+    }
+}

@@ -1,0 +1,511 @@
+// renderer — the one object a program draws 3-D through.
+//
+// ```
+// let gfx = new Renderer(win, RendererDesc { vsync: true })?;
+// defer gfx.close();
+//
+// let cube  = gfx.uploadMesh(builder);
+// let atlas = gfx.uploadTexture(image, SamplerDesc { nearest: true });
+//
+// let scene = new Scene(256);
+// while (running) {
+//     scene.reset();
+//     scene.setCamera(camera);
+//     scene.add(cube, atlas, Material::baked(), model);
+//     gfx.render(scene, win);
+// }
+// ```
+//
+// That is the whole surface a game touches. There is no instance, no queue, no
+// command buffer, no descriptor, no `beginFrame` / `endFrame` to pair, and no
+// vocabulary that belongs to one backend: the same program runs on a GPU, and on
+// a machine with none, because the first thing `Renderer` does is pick.
+//
+// A renderer belongs to the window it was made on. `render` takes the window again
+// because the window is the program's to own, but it must be that one: another
+// window is refused (false), rather than drawn to on one backend and not the other.
+//
+// # Picking
+//
+// `Backend::Auto` (the default) asks for Vulkan and, if the machine has no loader,
+// no usable device, or no way to present to this window, takes the CPU rasteriser
+// instead — `backendName()` says which, and `fallbackReason()` says why. `Gpu`
+// refuses to fall back and raises `PlatformError` from the constructor: a program
+// that only makes sense on a GPU should fail where it can say so. `Software`
+// never asks.
+//
+// # The 2-D layer
+//
+// `overlay()` is a `Frame` — the same clip rectangle and primitives, the same
+// `BitmapFont` — over a layer that is composited on top of the finished 3-D frame.
+// A HUD written against `Surface::frame()` or `SoftDevice::frame()` runs on this
+// unchanged. The layer is cleared the first time it is asked for in a frame and is
+// repainted from nothing each frame, which is what an immediate-mode HUD does
+// anyway. A pixel that is entirely zero is transparent: to draw black, write
+// 0x010101. The layer is laid over the frame one pixel per pixel from the top-left
+// corner, on either backend; where the two sizes differ (a swapchain the window
+// system clamped), what does not overlap is not drawn.
+//
+// The layer's storage only grows, and storage it outgrew is kept until `close()`:
+// a `Frame` taken before a resize still writes into memory the renderer owns — what
+// it draws is not shown, but nothing is corrupted. Take the overlay fresh each frame.
+//
+// # Ownership
+//
+// The renderer owns every mesh and texture. A program holds handles
+// (`gpu::handle`), releases what it is done with, and may forget the rest:
+// `close()` frees whatever is left. A handle names one renderer: each one numbers
+// its handles from a different starting point, so a handle kept from a renderer
+// that was closed (the fallback after `isLost`) resolves to nothing in its
+// successor instead of to whatever took its index.
+//
+// After `close()` the renderer answers as an empty one: uploads give none handles,
+// `render` gives false, and a second `close()` does nothing.
+//
+// # Why the backend sits in a one-element array
+//
+// The backend is chosen at run time, so it is held as `dyn GpuBackend`. The shape
+// the library already compiles for holding a trait object it owns is an array of
+// them with the value handed over through an `own` parameter (`core::pool`), so that
+// is the shape used here rather than a field type nothing else exercises.
+
+use crate::core::error::PlatformError;
+use crate::gpu::backend::{Backend, GpuBackend, OverlayView, RendererDesc};
+use crate::gpu::handle::{HandleTable, MeshHandle, TextureHandle};
+use crate::gpu::image::{Image, SamplerDesc};
+use crate::gpu::mesh_builder::MeshBuilder;
+use crate::gpu::scene::{DrawItem, Scene};
+use crate::gpu::soft::backend_soft::SoftBackend;
+use crate::gpu::vk::vk_backend::VkBackend;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::platform::sys_clock::SysClock;
+use crate::render::frame::Frame;
+use crate::video::window::Window;
+
+/** Layers a renderer outgrew and keeps until `close()`; one per doubling, so never many. */
+const RENDERER_RETIRED : i32 = 32;
+
+/** Draws scenes, on a GPU when there is one. */
+pub class Renderer : Closeable {
+    backends  : dyn GpuBackend[];
+    meshes    : HandleTable;
+    textures  : HandleTable;
+    white     : TextureHandle = TextureHandle::none();
+
+    /** The window this renderer draws to, by its native handle. */
+    winId     : i64 = 0;
+
+    /** The 2-D layer: a raw block of `layerCap` words, `layerW` x `layerH` of them in use. */
+    layer     : i64 = 0;
+    layerCap  : i64 = 0;
+    layerW    : i32;
+    layerH    : i32;
+    layerUsed : bool = false;
+
+    /** Blocks the layer outgrew, kept for any `Frame` still pointing into one. */
+    retired   : i64[];
+    retiredN  : i32 = 0;
+
+    reason : string = "";
+    closed : bool = false;
+
+    /**
+     * Pick a backend and open it on `win`.
+     *
+     * Raises `PlatformError` only when `desc.backend` is `Gpu` and no GPU could be
+     * used; `Auto` and `Software` always produce a working renderer. A negative count
+     * in `desc` is read as zero (one mesh, at least, is always room for).
+     */
+    constructor(win : Window, desc : RendererDesc) ! PlatformError {
+        // The table sizes, decided once and handed to whichever backend opens: the
+        // program's meshes, and its textures plus one — the white texel, the renderer's
+        // own. What a backend needs for itself (the GPU's overlay) is its own business.
+        let meshSlots : i32 = desc.maxMeshes.max(1);
+        let textureSlots : i32 = desc.maxTextures.max(0) + 1;
+        let seed : i32 = Renderer::handleSeed(win);
+        self.meshes = new HandleTable(meshSlots, seed);
+        self.textures = new HandleTable(textureSlots, seed ^ 0x5A5A5A);
+        self.backends = malloc<dyn GpuBackend>(1);
+        self.retired = malloc<i64>(RENDERER_RETIRED as i64);
+        self.winId = Raw::addr(win.sys.handle());
+        self.layerW = win.width().max(1);
+        self.layerH = win.height().max(1);
+        self.layerCap = (self.layerW as i64) * (self.layerH as i64);
+        self.layer = Mem::takeZeroed(self.layerCap * 4);
+        if (self.layer == 0) {
+            throw PlatformError("renderer: out of memory taking the 2-D layer");
+        }
+
+        let opened : bool = false;
+        if (desc.backend != Backend::Software) {
+            try {
+                let vk = new VkBackend(win, desc, meshSlots, textureSlots)?;
+                self.adopt(vk);
+                opened = true;
+            } catch e : PlatformError {
+                if (desc.backend == Backend::Gpu) {
+                    Mem::release(self.layer);
+                    throw PlatformError(e.message);
+                }
+                self.reason = e.message;
+            }
+        }
+        if (opened) {
+            self.white = self.uploadTexture(
+                Image::solid(-1),
+                SamplerDesc { nearest: true, mipmaps: false }
+            );
+            if (self.white.isNone()) {
+                // Without it every untextured draw would be skipped for the renderer's
+                // whole life: a GPU that cannot hold one texel is not one to draw with.
+                let b : dyn GpuBackend = self.backends[0];
+                b.release();
+                if (desc.backend == Backend::Gpu) {
+                    Mem::release(self.layer);
+                    throw PlatformError("vulkan: could not upload the white texture");
+                }
+                self.reason = "vulkan: could not upload the white texture";
+                opened = false;
+            }
+        }
+        if (!opened) {
+            // Handed straight to `adopt`: a named binding passed to an `own` parameter
+            // still reads as unclosed to the E0511 check.
+            self.adopt(
+                new SoftBackend(self.layerW, self.layerH, meshSlots, textureSlots)
+            );
+        }
+        if (self.white.isNone()) {
+            self.white = self.uploadTexture(
+                Image::solid(-1),
+                SamplerDesc { nearest: true, mipmaps: false }
+            );
+        }
+    }
+
+    /**
+     * Where this renderer's handle generations start: the clock at start-up mixed with
+     * the window, so two renderers — the one `isLost` retired and the one that replaced
+     * it — almost never number a slot alike. Positive and far from the wrap.
+     */
+    pub(file) static fn handleSeed(win : Window) : i32 {
+        let clock = new SysClock();
+        defer clock.close();
+        // xorshift64: shifts and exclusive-ors only, so nothing here can overflow.
+        let x : i64 = clock.counter() ^ (Raw::addr(win.sys.handle()) << 7) ^ 1;
+        x = x ^ (x << 13);
+        x = x ^ (x >>> 7);
+        x = x ^ (x << 17);
+        return ((x & 0x3FFFFFFF) as i32) | 1;
+    }
+
+    /** Take ownership of the chosen backend. */
+    pub(file) fn adopt(mut self, own b : dyn GpuBackend) : void {
+        self.backends[0] = b;
+    }
+
+    /**
+     * Whether `win` is the window this renderer was made on. The window system's own
+     * handle, not the object: a program never holds two objects over one window.
+     */
+    pub(file) fn ownsWindow(self, win : Window) : bool {
+        return Raw::addr(win.sys.handle()) == self.winId;
+    }
+
+    /** What is drawing: "vulkan: <device kind>" or "software". */
+    pub fn backendName(self) : string {
+        let b : dyn GpuBackend = self.backends[0];
+        return b.name();
+    }
+
+    /** Whether a GPU is drawing. */
+    pub fn isGpu(self) : bool {
+        let b : dyn GpuBackend = self.backends[0];
+        return b.isGpu();
+    }
+
+    /**
+     * Whether the GPU stopped answering — the device was lost, the window's surface was
+     * lost, or the driver ran out of memory. `render` will keep returning false: drop
+     * this `Renderer` and make one with `Backend::Software`. Always false on the CPU.
+     */
+    pub fn isLost(self) : bool {
+        let b : dyn GpuBackend = self.backends[0];
+        return b.isLost();
+    }
+
+    /** Why `Auto` did not get a GPU; empty when it did or was not asked to try. */
+    pub fn fallbackReason(self) : string {
+        return self.reason;
+    }
+
+    /** Framebuffer width, in pixels. */
+    pub fn width(self) : i32 {
+        let b : dyn GpuBackend = self.backends[0];
+        return b.width();
+    }
+
+    /** Framebuffer height, in pixels. */
+    pub fn height(self) : i32 {
+        let b : dyn GpuBackend = self.backends[0];
+        return b.height();
+    }
+
+    /**
+     * The texture an untextured draw uses — one opaque white texel. The renderer's
+     * own: `releaseTexture` ignores it.
+     */
+    pub fn whiteTexture(self) : TextureHandle {
+        return self.white;
+    }
+
+    /**
+     * Upload geometry; a handle, or `MeshHandle::none()` when the backend or the
+     * table is full (a draw with a none handle is skipped).
+     *
+     * An empty builder gets a valid handle that draws nothing, so a program can
+     * hold one handle per chunk and `updateMesh` it whatever the chunk holds.
+     */
+    pub fn uploadMesh(mut self, mesh : MeshBuilder) : MeshHandle {
+        if (self.closed) {
+            return MeshHandle::none();
+        }
+        let slot : i32 = HandleTable::EMPTY;
+        let b : dyn GpuBackend = self.backends[0];
+        if (!mesh.isEmpty()) {
+            slot = b.createMesh(mesh);
+            if (slot < 0) {
+                return MeshHandle::none();
+            }
+        }
+        let index : i32 = self.meshes.acquire(slot);
+        if (index < 0) {
+            if (slot >= 0) {
+                b.destroyMesh(slot);
+            }
+            return MeshHandle::none();
+        }
+        return MeshHandle { index: index, gen: self.meshes.generation(index) };
+    }
+
+    /**
+     * Replace a mesh's geometry; whether it was. False for a stale handle, or when
+     * the backend has no room for the new geometry (the old one then stays).
+     *
+     * Safe while earlier frames that drew the old geometry are still on the GPU. An
+     * empty builder leaves the handle valid and drawing nothing.
+     */
+    pub fn updateMesh(mut self, handle : MeshHandle, mesh : MeshBuilder) : bool {
+        if (self.closed || !self.meshes.holds(handle.index, handle.gen)) {
+            return false;
+        }
+        let slot : i32 = self.meshes.resolve(handle.index, handle.gen);
+        let b : dyn GpuBackend = self.backends[0];
+        if (mesh.isEmpty()) {
+            if (slot >= 0) {
+                b.destroyMesh(slot);
+            }
+            return self.meshes.rebind(handle.index, handle.gen, HandleTable::EMPTY);
+        }
+        if (slot >= 0) {
+            return b.updateMesh(slot, mesh);
+        }
+        let fresh : i32 = b.createMesh(mesh);
+        if (fresh < 0) {
+            return false;
+        }
+        return self.meshes.rebind(handle.index, handle.gen, fresh);
+    }
+
+    /** Release a mesh. A stale or none handle is ignored. */
+    pub fn releaseMesh(mut self, handle : MeshHandle) : void {
+        if (self.closed) {
+            return;
+        }
+        let slot : i32 = self.meshes.release(handle.index, handle.gen);
+        if (slot >= 0) {
+            let b : dyn GpuBackend = self.backends[0];
+            b.destroyMesh(slot);
+        }
+    }
+
+    /** Upload an image; a handle, or `TextureHandle::none()` when it could not be. */
+    pub fn uploadTexture(mut self, image : Image, sampler : SamplerDesc) : TextureHandle {
+        if (self.closed) {
+            return TextureHandle::none();
+        }
+        let b : dyn GpuBackend = self.backends[0];
+        let slot : i32 = b.createTexture(image, sampler);
+        if (slot < 0) {
+            return TextureHandle::none();
+        }
+        let index : i32 = self.textures.acquire(slot);
+        if (index < 0) {
+            b.destroyTexture(slot);
+            return TextureHandle::none();
+        }
+        return TextureHandle { index: index, gen: self.textures.generation(index) };
+    }
+
+    /** Release a texture. A stale or none handle, and `whiteTexture()`, are ignored. */
+    pub fn releaseTexture(mut self, handle : TextureHandle) : void {
+        if (self.closed || (handle.index == self.white.index && handle.gen == self.white.gen)) {
+            return;
+        }
+        let slot : i32 = self.textures.release(handle.index, handle.gen);
+        if (slot >= 0) {
+            let b : dyn GpuBackend = self.backends[0];
+            b.destroyTexture(slot);
+        }
+    }
+
+    /**
+     * Resize the 2-D layer to `w` x `h`.
+     *
+     * The program drew this frame's HUD into the layer before `render` saw the new
+     * size, so what overlaps is carried over: dropping it would blank the HUD for every
+     * frame of a drag-resize. The rest is cleared. Within the block's capacity the
+     * rows are moved in place — forward when they shrink, backward when they grow, so
+     * no word is overwritten before it is read; past it, a block twice the size is
+     * taken and the old one retired (see the module header).
+     */
+    pub(file) fn resizeLayer(mut self, w : i32, h : i32) : void {
+        if (w == self.layerW && h == self.layerH) {
+            return;
+        }
+        let need : i64 = (w as i64) * (h as i64);
+        let oldW : i64 = self.layerW as i64;
+        let newW : i64 = w as i64;
+        let rows : i32 = h.min(self.layerH);
+        if (need > self.layerCap && self.retiredN < RENDERER_RETIRED) {
+            let cap : i64 = need.max(self.layerCap * 2);
+            let fresh : i64 = Mem::takeZeroed(cap * 4);
+            if (fresh == 0) {
+                // No memory for a bigger layer: keep the old one and its size; the
+                // backend then sees a layer that does not match and leaves it out.
+                return;
+            }
+            for (y of 0..rows) {
+                let cols : i64 = newW.min(oldW);
+                Mem::copy(
+                    fresh + (y as i64) * newW * 4,
+                    self.layer + (y as i64) * oldW * 4,
+                    cols * 4
+                );
+            }
+            self.retired[self.retiredN as i64] = self.layer;
+            self.retiredN += 1;
+            self.layer = fresh;
+            self.layerCap = cap;
+        } else if (need > self.layerCap) {
+            return;
+        } else if (newW <= oldW) {
+            for (y of 0..rows) {
+                for (x of 0..newW) {
+                    Mem::putWordOf(
+                        self.layer,
+                        (y as i64) * newW + x,
+                        Mem::wordOf(self.layer, (y as i64) * oldW + x)
+                    );
+                }
+            }
+            Mem::clear(self.layer + (rows as i64) * newW * 4, (need - (rows as i64) * newW) * 4);
+        } else {
+            let y : i32 = rows - 1;
+            while (y >= 0) {
+                let x : i64 = newW - 1;
+                while (x >= 0) {
+                    let word : i32 = 0;
+                    if (x < oldW) {
+                        word = Mem::wordOf(self.layer, (y as i64) * oldW + x);
+                    }
+                    Mem::putWordOf(self.layer, (y as i64) * newW + x, word);
+                    x -= 1;
+                }
+                y -= 1;
+            }
+            Mem::clear(self.layer + (rows as i64) * newW * 4, (need - (rows as i64) * newW) * 4);
+        }
+        self.layerW = w;
+        self.layerH = h;
+    }
+
+    /**
+     * The 2-D layer, as a `Frame` to draw HUD primitives and text on.
+     *
+     * Cleared to transparent the first time it is taken in a frame; drawn on top
+     * of the 3-D frame by the next `render`. Take it fresh each frame — a resize
+     * moves it, like any `Frame`.
+     */
+    pub fn overlay(mut self) : Frame {
+        if (!self.layerUsed) {
+            Mem::clear(self.layer, (self.layerW as i64) * (self.layerH as i64) * 4);
+            self.layerUsed = true;
+        }
+        return Frame::over(self.layer, self.layerW, self.layerH);
+    }
+
+    /**
+     * Draw `scene` and present it to `win`; whether a frame was shown.
+     *
+     * False is usually not an error — a minimised window has nothing to show — unless
+     * `isLost` says the GPU is gone. The window's size is read here, so a resize needs
+     * no call: the framebuffer, the swapchain and the 2-D layer follow it. False, and
+     * nothing drawn, for a window other than the one the renderer was made on, and
+     * after `close()`.
+     */
+    pub fn render(mut self, scene : Scene, win : Window) : bool {
+        if (self.closed || !self.ownsWindow(win)) {
+            return false;
+        }
+        let b : dyn GpuBackend = self.backends[0];
+        let w : i32 = win.width();
+        let h : i32 = win.height();
+        if (w > 0 && h > 0 && (w != b.width() || h != b.height())) {
+            b.resize(w, h);
+            self.resizeLayer(w, h);
+        }
+
+        scene.prepare();
+        let whiteSlot : i32 = self.textures.resolve(self.white.index, self.white.gen);
+        let n : i32 = scene.drawCount();
+        for (i of 0..n) {
+            let it : DrawItem = scene.item(i);
+            let meshSlot : i32 = self.meshes.resolve(it.mesh.index, it.mesh.gen);
+            let texSlot : i32 = self.textures.resolve(it.tex.index, it.tex.gen);
+            if (it.tex.isNone() || !it.material.textured) {
+                texSlot = whiteSlot;
+            }
+            scene.bind(i, meshSlot, texSlot);
+        }
+
+        let view : OverlayView = OverlayView {
+            base: self.layer,
+            w: self.layerW,
+            h: self.layerH,
+            used: self.layerUsed,
+        };
+        let shown : bool = b.render(scene, view, win);
+        self.layerUsed = false;
+        return shown;
+    }
+
+    /** Release the backend and everything it holds; a second call does nothing. */
+    pub fn close(mut self) : void {
+        // On every path, so the backend is visibly released (E0511); both backends make a
+        // second release a no-op.
+        let b : dyn GpuBackend = self.backends[0];
+        b.release();
+        if (self.closed) {
+            return;
+        }
+        self.closed = true;
+        for (i of 0..self.retiredN) {
+            Mem::release(self.retired[i as i64]);
+        }
+        self.retiredN = 0;
+        Mem::release(self.layer);
+        self.layer = 0;
+    }
+}

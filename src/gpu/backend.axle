@@ -1,0 +1,141 @@
+// backend — what a way of drawing a scene must be able to do.
+//
+// `RenderDevice` (render/device.axle) is the contract of a *drawing device*: bind
+// state, draw a `Mesh`. This is the contract one level up, the one a program's
+// renderer sits on: it takes whole resources (a `MeshBuilder`, an `Image`) and a
+// whole `Scene`, and it owns what it is given. Two things implement it — the
+// Vulkan device (`gpu/vk`) and a wrapper over the CPU rasteriser (`gpu/soft`) —
+// and `Renderer` picks one when it is built.
+//
+// The slot numbers a backend answers are its own and mean nothing to anyone else:
+// `Renderer` keeps them in a `HandleTable` behind generation-checked handles, so a
+// backend never sees a stale one and never has to defend against it.
+//
+// # Threads
+//
+// A backend, like the window it presents to, belongs to the thread that made it.
+// Vulkan itself would allow more; the window system underneath does not.
+
+use crate::gpu::image::{Image, SamplerDesc};
+use crate::gpu::mesh_builder::MeshBuilder;
+use crate::gpu::scene::Scene;
+use crate::video::window::Window;
+
+/** Which way of drawing a `Renderer` should use. */
+pub enum Backend : i8 {
+    /** The GPU if this machine has a usable one, the CPU rasteriser if not. The default. */
+    Auto = 0,
+
+    /** The GPU or nothing: failing to start one raises `PlatformError`. */
+    Gpu = 1,
+
+    /** The CPU rasteriser, whatever the machine has. */
+    Software = 2,
+}
+
+/**
+ * How a renderer is asked for.
+ *
+ * A record with defaults, like `WindowDesc`: a literal names only what it means.
+ *
+ * ```
+ * let gfx = new Renderer(win, RendererDesc { vsync: true })?;
+ * ```
+ */
+pub struct RendererDesc {
+    /** Which backend; `Auto` takes the GPU and falls back to the CPU. */
+    pub backend        : Backend = Backend::Auto;
+
+    /** Wait for the display's refresh (no tearing); false presents as fast as it can. */
+    pub vsync          : bool = true;
+
+    /** Meshes that may exist at once (at least one; a negative count is read as zero). */
+    pub maxMeshes      : i32 = 16384;
+
+    /**
+     * Textures the program may have at once. The renderer's own white texel is on top of
+     * them, and so is anything a backend needs for itself (the GPU's overlay).
+     */
+    pub maxTextures    : i32 = 256;
+
+    /**
+     * Accept a Vulkan device that is itself a CPU (lavapipe, SwiftShader).
+     *
+     * Off by default: a machine with no GPU but a software Vulkan installed would otherwise
+     * draw through it — slower, and looking different — instead of taking the built-in CPU
+     * rasteriser. A test that wants the Vulkan *code path* on such a machine turns it on.
+     */
+    pub softwareVulkan : bool = false;
+
+    /** Ask the Vulkan loader for its validation layer (a debugging aid; needs it installed). */
+    pub validation     : bool = false;
+
+    /** The application's name, as the driver is told it. */
+    pub appName        : string = "smalt";
+}
+
+/** Where a frame was drawn, as the 2-D layer sees it. */
+pub struct OverlayView {
+    /** Address of the layer's `0x00RRGGBB` words, row 0 at the top. */
+    pub base : i64 = 0;
+
+    /** Width in pixels. */
+    pub w    : i32 = 0;
+
+    /** Height in pixels. */
+    pub h    : i32 = 0;
+
+    /** Whether the program drew on the layer this frame; false means it is not uploaded or composited. */
+    pub used : bool = false;
+}
+
+/** One way of drawing a scene. */
+trait GpuBackend {
+    /** A short description of what is drawing — "vulkan: <device kind>" or "software". */
+    fn name(self) : string;
+
+    /** Whether the work is done by a GPU. */
+    fn isGpu(self) : bool;
+
+    /**
+     * Whether the backend stopped working for good — the device or the surface was lost,
+     * or the driver ran out of memory mid-frame. Once true, `render` only answers false.
+     */
+    fn isLost(self) : bool;
+
+    /** Framebuffer width, in pixels. */
+    fn width(self) : i32;
+
+    /** Framebuffer height, in pixels. */
+    fn height(self) : i32;
+
+    /** Match the framebuffer to a new client size. */
+    fn resize(mut self, w : i32, h : i32) : void;
+
+    /** Upload `mesh`; the backend's slot for it, or -1 when it could not be. */
+    fn createMesh(mut self, mesh : MeshBuilder) : i32;
+
+    /** Replace the geometry in `slot` with `mesh`; whether it was. */
+    fn updateMesh(mut self, slot : i32, mesh : MeshBuilder) : bool;
+
+    /** Release the mesh in `slot`. Safe while frames that drew it are in flight. */
+    fn destroyMesh(mut self, slot : i32) : void;
+
+    /** Upload `image` to be sampled as `sampler` says; the backend's slot, or -1. */
+    fn createTexture(mut self, image : Image, sampler : SamplerDesc) : i32;
+
+    /** Release the texture in `slot`. Safe while frames that read it are in flight. */
+    fn destroyTexture(mut self, slot : i32) : void;
+
+    /**
+     * Draw `scene` and present it to `win`; whether a frame was presented.
+     *
+     * False is not an error: a minimised window, or a swapchain that went out of
+     * date and was rebuilt, simply has nothing to show this call. A backend that
+     * `isLost` answers false for good.
+     */
+    fn render(mut self, scene : Scene, overlay : OverlayView, win : Window) : bool;
+
+    /** Release everything the backend holds. */
+    fn release(mut self) : void;
+}

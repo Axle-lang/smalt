@@ -1,0 +1,469 @@
+// vk_textures — images on the GPU, and the descriptor that lets a shader sample one.
+//
+// A texture is four Vulkan objects that live and die together: the image (the texels),
+// a view (how the shader addresses them — here always a 2-D *array*, with one layer for
+// a plain texture), a sampler (how it filters and wraps), and a descriptor set (the
+// binding that names the view and sampler to a draw). This table holds them by slot
+// and makes and unmakes them as one.
+//
+// # Upload
+//
+// Every level is in the staging buffer (host-visible, kept out of the device-local BAR
+// heap — see `vk_mem`): level 0 is the image, the rest are built on the CPU by
+// `Image::mipTail` (the module header of `gpu/image` says why not by a GPU blit). A
+// one-shot command buffer then copies each level, all layers at once, and two barriers
+// bracket the copies:
+//
+//     all levels   UNDEFINED     -> TRANSFER_DST        (nothing to wait for)
+//     copy level m of every layer, for each m
+//     all levels   TRANSFER_DST  -> SHADER_READ_ONLY    (the copies before any sampling)
+//
+// The call blocks until the queue is idle. A texture is made once and used for thousands
+// of frames, and the staging buffer can then be freed on the spot — unless the wait
+// failed: the copy may then still be running, and the buffer and the image go to the
+// graveyard instead of being destroyed under it.
+//
+// # Descriptor sets
+//
+// The pool holds a set per texture slot plus a margin, and a released texture's set
+// stays allocated until the graveyard frees it. Vulkan 1.0 does not promise an error
+// for allocating past the pool — it is simply invalid — so the count of sets out is
+// kept here, and a `create` that would overrun it answers -1; the backend then drains
+// the graveyard and tries again.
+//
+// # Format
+//
+// `B8G8R8A8_UNORM`, always: it is the byte order of `Image`'s `0xAARRGGBB` words, so no
+// pixel is ever swizzled, and every Vulkan device can sample, filter and blit it.
+//
+// # Anisotropy
+//
+// A request above 1 is honoured when the device enabled the feature, clamped to its
+// `maxSamplerAnisotropy`; otherwise it is ignored (the filter is then merely trilinear).
+//
+// # Release
+//
+// `destroy` never destroys directly: a frame in flight may be sampling the texture, so
+// its four objects are buried and the graveyard frees them when no frame can name them.
+// `destroyAll`, for teardown after the device has gone idle, frees at once.
+
+use crate::gpu::image::{Image, SamplerDesc};
+use crate::gpu::vk::vk_cmd::VkCmd;
+use crate::gpu::vk::vk_context::{CTX_SCRATCH_GRAVE, VkContext};
+use crate::gpu::vk::vk_error::VkErr;
+use crate::gpu::vk::vk_graveyard::VkGraveyard;
+use crate::gpu::vk::vk_heap::GpuHeap;
+use crate::gpu::vk::vk_mem::{GpuBuffer, GpuImage, MemUse, VkMem};
+use crate::gpu::vk::vk_pipelines::VkPipelines;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::sys::vk::vk_const::{
+    VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+    VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_FILTER_LINEAR, VK_FILTER_NEAREST,
+    VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_USAGE_SAMPLED_BIT,
+    VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_VIEW_TYPE_2D_ARRAY, VK_SUCCESS,
+    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_MIPMAP_MODE_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST,
+};
+use crate::sys::vk::vk_table::VkAddr;
+use crate::sys::vk::vk_types::{
+    VkBufferImageCopy, VkDescriptorImageInfo, VkDescriptorSetAllocateInfo, VkExtent3D,
+    VkImageSubresourceLayers, VkInit, VkOffset3D, VkSamplerCreateInfo, VkWriteDescriptorSet,
+};
+
+/** Textures uploaded to the GPU. */
+pub(crate) class VkTextures {
+    cap                  : i32;
+    live                 : i32[];
+    images               : GpuImage[];
+    views                : i64[];
+    samplers             : i64[];
+    sets                 : i64[];
+
+    /** Live textures, each holding one descriptor set of the pool. */
+    count                : i32 = 0;
+
+    /**
+     * The `VkResult` of the last `create` that failed on the device itself (a lost
+     * device, a driver out of memory), `VK_SUCCESS` otherwise; the backend reads it to
+     * tell "no room" from "the GPU is gone".
+     */
+    pub(crate) lastError : i32 = 0;
+
+    /** A table of `capacity` texture slots. */
+    constructor(capacity : i32) {
+        self.cap = capacity.max(1);
+        let n : i64 = self.cap as i64;
+        self.live = malloc<i32>(n);
+        self.images = malloc<GpuImage>(n);
+        self.views = malloc<i64>(n);
+        self.samplers = malloc<i64>(n);
+        self.sets = malloc<i64>(n);
+        for (i of 0..n) {
+            self.live[i] = 0;
+            self.images[i] = GpuImage::none();
+            self.views[i] = 0;
+            self.samplers[i] = 0;
+            self.sets[i] = 0;
+        }
+    }
+
+    /** The first free slot, or -1. */
+    pub(file) fn freeSlot(self) : i32 {
+        for (i of 0..self.cap) {
+            if (self.live[i as i64] == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** The descriptor set (set 1) that binds texture `slot`; 0 if the slot is not live. */
+    pub(crate) fn setOf(self, slot : i32) : i64 {
+        if (slot < 0 || slot >= self.cap || self.live[slot as i64] == 0) {
+            return 0;
+        }
+        return self.sets[slot as i64];
+    }
+
+    /** The `VkImage` of texture `slot`; 0 if the slot is not live. */
+    pub(crate) fn imageOf(self, slot : i32) : i64 {
+        if (slot < 0 || slot >= self.cap || self.live[slot as i64] == 0) {
+            return 0;
+        }
+        return self.images[slot as i64].image;
+    }
+
+    /** The sampler for a description. */
+    pub(file) fn makeSampler(self, ctx : VkContext, d : SamplerDesc, mips : i32) : i64 {
+        let info : VkSamplerCreateInfo = VkInit::samplerCreateInfo();
+        let filter : i32 = VK_FILTER_LINEAR;
+        let mipMode : i32 = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        if (d.nearest) {
+            filter = VK_FILTER_NEAREST;
+            mipMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        }
+        let wrap : i32 = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        if (d.repeat) {
+            wrap = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        }
+        info.magFilter = filter;
+        info.minFilter = filter;
+        info.mipmapMode = mipMode;
+        info.addressModeU = wrap;
+        info.addressModeV = wrap;
+        info.addressModeW = wrap;
+        info.maxLod = ((mips as f64) as f32);
+        info.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+        if (ctx.anisotropy && d.anisotropy > 1) {
+            let wanted : f64 = d.anisotropy as f64;
+            info.anisotropyEnable = 1;
+            info.maxAnisotropy = (wanted.min(ctx.maxAniso) as f32);
+        } else {
+            info.maxAnisotropy = (1.0 as f32);
+        }
+        let r : i32 = ctx.table.createSampler(ctx.device, info, Raw::at(ctx.scratch));
+        if (!VkErr::ok(r)) {
+            return 0;
+        }
+        return Mem::qwordAt(ctx.scratch, 0);
+    }
+
+    /** Allocate a descriptor set for texture (`view`, `sampler`) and point it at them; 0 on failure. */
+    pub(file) fn makeSet(
+        self,
+        ctx : VkContext,
+        pipes : VkPipelines,
+        view : i64,
+        sampler : i64
+    ) : i64 {
+        let layouts : i64[] = malloc<i64>(1);
+        layouts[0] = pipes.textureLayout;
+        let ai : VkDescriptorSetAllocateInfo = VkInit::descriptorSetAllocateInfo();
+        ai.descriptorPool = pipes.pool;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = VkAddr::handles(layouts);
+        let r : i32 = ctx.table.allocateDescriptorSets(ctx.device, ai, Raw::at(ctx.scratch));
+        if (!VkErr::ok(r)) {
+            return 0;
+        }
+        let set : i64 = Mem::qwordAt(ctx.scratch, 0);
+        let ii : VkDescriptorImageInfo[] = malloc<VkDescriptorImageInfo>(1);
+        ii[0] = VkDescriptorImageInfo {
+            sampler: sampler,
+            imageView: view,
+            imageLayout: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+        let w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
+        let write : VkWriteDescriptorSet = VkInit::writeDescriptorSet();
+        write.dstSet = set;
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = VkAddr::descriptorImageInfo(ii);
+        w[0] = write;
+        ctx.table.updateDescriptorSets(ctx.device, 1, VkAddr::writeDescriptorSet(w), 0, Raw::nil());
+        return set;
+    }
+
+    /**
+     * Record the upload of `staging` into `image`: each of `mips` levels, all `layers`
+     * at once, from where `Image::mipTail` laid it out, leaving every level in
+     * `SHADER_READ_ONLY_OPTIMAL`.
+     */
+    pub(file) fn recordUpload(
+        self,
+        ctx : VkContext,
+        cmd : VkCmd,
+        cb : i64,
+        staging : GpuBuffer,
+        image : i64,
+        w : i32,
+        h : i32,
+        layers : i32,
+        mips : i32
+    ) : void {
+        let color : i32 = VK_IMAGE_ASPECT_COLOR_BIT;
+        cmd.imageBarrier(
+            ctx,
+            cb,
+            image,
+            color,
+            0,
+            mips,
+            layers,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            0,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT
+        );
+
+        // One region per level; a level's layers follow one another in the buffer, which
+        // is what a region with `layerCount` > 1 and a tight row length reads.
+        let regions : VkBufferImageCopy[] = malloc<VkBufferImageCopy>(mips as i64);
+        let offset : i64 = 0;
+        for (m of 0..mips) {
+            let lw : i32 = Image::levelSide(w, m);
+            let lh : i32 = Image::levelSide(h, m);
+            regions[m as i64] = VkBufferImageCopy {
+                bufferOffset: offset,
+                bufferRowLength: 0,
+                bufferImageHeight: 0,
+                imageSubresource: VkImageSubresourceLayers {
+                    aspectMask: color,
+                    mipLevel: m,
+                    baseArrayLayer: 0,
+                    layerCount: layers,
+                },
+                imageOffset: VkOffset3D { x: 0, y: 0, z: 0 },
+                imageExtent: VkExtent3D { width: lw, height: lh, depth: 1 },
+            };
+            offset += (lw as i64) * (lh as i64) * (layers as i64) * 4;
+        }
+        ctx.table.cmdCopyBufferToImage(
+            cb,
+            staging.buffer,
+            image,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            mips,
+            VkAddr::bufferImageCopy(regions)
+        );
+        cmd.imageBarrier(
+            ctx,
+            cb,
+            image,
+            color,
+            0,
+            mips,
+            layers,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+        );
+    }
+
+    /**
+     * Upload `img` as a texture sampled as `desc` says; the slot, or -1.
+     *
+     * Every failure unwinds what it had made and answers -1: a texture that exists is
+     * complete. What a failed upload may still be reading is buried in `grave` at
+     * `frame` rather than destroyed, and a failure of the device itself is kept in
+     * `lastError`. -1 also when the descriptor pool is full (see the module header).
+     */
+    pub(crate) fn create(
+        mut self,
+        ctx : VkContext,
+        heap : GpuHeap,
+        cmd : VkCmd,
+        pipes : VkPipelines,
+        grave : VkGraveyard,
+        frame : i64,
+        img : Image,
+        desc : SamplerDesc
+    ) : i32 {
+        self.lastError = VK_SUCCESS;
+        let slot : i32 = self.freeSlot();
+        if (slot < 0 || self.count + grave.setsWaiting() >= pipes.textureSets) {
+            return -1;
+        }
+        let w : i32 = img.width();
+        let h : i32 = img.height();
+        let most : i32 = ctx.maxImage2D;
+        if (w > most || h > most) {
+            return -1;
+        }
+        let layers : i32 = img.layerCount();
+        let mips : i32 = 1;
+        if (desc.mipmaps) {
+            mips = Image::mipLevels(w, h);
+        }
+        let tailBytes : i64 = img.mipTailWords(mips) * 4;
+
+        let staging : GpuBuffer = VkMem::makeBuffer(
+            ctx,
+            heap,
+            img.byteCount() + tailBytes,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            MemUse::Staging
+        );
+        if (staging.isNone() || staging.mapped() == 0) {
+            VkMem::destroyBuffer(ctx, heap, staging);
+            return -1;
+        }
+        Mem::copy(staging.mapped(), img.base(), img.byteCount());
+        if (tailBytes > 0) {
+            let tail : i32[] = img.mipTail(mips, desc.cutout);
+            Mem::copy(staging.mapped() + img.byteCount(), Mem::addressOf(tail), tailBytes);
+        }
+
+        let usage : i32 = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        let image : GpuImage = VkMem::makeImage(
+            ctx,
+            heap,
+            VK_FORMAT_B8G8R8A8_UNORM,
+            w,
+            h,
+            mips,
+            layers,
+            usage
+        );
+        if (image.isNone()) {
+            VkMem::destroyBuffer(ctx, heap, staging);
+            return -1;
+        }
+
+        let cb : i64 = cmd.oneShotBegin(ctx);
+        if (cb == 0) {
+            VkMem::destroyBuffer(ctx, heap, staging);
+            VkMem::destroyImage(ctx, heap, image);
+            return -1;
+        }
+        self.recordUpload(ctx, cmd, cb, staging, image.image, w, h, layers, mips);
+        let sent : i32 = cmd.oneShotEnd(ctx, cb);
+        if (sent != VK_SUCCESS) {
+            self.lastError = sent;
+            if (cmd.pending) {
+                // Submitted and not known to be finished: the copy may still read the
+                // buffer and write the image. The graveyard frees them once the device
+                // has gone idle, the earliest that is known to be safe.
+                grave.buryBuffer(staging, frame);
+                grave.buryImage(image, frame);
+            } else {
+                VkMem::destroyBuffer(ctx, heap, staging);
+                VkMem::destroyImage(ctx, heap, image);
+            }
+            return -1;
+        }
+        VkMem::destroyBuffer(ctx, heap, staging);
+
+        let view : i64 = VkMem::makeView(
+            ctx,
+            image.image,
+            VK_FORMAT_B8G8R8A8_UNORM,
+            VK_IMAGE_VIEW_TYPE_2D_ARRAY,
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            mips,
+            layers
+        );
+        let sampler : i64 = self.makeSampler(ctx, desc, mips);
+        let set : i64 = 0;
+        if (view != 0 && sampler != 0) {
+            set = self.makeSet(ctx, pipes, view, sampler);
+        }
+        if (set == 0) {
+            if (view != 0) {
+                ctx.table.destroyImageView(ctx.device, view);
+            }
+            if (sampler != 0) {
+                ctx.table.destroySampler(ctx.device, sampler);
+            }
+            VkMem::destroyImage(ctx, heap, image);
+            return -1;
+        }
+
+        let s : i64 = slot as i64;
+        self.live[s] = 1;
+        self.images[s] = image;
+        self.views[s] = view;
+        self.samplers[s] = sampler;
+        self.sets[s] = set;
+        self.count += 1;
+        return slot;
+    }
+
+    /**
+     * Release texture `slot` once no frame in flight can be sampling it: its four
+     * objects go to the graveyard, buried at `frame`. False if the graveyard is full —
+     * the caller waits for the device to go idle, flushes it, and calls again.
+     */
+    pub(crate) fn destroy(mut self, grave : VkGraveyard, slot : i32, frame : i64) : bool {
+        if (slot < 0 || slot >= self.cap || self.live[slot as i64] == 0) {
+            return true;
+        }
+        if (!grave.hasRoom(4)) {
+            return false;
+        }
+        let s : i64 = slot as i64;
+        grave.buryView(self.views[s], frame);
+        grave.burySampler(self.samplers[s], frame);
+        grave.burySet(self.sets[s], frame);
+        grave.buryImage(self.images[s], frame);
+        self.live[s] = 0;
+        self.count -= 1;
+        return true;
+    }
+
+    /** Destroy every live texture at once. Only after the device has gone idle. */
+    pub(crate) fn destroyAll(
+        mut self,
+        ctx : VkContext,
+        heap : GpuHeap,
+        pipes : VkPipelines
+    ) : void {
+        for (i of 0..self.cap) {
+            let s : i64 = i as i64;
+            if (self.live[s] != 0) {
+                Mem::putQword(ctx.scratch, CTX_SCRATCH_GRAVE, self.sets[s]);
+                ctx.table.freeDescriptorSets(
+                    ctx.device,
+                    pipes.pool,
+                    1,
+                    Raw::at(ctx.scratch + CTX_SCRATCH_GRAVE)
+                );
+                ctx.table.destroySampler(ctx.device, self.samplers[s]);
+                ctx.table.destroyImageView(ctx.device, self.views[s]);
+                VkMem::destroyImage(ctx, heap, self.images[s]);
+                self.live[s] = 0;
+            }
+        }
+        self.count = 0;
+    }
+}

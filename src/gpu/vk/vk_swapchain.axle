@@ -1,0 +1,606 @@
+// vk_swapchain — the images a window shows, and what has to be remade when it changes.
+//
+// A swapchain is a ring of images the presentation engine owns: the program asks for the
+// next free one (`acquire`), draws into it, and hands it back (`present`). Everything that
+// depends on *their size and format* is built here and rebuilt together — the image views,
+// one framebuffer per image, one semaphore per image, and a depth image the same size —
+// because a swapchain that is out of date (the window was resized) invalidates all of it.
+//
+// # Choosing
+//
+// **Format**: `B8G8R8A8_UNORM` in the sRGB-nonlinear colour space when the surface offers
+// it — the common one, and the byte order `Image` and the CPU renderer already use, so the
+// two backends show the same colours — otherwise the surface's first format and colour
+// space. It is picked once, before the render pass is built for it, and every rebuild
+// reuses it. **Composite alpha**: opaque when offered, else the lowest mode the surface
+// supports. **Present mode**:
+// with `vsync` the first-in-first-out queue every driver must have; without, `IMMEDIATE`
+// (tears, lowest latency) then `MAILBOX` (no tear, newest frame wins) if offered, then
+// FIFO. **Image count**: one more than the minimum, clamped to the maximum, so the program
+// is never made to wait for the presentation engine to release an image it has just asked
+// for. **Extent**: the surface's, or — when the window system leaves it to the program
+// (Wayland reports 0xFFFFFFFF) — the window's size clamped into the allowed range.
+//
+// # A zero-sized window
+//
+// A minimised window has no extent, and Vulkan does not allow a zero-sized swapchain.
+// `build` answers `VK_NOT_READY` and the backend skips the frame until the window has a
+// size.
+//
+// # What `build` answers
+//
+// A `VkResult`, not a yes or no, because the backend has three different things to do
+// with a swapchain it did not get: `VK_SUCCESS` — built; `VK_NOT_READY` (or
+// `VK_ERROR_OUT_OF_DATE_KHR`, the surface changed under the call) — nothing to show yet,
+// try again next frame; any other error — the device or the surface is gone or out of
+// memory, and the backend is lost. Folding the last two together is how a lost surface
+// turns into a window that stays black forever while `isLost` says all is well.
+//
+// # Semaphores
+//
+// The semaphore that says "rendering is finished, you may present" is **per swapchain
+// image**, not per frame in flight. A frame-in-flight semaphore can be signalled again
+// while the presentation engine is still waiting on it for an earlier use; an image can
+// only be re-acquired after its previous present has consumed its semaphore. The "image is
+// available" semaphore, which the acquire signals, is per frame in flight and lives in the
+// backend.
+//
+// # Recreating
+//
+// `recreate` waits for the device to go idle, destroys the views, framebuffers and
+// depth image of the old swapchain, buries its per-image semaphores (a present may still
+// be waiting on one — device idle does not cover the presentation engine), then calls
+// `build(…, old)`, which passes the old swapchain so the driver can reuse its resources;
+// the old swapchain itself is destroyed after that. `build` refuses to run over a
+// swapchain that is still built.
+
+use crate::gpu::vk::vk_context::{CTX_SCRATCH_QUERY_COUNT, VkContext};
+use crate::gpu::vk::vk_error::VkErr;
+use crate::gpu::vk::vk_frame::FRAMES_IN_FLIGHT;
+use crate::gpu::vk::vk_graveyard::VkGraveyard;
+use crate::gpu::vk::vk_heap::GpuHeap;
+use crate::gpu::vk::vk_mem::{GpuImage, VkMem};
+use crate::gpu::vk::vk_pipelines::VkPipelines;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::sys::vk::vk_const::{
+    VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, VK_FORMAT_B8G8R8A8_UNORM,
+    VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_ASPECT_DEPTH_BIT,
+    VK_IMAGE_ASPECT_STENCIL_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_VIEW_TYPE_2D, VK_PRESENT_MODE_FIFO_KHR,
+    VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_MAILBOX_KHR, VK_SHARING_MODE_EXCLUSIVE,
+    VK_SUCCESS, VK_NOT_READY, VK_ERROR_INITIALIZATION_FAILED, VK_ERROR_OUT_OF_HOST_MEMORY,
+    VK_ERROR_OUT_OF_DEVICE_MEMORY,
+};
+use crate::sys::vk::vk_out::{
+    VKO_SURFACE_CAPABILITIES_KHR_BYTES, VKO_SURFACE_CAPABILITIES_KHR_CURRENT_EXTENT,
+    VKO_SURFACE_CAPABILITIES_KHR_CURRENT_TRANSFORM, VKO_SURFACE_CAPABILITIES_KHR_MAX_IMAGE_COUNT,
+    VKO_SURFACE_CAPABILITIES_KHR_MAX_IMAGE_EXTENT, VKO_SURFACE_CAPABILITIES_KHR_MIN_IMAGE_COUNT,
+    VKO_SURFACE_CAPABILITIES_KHR_MIN_IMAGE_EXTENT,
+    VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_COMPOSITE_ALPHA, VKO_SURFACE_FORMAT_KHR_BYTES,
+    VKO_SURFACE_FORMAT_KHR_COLOR_SPACE, VKO_SURFACE_FORMAT_KHR_FORMAT,
+};
+use crate::sys::vk::vk_table::VkAddr;
+use crate::sys::vk::vk_types::{
+    VkExtent2D, VkFramebufferCreateInfo, VkInit, VkSwapchainCreateInfoKHR,
+};
+
+/** Most images a swapchain may have; drivers ask for two to four. */
+const SWAP_MAX_IMAGES : i32 = 16;
+
+/** Formats and present modes read from the surface, at most. */
+const SWAP_MAX_QUERY : i32 = 32;
+
+/** The swapchain and what is sized to it. */
+pub(crate) class VkSwapchain {
+    /** `VkSwapchainKHR`; 0 until built. */
+    pub(crate) handle : i64 = 0;
+
+    /** The colour format of the images, from `pickFormat`; 0 until it has run. */
+    pub(crate) format : i32 = 0;
+
+    /** The colour space that goes with `format`. */
+    colorSpace        : i32 = 0;
+
+    /** Width of the images. */
+    pub(crate) w      : i32 = 0;
+
+    /** Height of the images. */
+    pub(crate) h      : i32 = 0;
+
+    /** How many images the driver made. */
+    pub(crate) count  : i32 = 0;
+
+    /** The depth image shared by every frame. */
+    depth             : GpuImage;
+
+    /** Its view. */
+    depthView         : i64 = 0;
+
+    /** The swapchain's `VkImage`s, as a block of `i64`. */
+    images            : i64[];
+    views             : i64[];
+    frames            : i64[];
+    done              : i64[];
+
+    /** An empty swapchain: nothing built yet. */
+    constructor() {
+        self.depth = GpuImage::none();
+        self.images = malloc<i64>(SWAP_MAX_IMAGES as i64);
+        self.views = malloc<i64>(SWAP_MAX_IMAGES as i64);
+        self.frames = malloc<i64>(SWAP_MAX_IMAGES as i64);
+        self.done = malloc<i64>(SWAP_MAX_IMAGES as i64);
+        for (i of 0..SWAP_MAX_IMAGES) {
+            self.images[i as i64] = 0;
+            self.views[i as i64] = 0;
+            self.frames[i as i64] = 0;
+            self.done[i as i64] = 0;
+        }
+    }
+
+    /** Whether a swapchain is built and usable. */
+    pub(crate) fn isBuilt(self) : bool {
+        return self.handle != 0;
+    }
+
+    /** The framebuffer for swapchain image `i`. */
+    pub(crate) fn framebuffer(self, i : i32) : i64 {
+        if (i < 0 || i >= self.count) {
+            return 0;
+        }
+        return self.frames[i as i64];
+    }
+
+    /** The "rendering finished" semaphore for swapchain image `i`. */
+    pub(crate) fn finished(self, i : i32) : i64 {
+        if (i < 0 || i >= self.count) {
+            return 0;
+        }
+        return self.done[i as i64];
+    }
+
+    /**
+     * Choose the colour format and colour space to build with — `B8G8R8A8_UNORM` in
+     * sRGB-nonlinear when the surface offers it, otherwise the surface's first pair —
+     * and keep both; the format, or 0 when the surface lists none.
+     *
+     * Run once, before the swapchain exists, because the render pass — and so every
+     * pipeline — is built for the format; every later `build` reuses the choice.
+     */
+    pub(crate) fn pickFormat(mut self, ctx : VkContext) : i32 {
+        self.format = 0;
+        self.colorSpace = 0;
+        let countAt : i64 = ctx.scratch + CTX_SCRATCH_QUERY_COUNT;
+        Mem::putDword(countAt, 0, 0);
+        let r : i32 = ctx.table.getPhysicalDeviceSurfaceFormatsKHR(
+            ctx.physical,
+            ctx.surface,
+            Raw::at(countAt),
+            Raw::nil()
+        );
+        let n : i32 = Mem::dwordAt(countAt, 0).min(SWAP_MAX_QUERY);
+        if (!VkErr::ok(r) || n <= 0) {
+            return 0;
+        }
+        let list : i64 = Mem::takeZeroed((n as i64) * VKO_SURFACE_FORMAT_KHR_BYTES);
+        if (list == 0) {
+            return 0;
+        }
+        Mem::putDword(countAt, 0, n);
+        r = ctx.table.getPhysicalDeviceSurfaceFormatsKHR(
+            ctx.physical,
+            ctx.surface,
+            Raw::at(countAt),
+            Raw::at(list)
+        );
+        let format : i32 = 0;
+        let space : i32 = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+        if (VkErr::ok(r)) {
+            n = Mem::dwordAt(countAt, 0).min(SWAP_MAX_QUERY);
+            if (n > 0) {
+                format = Mem::dwordAt(list, VKO_SURFACE_FORMAT_KHR_FORMAT);
+                space = Mem::dwordAt(list, VKO_SURFACE_FORMAT_KHR_COLOR_SPACE);
+            }
+            for (i of 0..n) {
+                let at : i64 = (i as i64) * VKO_SURFACE_FORMAT_KHR_BYTES;
+                let f : i32 = Mem::dwordAt(list, at + VKO_SURFACE_FORMAT_KHR_FORMAT);
+                let cs : i32 = Mem::dwordAt(list, at + VKO_SURFACE_FORMAT_KHR_COLOR_SPACE);
+                if (f == VK_FORMAT_B8G8R8A8_UNORM && cs == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+                    format = f;
+                    space = cs;
+                }
+            }
+        }
+        Mem::release(list);
+        if (format == 0 && n == 1) {
+            // A lone VK_FORMAT_UNDEFINED means "any format": take the usual one.
+            format = VK_FORMAT_B8G8R8A8_UNORM;
+            space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+        }
+        self.format = format;
+        self.colorSpace = space;
+        return format;
+    }
+
+    /** The present mode to use; see the module header. */
+    pub(file) fn pickPresentMode(self, ctx : VkContext, vsync : bool) : i32 {
+        if (vsync) {
+            return VK_PRESENT_MODE_FIFO_KHR;
+        }
+        // FIFO is the one mode every surface has, so it is also the answer to a query
+        // that failed: the failure itself, if it is a lost surface, is the swapchain
+        // create's to report.
+        let countAt : i64 = ctx.scratch + CTX_SCRATCH_QUERY_COUNT;
+        Mem::putDword(countAt, 0, 0);
+        let r : i32 = ctx.table.getPhysicalDeviceSurfacePresentModesKHR(
+            ctx.physical,
+            ctx.surface,
+            Raw::at(countAt),
+            Raw::nil()
+        );
+        let n : i32 = Mem::dwordAt(countAt, 0).min(SWAP_MAX_QUERY);
+        if (!VkErr::ok(r) || n <= 0) {
+            return VK_PRESENT_MODE_FIFO_KHR;
+        }
+        let list : i64 = Mem::takeZeroed((n as i64) * 4);
+        if (list == 0) {
+            return VK_PRESENT_MODE_FIFO_KHR;
+        }
+        Mem::putDword(countAt, 0, n);
+        r = ctx.table.getPhysicalDeviceSurfacePresentModesKHR(
+            ctx.physical,
+            ctx.surface,
+            Raw::at(countAt),
+            Raw::at(list)
+        );
+        if (!VkErr::ok(r)) {
+            Mem::release(list);
+            return VK_PRESENT_MODE_FIFO_KHR;
+        }
+        n = Mem::dwordAt(countAt, 0).min(n);
+        let immediate : bool = false;
+        let mailbox : bool = false;
+        for (i of 0..n) {
+            let m : i32 = Mem::wordOf(list, i as i64);
+            if (m == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+                immediate = true;
+            }
+            if (m == VK_PRESENT_MODE_MAILBOX_KHR) {
+                mailbox = true;
+            }
+        }
+        Mem::release(list);
+        if (immediate) {
+            return VK_PRESENT_MODE_IMMEDIATE_KHR;
+        }
+        if (mailbox) {
+            return VK_PRESENT_MODE_MAILBOX_KHR;
+        }
+        return VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    /** `v` brought into [`lo`, `hi`]. */
+    pub(file) static fn clamp(v : i32, lo : i32, hi : i32) : i32 {
+        return v.max(lo).min(hi);
+    }
+
+    /**
+     * Build a swapchain for a window of `winW` x `winH`, reusing `old`'s resources if
+     * it is non-zero; `VK_SUCCESS`, `VK_NOT_READY` for a window with no area, or the
+     * error that stopped it (see the module header) — with nothing made unless it is
+     * `VK_SUCCESS`.
+     *
+     * Uses the format `pickFormat` chose. `VK_ERROR_INITIALIZATION_FAILED` when no
+     * format was picked, when a swapchain is still built (`recreate` tears the old one
+     * down first), or when the driver made more images than the tables hold.
+     */
+    pub(crate) fn build(
+        mut self,
+        ctx : VkContext,
+        heap : GpuHeap,
+        pipes : VkPipelines,
+        winW : i32,
+        winH : i32,
+        vsync : bool,
+        old : i64
+    ) : i32 {
+        if (self.handle != 0 || self.count != 0 || self.format == 0) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        let caps : i64 = Mem::takeZeroed(VKO_SURFACE_CAPABILITIES_KHR_BYTES);
+        if (caps == 0) {
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        let r : i32 = ctx.table.getPhysicalDeviceSurfaceCapabilitiesKHR(
+            ctx.physical,
+            ctx.surface,
+            Raw::at(caps)
+        );
+        if (!VkErr::ok(r)) {
+            Mem::release(caps);
+            return r;
+        }
+        let w : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_CURRENT_EXTENT);
+        let h : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_CURRENT_EXTENT + 4);
+        if (w == -1) {
+            // 0xFFFFFFFF: the window system leaves the size to the program.
+            w = VkSwapchain::clamp(
+                winW,
+                Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_MIN_IMAGE_EXTENT),
+                Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_MAX_IMAGE_EXTENT)
+            );
+            h = VkSwapchain::clamp(
+                winH,
+                Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_MIN_IMAGE_EXTENT + 4),
+                Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_MAX_IMAGE_EXTENT + 4)
+            );
+        }
+        let minImages : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_MIN_IMAGE_COUNT);
+        let maxImages : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_MAX_IMAGE_COUNT);
+        let alphaBits : i32 = Mem::dwordAt(
+            caps,
+            VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_COMPOSITE_ALPHA
+        );
+        let transform : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_CURRENT_TRANSFORM);
+        Mem::release(caps);
+        if (w <= 0 || h <= 0) {
+            return VK_NOT_READY;
+        }
+        let want : i32 = minImages + 1;
+        if (maxImages > 0 && want > maxImages) {
+            want = maxImages;
+        }
+        want = want.min(SWAP_MAX_IMAGES);
+        // Opaque when offered; otherwise the lowest bit the surface sets (it must set one).
+        let alpha : i32 = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        if ((alphaBits & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) == 0 && alphaBits != 0) {
+            alpha = alphaBits & (0 - alphaBits);
+        }
+
+        let format : i32 = self.format;
+        let info : VkSwapchainCreateInfoKHR = VkInit::swapchainCreateInfo();
+        info.surface = ctx.surface;
+        info.minImageCount = want;
+        info.imageFormat = format;
+        info.imageColorSpace = self.colorSpace;
+        info.imageExtent = VkExtent2D { width: w, height: h };
+        info.imageArrayLayers = 1;
+        info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        info.preTransform = transform;
+        info.compositeAlpha = alpha;
+        info.presentMode = self.pickPresentMode(ctx, vsync);
+        info.clipped = 1;
+        info.oldSwapchain = old;
+        r = ctx.table.createSwapchainKHR(ctx.device, info, Raw::at(ctx.scratch));
+        if (!VkErr::ok(r)) {
+            return r;
+        }
+        let swap : i64 = Mem::qwordAt(ctx.scratch, 0);
+
+        // The count first: more images than the tables hold is a build that fails, not a
+        // ring of which only part is known (VK_INCOMPLETE is a failure here too).
+        let countAt : i64 = ctx.scratch + CTX_SCRATCH_QUERY_COUNT;
+        Mem::putDword(countAt, 0, 0);
+        r = ctx.table.getSwapchainImagesKHR(ctx.device, swap, Raw::at(countAt), Raw::nil());
+        let n : i32 = Mem::dwordAt(countAt, 0);
+        if (r != VK_SUCCESS || n <= 0 || n > SWAP_MAX_IMAGES) {
+            ctx.table.destroySwapchainKHR(ctx.device, swap);
+            return VkSwapchain::failure(r);
+        }
+        let imgBlock : i64 = Mem::takeZeroed((SWAP_MAX_IMAGES as i64) * 8);
+        if (imgBlock == 0) {
+            ctx.table.destroySwapchainKHR(ctx.device, swap);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        r = ctx.table.getSwapchainImagesKHR(ctx.device, swap, Raw::at(countAt), Raw::at(imgBlock));
+        n = Mem::dwordAt(countAt, 0);
+        if (r != VK_SUCCESS || n <= 0 || n > SWAP_MAX_IMAGES) {
+            Mem::release(imgBlock);
+            ctx.table.destroySwapchainKHR(ctx.device, swap);
+            return VkSwapchain::failure(r);
+        }
+
+        // The depth image, sized to the swapchain, shared by every frame.
+        let depth : GpuImage = VkMem::makeImage(
+            ctx,
+            heap,
+            pipes.depthFormat,
+            w,
+            h,
+            1,
+            1,
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+        );
+        let aspect : i32 = VK_IMAGE_ASPECT_DEPTH_BIT;
+        if (pipes.depthFormat != VK_FORMAT_D32_SFLOAT) {
+            aspect = aspect | VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+        let dview : i64 = 0;
+        if (!depth.isNone()) {
+            dview = VkMem::makeView(
+                ctx,
+                depth.image,
+                pipes.depthFormat,
+                VK_IMAGE_VIEW_TYPE_2D,
+                aspect,
+                1,
+                1
+            );
+        }
+        if (depth.isNone() || dview == 0) {
+            if (dview != 0) {
+                ctx.table.destroyImageView(ctx.device, dview);
+            }
+            VkMem::destroyImage(ctx, heap, depth);
+            Mem::release(imgBlock);
+            ctx.table.destroySwapchainKHR(ctx.device, swap);
+            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        }
+
+        // Nothing of an old swapchain is left here (the guard at the top), so these are
+        // the only per-image objects.
+        self.depth = depth;
+        self.depthView = dview;
+        self.handle = swap;
+        self.w = w;
+        self.h = h;
+        self.count = n;
+        let result : i32 = VK_SUCCESS;
+        for (i of 0..n) {
+            let k : i64 = i as i64;
+            self.images[k] = Mem::qwordOf(imgBlock, k);
+            self.views[k] = VkMem::makeView(
+                ctx,
+                self.images[k],
+                format,
+                VK_IMAGE_VIEW_TYPE_2D,
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                1,
+                1
+            );
+            self.frames[k] = 0;
+            self.done[k] = 0;
+            if (self.views[k] != 0) {
+                let at : i64[] = malloc<i64>(2);
+                at[0] = self.views[k];
+                at[1] = dview;
+                let fi : VkFramebufferCreateInfo = VkInit::framebufferCreateInfo();
+                fi.renderPass = pipes.renderPass;
+                fi.attachmentCount = 2;
+                fi.pAttachments = VkAddr::handles(at);
+                fi.width = w;
+                fi.height = h;
+                fi.layers = 1;
+                let fr : i32 = ctx.table.createFramebuffer(ctx.device, fi, Raw::at(ctx.scratch));
+                if (VkErr::ok(fr)) {
+                    self.frames[k] = Mem::qwordAt(ctx.scratch, 0);
+                } else if (result == VK_SUCCESS) {
+                    result = fr;
+                }
+                let sr : i32 = ctx.table.createSemaphore(
+                    ctx.device,
+                    VkInit::semaphoreCreateInfo(),
+                    Raw::at(ctx.scratch)
+                );
+                if (VkErr::ok(sr)) {
+                    self.done[k] = Mem::qwordAt(ctx.scratch, 0);
+                } else if (result == VK_SUCCESS) {
+                    result = sr;
+                }
+            }
+            let complete : bool = self.views[k] != 0 && self.frames[k] != 0 && self.done[k] != 0;
+            if (result == VK_SUCCESS && !complete) {
+                // A view the driver refused carries no code: it is memory, in practice.
+                result = VK_ERROR_OUT_OF_HOST_MEMORY;
+            }
+        }
+        Mem::release(imgBlock);
+        if (result != VK_SUCCESS) {
+            self.destroyBuilt(ctx, heap);
+        }
+        return result;
+    }
+
+    /**
+     * The error a failed image query stands for: its own, or — for a success code that
+     * still gave no usable count (`VK_INCOMPLETE`, more images than the tables hold) —
+     * `VK_ERROR_INITIALIZATION_FAILED`, which is permanent: the next try would get the same.
+     */
+    pub(file) static fn failure(r : i32) : i32 {
+        if (r < 0) {
+            return r;
+        }
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    /**
+     * Rebuild for a changed window: wait for the device, destroy the views, framebuffers
+     * and depth image of the old swapchain, bury its semaphores in `grave` a round of
+     * frames after `frame`, build the new one *from* the old (so the driver may reuse its
+     * images), then destroy the old swapchain; what `build` answered.
+     *
+     * Anything but `VK_SUCCESS` leaves the swapchain unbuilt; the caller tells a frame to
+     * skip from a backend that is lost with `VkErr::isFatal`. The device is idle
+     * throughout, so tearing the per-image objects down before the build is safe, and it
+     * leaves `build` an empty swapchain to fill. A device that cannot go idle answers
+     * for the whole call: nothing is torn down under a lost device.
+     */
+    pub(crate) fn recreate(
+        mut self,
+        ctx : VkContext,
+        heap : GpuHeap,
+        pipes : VkPipelines,
+        grave : VkGraveyard,
+        frame : i64,
+        winW : i32,
+        winH : i32,
+        vsync : bool
+    ) : i32 {
+        let idle : i32 = ctx.waitIdle();
+        if (VkErr::isFatal(idle)) {
+            return idle;
+        }
+        let old : i64 = self.handle;
+        self.buryPresentWaits(grave, frame);
+        self.destroyViews(ctx, heap);
+        self.handle = 0;
+        let r : i32 = self.build(ctx, heap, pipes, winW, winH, vsync, old);
+        if (old != 0) {
+            ctx.table.destroySwapchainKHR(ctx.device, old);
+        }
+        return r;
+    }
+
+    /**
+     * Hand the per-image "rendering finished" semaphores to `grave`, to be destroyed a
+     * full round of frames after `frame`: the last present of each may still be waiting
+     * on it, and `vkDeviceWaitIdle` does not cover a present. One the graveyard has no
+     * room for is left to `destroyViews` — the device is idle, which is all Vulkan 1.0
+     * can promise.
+     */
+    pub(file) fn buryPresentWaits(mut self, grave : VkGraveyard, frame : i64) : void {
+        let at : i64 = frame + (FRAMES_IN_FLIGHT as i64);
+        for (i of 0..self.count) {
+            let k : i64 = i as i64;
+            if (self.done[k] != 0 && grave.burySemaphore(self.done[k], at)) {
+                self.done[k] = 0;
+            }
+        }
+    }
+
+    /** Destroy the per-image objects and the depth image, but not the swapchain. */
+    pub(crate) fn destroyViews(mut self, ctx : VkContext, heap : GpuHeap) : void {
+        for (i of 0..self.count) {
+            let k : i64 = i as i64;
+            if (self.frames[k] != 0) {
+                ctx.table.destroyFramebuffer(ctx.device, self.frames[k]);
+            }
+            if (self.views[k] != 0) {
+                ctx.table.destroyImageView(ctx.device, self.views[k]);
+            }
+            if (self.done[k] != 0) {
+                ctx.table.destroySemaphore(ctx.device, self.done[k]);
+            }
+            self.frames[k] = 0;
+            self.views[k] = 0;
+            self.done[k] = 0;
+        }
+        if (self.depthView != 0) {
+            ctx.table.destroyImageView(ctx.device, self.depthView);
+            self.depthView = 0;
+        }
+        VkMem::destroyImage(ctx, heap, self.depth);
+        self.depth = GpuImage::none();
+        self.count = 0;
+    }
+
+    /** Destroy everything built, swapchain included — a failed `build`'s unwinding, and teardown. */
+    pub(crate) fn destroyBuilt(mut self, ctx : VkContext, heap : GpuHeap) : void {
+        self.destroyViews(ctx, heap);
+        if (self.handle != 0) {
+            ctx.table.destroySwapchainKHR(ctx.device, self.handle);
+            self.handle = 0;
+        }
+    }
+}

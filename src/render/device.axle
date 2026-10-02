@@ -6,13 +6,15 @@
 // nothing is dispatched at run time and nothing could be.
 //
 // Rendering is the exception, and it is a real one: a second backend is
-// genuinely reachable. `opengl32.dll` exports the whole of OpenGL 1.1 as
-// named symbols — `glDrawArrays`, `glTexImage2D`, `glEnable`,
-// `glLoadMatrixf` — so a hardware-accelerated `GlDevice` can be written
-// against the same contract with the FFI Axle already has. What is *not*
-// reachable is anything above GL 1.1: every later entry point must be
-// fetched with `wglGetProcAddress` and called through the returned
-// address, and Axle cannot call an address it obtained at run time.
+// genuinely reachable. The reason the first draft of this header gave — that
+// Axle cannot call an address it obtained at run time, so everything past
+// OpenGL 1.1 was out of reach — stopped being true when the C function-pointer
+// cast landed, and a Vulkan backend now exists. It is not written against this
+// trait but one level up (`gpu::GpuBackend`), because a GPU wants whole
+// resources and a whole scene (a mesh uploaded once, a frame described once)
+// where this contract takes a CPU `Mesh` per draw call. `SoftDevice` is the
+// device behind both: this trait directly, and `gpu::SoftBackend` through the
+// higher one.
 //
 // The trait is used at parameter positions, never as a field type: a
 // `SoftDevice` is held concretely by whoever owns it, and passed as a

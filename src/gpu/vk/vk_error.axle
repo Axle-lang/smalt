@@ -1,0 +1,110 @@
+// vk_error — what a Vulkan result code means, as words.
+//
+// Every failing call in the backend ends in a message a person can act on, and a
+// bare `-1000001004` is not one. `name` turns a `VkResult` into the registry's own
+// spelling — the thing to search for — and `message` says which call failed.
+//
+// Errors in this backend are data. A failure at start-up becomes a `PlatformError`
+// carrying one of these, so the constructor that tried to build a device is the
+// place the program learns why it could not (and `Backend::Auto` is the place that
+// decides to take the CPU instead). A failure mid-frame is never thrown: the frame
+// is dropped, and the code decides what follows. `VK_ERROR_OUT_OF_DATE_KHR` means
+// the swapchain is stale — it is rebuilt and the next frame tries again; every
+// other error (`isFatal`) leaves the backend lost for good, which `isLost` reports.
+
+use crate::sys::vk::vk_const::{
+    VK_ERROR_DEVICE_LOST, VK_ERROR_EXTENSION_NOT_PRESENT, VK_ERROR_FEATURE_NOT_PRESENT,
+    VK_ERROR_FORMAT_NOT_SUPPORTED, VK_ERROR_FRAGMENTED_POOL, VK_ERROR_INCOMPATIBLE_DRIVER,
+    VK_ERROR_INITIALIZATION_FAILED, VK_ERROR_LAYER_NOT_PRESENT, VK_ERROR_MEMORY_MAP_FAILED,
+    VK_ERROR_NATIVE_WINDOW_IN_USE_KHR, VK_ERROR_OUT_OF_DATE_KHR, VK_ERROR_OUT_OF_DEVICE_MEMORY,
+    VK_ERROR_OUT_OF_HOST_MEMORY, VK_ERROR_SURFACE_LOST_KHR, VK_ERROR_TOO_MANY_OBJECTS,
+    VK_INCOMPLETE, VK_NOT_READY, VK_SUBOPTIMAL_KHR, VK_SUCCESS, VK_TIMEOUT,
+};
+
+/** Vulkan result codes. */
+pub(crate) class VkErr {
+    /** Whether `r` is a success code (zero, or one of the positive status codes). */
+    pub(crate) static fn ok(r : i32) : bool {
+        return r >= 0;
+    }
+
+    /**
+     * Whether `r` ends the backend: an error other than an out-of-date swapchain. A
+     * lost device or surface, or a driver out of memory, does not get better by trying
+     * the same frame again.
+     */
+    pub(crate) static fn isFatal(r : i32) : bool {
+        return r < 0 && r != VK_ERROR_OUT_OF_DATE_KHR;
+    }
+
+    /** The registry's name for `r`, or "VK_ERROR_UNKNOWN" for one this backend does not list. */
+    pub(crate) static fn name(r : i32) : string {
+        if (r == VK_SUCCESS) {
+            return "VK_SUCCESS";
+        }
+        if (r == VK_NOT_READY) {
+            return "VK_NOT_READY";
+        }
+        if (r == VK_TIMEOUT) {
+            return "VK_TIMEOUT";
+        }
+        if (r == VK_INCOMPLETE) {
+            return "VK_INCOMPLETE";
+        }
+        if (r == VK_SUBOPTIMAL_KHR) {
+            return "VK_SUBOPTIMAL_KHR";
+        }
+        if (r == VK_ERROR_OUT_OF_HOST_MEMORY) {
+            return "VK_ERROR_OUT_OF_HOST_MEMORY";
+        }
+        if (r == VK_ERROR_OUT_OF_DEVICE_MEMORY) {
+            return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
+        }
+        if (r == VK_ERROR_INITIALIZATION_FAILED) {
+            return "VK_ERROR_INITIALIZATION_FAILED";
+        }
+        if (r == VK_ERROR_DEVICE_LOST) {
+            return "VK_ERROR_DEVICE_LOST";
+        }
+        if (r == VK_ERROR_MEMORY_MAP_FAILED) {
+            return "VK_ERROR_MEMORY_MAP_FAILED";
+        }
+        if (r == VK_ERROR_LAYER_NOT_PRESENT) {
+            return "VK_ERROR_LAYER_NOT_PRESENT";
+        }
+        if (r == VK_ERROR_EXTENSION_NOT_PRESENT) {
+            return "VK_ERROR_EXTENSION_NOT_PRESENT";
+        }
+        if (r == VK_ERROR_FEATURE_NOT_PRESENT) {
+            return "VK_ERROR_FEATURE_NOT_PRESENT";
+        }
+        if (r == VK_ERROR_INCOMPATIBLE_DRIVER) {
+            return "VK_ERROR_INCOMPATIBLE_DRIVER";
+        }
+        if (r == VK_ERROR_TOO_MANY_OBJECTS) {
+            return "VK_ERROR_TOO_MANY_OBJECTS";
+        }
+        if (r == VK_ERROR_FORMAT_NOT_SUPPORTED) {
+            return "VK_ERROR_FORMAT_NOT_SUPPORTED";
+        }
+        if (r == VK_ERROR_FRAGMENTED_POOL) {
+            return "VK_ERROR_FRAGMENTED_POOL";
+        }
+        if (r == VK_ERROR_SURFACE_LOST_KHR) {
+            return "VK_ERROR_SURFACE_LOST_KHR";
+        }
+        if (r == VK_ERROR_NATIVE_WINDOW_IN_USE_KHR) {
+            return "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR";
+        }
+        if (r == VK_ERROR_OUT_OF_DATE_KHR) {
+            return "VK_ERROR_OUT_OF_DATE_KHR";
+        }
+        return "VK_ERROR_UNKNOWN";
+    }
+
+    /** "vulkan: <what> failed (<name>)" — the text a start-up failure carries. */
+    pub(crate) static fn message(what : string, r : i32) : string {
+        let code : string = VkErr::name(r);
+        return "vulkan: ${what} failed (${code})";
+    }
+}

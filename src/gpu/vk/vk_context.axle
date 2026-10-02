@@ -1,0 +1,649 @@
+// vk_context — an instance, a device, a queue and a surface: what every other
+// Vulkan object is made from.
+//
+// `VkContext` is built once, by the constructor, or not at all: a failure raises
+// `PlatformError` with the call that failed and what the driver said, so a context
+// that exists is one a swapchain can be built on. Everything the rest of the
+// backend needs from the machine — the loaded entry points, the handles, the
+// memory types, a few limits — is a field or a getter here, so no other file asks
+// the driver a question twice.
+//
+// # What it picks, and why
+//
+// The **physical device** is the highest-ranked one that has a queue family able to
+// both draw and present to *this* surface: discrete GPU, then integrated, then
+// anything else (including the software rasteriser a CI machine has). "Can present"
+// is asked of the surface, not assumed, because a laptop's second GPU often cannot
+// show a window.
+//
+// One **queue** serves for drawing and presenting. Separate transfer and present
+// queues are an optimisation for a renderer with far more to do than this one; a
+// single queue is the shape with no cross-queue ownership to get wrong.
+//
+// The only optional **feature** requested is sampler anisotropy, and only when the
+// device has it. The validation layer a `RendererDesc` may ask for is enabled only
+// when the loader lists it: a debugging aid that is not installed is not a reason
+// to lose the GPU.
+//
+// # Output blocks
+//
+// The driver fills properties, memory types and capabilities into records Axle does
+// not declare (`sys/vk/vk_out`): they are `Mem` blocks read at the measured offsets.
+// `scratch` is a small block the constructor and the other files use for the
+// single-value out parameters (`VkInstance *`, `VkBuffer *`, `uint32_t *`): read the
+// answer immediately after the call, because the next call reuses it.
+//
+// # Teardown
+//
+// Nothing here is reclaimed by a destructor — handles are integers. `close()`
+// destroys the device, then the surface, then the instance, and frees the blocks; the
+// backend calls it after everything made from the context has been destroyed.
+
+use crate::core::error::PlatformError;
+use crate::gpu::backend::RendererDesc;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::platform::sys_gpu_loader::SysGpuLoader;
+use crate::sys::vk::vk_const::{
+    VK_API_VERSION_1_0, VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    VK_PHYSICAL_DEVICE_TYPE_CPU, VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
+    VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU, VK_QUEUE_GRAPHICS_BIT, VK_SUCCESS,
+};
+use crate::sys::vk::vk_out::{
+    VKO_MEMORY_TYPE_PROPERTY_FLAGS, VKO_MEMORY_TYPE_BYTES,
+    VKO_PHYSICAL_DEVICE_FEATURES_SAMPLER_ANISOTROPY, VKO_PHYSICAL_DEVICE_FEATURES_BYTES,
+    VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_MEMORY_TYPES,
+    VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_MEMORY_TYPE_COUNT,
+    VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_BYTES, VKO_PHYSICAL_DEVICE_PROPERTIES_DEVICE_TYPE,
+    VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_IMAGE_DIMENSION2D,
+    VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_PUSH_CONSTANTS_SIZE,
+    VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_SAMPLER_ANISOTROPY,
+    VKO_PHYSICAL_DEVICE_PROPERTIES_BYTES, VKO_QUEUE_FAMILY_PROPERTIES_QUEUE_FLAGS,
+    VKO_QUEUE_FAMILY_PROPERTIES_BYTES,
+};
+use crate::sys::vk::vk_table::{VkAddr, VkTable};
+use crate::sys::vk::vk_types::{
+    VkApplicationInfo, VkDeviceCreateInfo, VkDeviceQueueCreateInfo, VkInit, VkInstanceCreateInfo,
+    VkPhysicalDeviceFeatures,
+};
+use crate::gpu::vk::vk_error::VkErr;
+use crate::sys::vk::vk_layout_check::VkLayout;
+use crate::video::sys_vk_surface::SysVkSurface;
+use crate::video::window::Window;
+
+/** Bytes in the scratch block. */
+const CTX_SCRATCH_BYTES : i64 = 4096;
+
+// The scratch block, laid out once so no two users share a byte. Offset 0 is the
+// single-value out parameter every create call writes and its caller reads at once.
+//
+//     0  ..   7   the out handle of a create call
+//    16  ..  19   a `VkBool32` answer (surface support)
+//    32  ..  35   the physical-device count
+//   128  .. 151   `VkMemoryRequirements` (`vk_mem`)
+//   256  .. 263   one descriptor set being freed (`vk_graveyard`, `vk_textures`)
+//   320  .. 343   three command-buffer slots (`vk_cmd`)
+//   384  .. 395   `VkFormatProperties` (`vk_pipelines`)
+//   448  .. 463   a shader entry point's name (`vk_pipelines`)
+//   600  .. 603   the count of a surface / swapchain query (`vk_swapchain`)
+
+/** The `VkBool32` a support query writes. */
+const CTX_SCRATCH_FLAG : i64 = 16;
+
+/** The physical-device count. */
+const CTX_SCRATCH_DEVICE_COUNT : i64 = 32;
+
+/** Where `vkGet*MemoryRequirements` writes. */
+pub(crate) const CTX_SCRATCH_REQUIREMENTS : i64 = 128;
+
+/** One descriptor-set handle on its way to `vkFreeDescriptorSets`. */
+pub(crate) const CTX_SCRATCH_GRAVE : i64 = 256;
+
+/** Three consecutive command-buffer handle slots. */
+pub(crate) const CTX_SCRATCH_CMD : i64 = 320;
+
+/** Where `vkGetPhysicalDeviceFormatProperties` writes. */
+pub(crate) const CTX_SCRATCH_FORMAT : i64 = 384;
+
+/** A shader entry point's NUL-terminated name. */
+pub(crate) const CTX_SCRATCH_ENTRY : i64 = 448;
+
+/** The count in / count out of a two-call surface or swapchain query. */
+pub(crate) const CTX_SCRATCH_QUERY_COUNT : i64 = 600;
+
+/** Bytes in the block the extension and layer name strings are written into. */
+const CTX_NAMES_BYTES : i64 = 1024;
+
+// The names block, laid out once so no two writers can share a byte:
+//
+//     0  ..  63   pointer table of the instance extensions   (8 slots)
+//    64  .. 127   pointer table of the instance layers       (8 slots)
+//   128  .. 191   pointer table of the device extensions     (8 slots)
+//   192  .. 199   the queue's priority, one float
+//   256  ..       the NUL-terminated strings the tables point at
+
+/** Byte offset of the instance-extension pointer table. */
+const CTX_INSTANCE_EXTENSIONS : i64 = 0;
+
+/** Byte offset of the instance-layer pointer table. */
+const CTX_LAYERS : i64 = 64;
+
+/** Byte offset of the device-extension pointer table. */
+const CTX_DEVICE_EXTENSIONS : i64 = 128;
+
+/** Byte offset of the queue priority float. */
+const CTX_PRIORITY : i64 = 192;
+
+/** Byte offset where the name strings begin. */
+const CTX_STRINGS : i64 = 256;
+
+/** Byte offset of the device-extension string: `CTX_STRINGS` + 512, after the instance's names. */
+const CTX_DEVICE_STRINGS : i64 = 768;
+
+/** Longest name copied into the block, in bytes. */
+const CTX_NAME_BYTES : i32 = 120;
+
+/** The validation layer a `RendererDesc` may ask for. */
+const CTX_VALIDATION_LAYER : string = "VK_LAYER_KHRONOS_validation";
+
+/** Bytes in a `VkLayerProperties`: its name is the first 256. */
+const CTX_LAYER_PROPERTIES_BYTES : i64 = 520;
+
+/** Layers read from the loader, at most. */
+const CTX_MAX_LAYERS : i32 = 64;
+
+/** A loaded Vulkan, an instance, a device and a surface to present to. */
+pub(crate) class VkContext {
+    /** The loaded entry points. */
+    pub(crate) table        : VkTable;
+
+    /** `VkInstance`. */
+    pub(crate) instance     : i64 = 0;
+
+    /** `VkPhysicalDevice`. */
+    pub(crate) physical     : i64 = 0;
+
+    /** `VkDevice`. */
+    pub(crate) device       : i64 = 0;
+
+    /** `VkQueue` — the one queue, for drawing and presenting. */
+    pub(crate) queue        : i64 = 0;
+
+    /** `VkSurfaceKHR` for the window. */
+    pub(crate) surface      : i64 = 0;
+
+    /** The queue family the queue came from. */
+    pub(crate) family       : i32 = 0;
+
+    /** The `VkPhysicalDeviceType` of the chosen device. */
+    pub(crate) kind         : i32 = 0;
+
+    /** Whether sampler anisotropy was enabled on the device. */
+    pub(crate) anisotropy   : bool = false;
+
+    /** The device's `maxSamplerAnisotropy`. */
+    pub(crate) maxAniso     : f64 = 1.0;
+
+    /** The device's `maxImageDimension2D`: the widest or tallest texture it takes. */
+    pub(crate) maxImage2D   : i32 = 4096;
+
+    /** The device's `maxPushConstantsSize`, in bytes. */
+    pub(crate) maxPushBytes : i32 = 128;
+
+    /** Whether the validation layer was asked for and found. */
+    pub(crate) validating   : bool = false;
+
+    /** The first error a surface-support query answered, or `VK_SUCCESS`. */
+    supportError            : i32 = 0;
+
+    /** The block holding `VkPhysicalDeviceMemoryProperties`. */
+    memProps                : i64 = 0;
+
+    /** The single-value out-parameter block. */
+    pub(crate) scratch      : i64 = 0;
+
+    /** The `VkAllocationCallbacks`-free instance extension / layer name block. */
+    names                   : i64 = 0;
+
+    /**
+     * Load Vulkan and open a device that can present to `win`.
+     *
+     * Raises `PlatformError` when there is no loader, no instance, no device that
+     * can draw to the window, or a driver that cannot do what the backend needs.
+     */
+    constructor(win : Window, desc : RendererDesc) ! PlatformError {
+        // The class-typed field is assigned before anything can throw.
+        self.table = new VkTable(SysGpuLoader::entry());
+        // The records below go to a driver by address. A compiler that laid one out
+        // differently from C would hand it garbage it reads without a word, so the
+        // layout is checked before the first one is filled — cheap, and the CPU is
+        // still there to fall back to.
+        let layout : i32 = VkLayout::verify();
+        if (layout == 0 && SysVkSurface::recordLayout() != 0) {
+            layout = 10000 + SysVkSurface::recordLayout();
+        }
+        if (layout != 0) {
+            throw PlatformError(
+                "vulkan: a Vulkan record is laid out differently from C (check ${layout}); not using the GPU"
+            );
+        }
+        if (!self.table.isLoaded()) {
+            throw PlatformError(
+                "vulkan: no Vulkan loader was found (libvulkan.so.1 / vulkan-1.dll)"
+            );
+        }
+        self.scratch = Mem::takeZeroed(CTX_SCRATCH_BYTES);
+        self.names = Mem::takeZeroed(CTX_NAMES_BYTES);
+        self.memProps = Mem::takeZeroed(VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_BYTES);
+        if (self.scratch == 0 || self.names == 0 || self.memProps == 0) {
+            self.releaseBlocks();
+            throw PlatformError("vulkan: out of memory taking the context's scratch blocks");
+        }
+
+        let missing : string = self.table.loadGlobal();
+        if (missing.byteLength != 0) {
+            self.releaseBlocks();
+            throw PlatformError("vulkan: the loader does not export ${missing}");
+        }
+        try {
+            self.createInstance(desc)?;
+        } catch e : PlatformError {
+            self.releaseBlocks();
+            throw PlatformError(e.message);
+        }
+        missing = self.table.loadInstance(self.instance);
+        if (missing.byteLength != 0) {
+            // `close` destroys the instance only if the loader gave the command to.
+            self.close();
+            throw PlatformError("vulkan: the instance does not provide ${missing}");
+        }
+        Mem::putQword(self.scratch, 0, 0);
+        let sr : i32 = SysVkSurface::create(self.table, self.instance, win.sys, self.scratch);
+        if (sr == VK_SUCCESS) {
+            self.surface = Mem::qwordAt(self.scratch, 0);
+        }
+        if (sr != VK_SUCCESS || self.surface == 0) {
+            self.surface = 0;
+            self.close();
+            throw PlatformError(VkErr::message("creating a surface for the window", sr));
+        }
+        // Anything that fails from here on must give back the instance and the surface — a
+        // window left holding a Vulkan surface cannot then be drawn to by the CPU fallback.
+        try {
+            self.pickDevice(desc)?;
+            self.createDevice()?;
+        } catch e : PlatformError {
+            self.close();
+            throw PlatformError(e.message);
+        }
+    }
+
+    /**
+     * Write `s` at `names + off`, NUL-terminated; the offset after it.
+     *
+     * Vulkan names extensions and layers by `const char *`, and an Axle `string`
+     * is not one — so each name is copied into this block, and the block's
+     * address plus the offset is what the driver is handed.
+     */
+    pub(file) fn putName(self, off : i64, s : string) : i64 {
+        let n : i32 = Mem::internString(self.names, off, s, CTX_NAME_BYTES);
+        Mem::putByte(self.names, off + (n as i64), 0);
+        return off + (n as i64) + 1;
+    }
+
+    /**
+     * Whether the NUL-terminated name at `a` and the one at `b` are the same, reading
+     * at most `cap` bytes of each.
+     */
+    pub(file) static fn sameName(a : i64, b : i64, cap : i64) : bool {
+        for (i of 0..cap) {
+            let x : i32 = Mem::byteAt(a, i);
+            if (x != Mem::byteAt(b, i)) {
+                return false;
+            }
+            if (x == 0) {
+                return true;
+            }
+        }
+        return true;
+    }
+
+    /** Whether the loader lists the instance layer whose name was written at `names + nameAt`. */
+    pub(file) fn hasLayer(self, nameAt : i64) : bool {
+        if (!self.table.canListLayers()) {
+            return false;
+        }
+        let countAt : i64 = self.scratch + CTX_SCRATCH_QUERY_COUNT;
+        Mem::putDword(countAt, 0, 0);
+        let r : i32 = self.table.enumerateInstanceLayerProperties(Raw::at(countAt), Raw::nil());
+        let n : i32 = Mem::dwordAt(countAt, 0).min(CTX_MAX_LAYERS);
+        if (!VkErr::ok(r) || n <= 0) {
+            return false;
+        }
+        let list : i64 = Mem::takeZeroed((n as i64) * CTX_LAYER_PROPERTIES_BYTES);
+        if (list == 0) {
+            return false;
+        }
+        Mem::putDword(countAt, 0, n);
+        r = self.table.enumerateInstanceLayerProperties(Raw::at(countAt), Raw::at(list));
+        let found : bool = false;
+        if (VkErr::ok(r)) {
+            n = Mem::dwordAt(countAt, 0).min(n);
+            for (i of 0..n) {
+                let at : i64 = list + (i as i64) * CTX_LAYER_PROPERTIES_BYTES;
+                if (VkContext::sameName(at, self.names + nameAt, 256)) {
+                    found = true;
+                }
+            }
+        }
+        Mem::release(list);
+        return found;
+    }
+
+    /** Create the instance with the surface extensions this window system needs. */
+    pub(file) fn createInstance(mut self, desc : RendererDesc) : void ! PlatformError {
+        let at : i64 = CTX_STRINGS;
+        Mem::putQword(self.names, CTX_INSTANCE_EXTENSIONS, self.names + at);
+        at = self.putName(at, VK_KHR_SURFACE_EXTENSION_NAME);
+        Mem::putQword(self.names, CTX_INSTANCE_EXTENSIONS + 8, self.names + at);
+        at = self.putName(at, SysVkSurface::extension());
+
+        let layers : i32 = 0;
+        if (desc.validation) {
+            let layerAt : i64 = at;
+            at = self.putName(at, CTX_VALIDATION_LAYER);
+            if (self.hasLayer(layerAt)) {
+                Mem::putQword(self.names, CTX_LAYERS, self.names + layerAt);
+                layers = 1;
+                self.validating = true;
+            }
+        }
+
+        // The application's name, as the driver is told it (some drivers key profiles on it).
+        let appAt : i64 = at;
+        at = self.putName(at, desc.appName);
+
+        let app : VkApplicationInfo[] = malloc<VkApplicationInfo>(1);
+        let ai : VkApplicationInfo = VkInit::applicationInfo();
+        ai.pApplicationName = Raw::at(self.names + appAt);
+        ai.apiVersion = VK_API_VERSION_1_0;
+        app[0] = ai;
+
+        let ici : VkInstanceCreateInfo = VkInit::instanceCreateInfo();
+        ici.pApplicationInfo = VkAddr::applicationInfo(app);
+        ici.enabledExtensionCount = 2;
+        ici.ppEnabledExtensionNames = Raw::at(self.names + CTX_INSTANCE_EXTENSIONS);
+        ici.enabledLayerCount = layers;
+        ici.ppEnabledLayerNames = Raw::at(self.names + CTX_LAYERS);
+
+        let r : i32 = self.table.createInstance(ici, Raw::at(self.scratch));
+        if (!VkErr::ok(r)) {
+            throw PlatformError(VkErr::message("vkCreateInstance", r));
+        }
+        self.instance = Mem::qwordAt(self.scratch, 0);
+    }
+
+    /** The queue family of `pd` that can draw and present to the surface, or -1. */
+    pub(file) fn familyFor(mut self, pd : i64) : i32 {
+        let count : i64 = self.scratch;
+        Mem::putDword(count, 0, 0);
+        self.table.getPhysicalDeviceQueueFamilyProperties(pd, Raw::at(count), Raw::nil());
+        let n : i32 = Mem::dwordAt(count, 0);
+        if (n <= 0) {
+            return -1;
+        }
+        let props : i64 = Mem::takeZeroed((n as i64) * VKO_QUEUE_FAMILY_PROPERTIES_BYTES);
+        if (props == 0) {
+            return -1;
+        }
+        self.table.getPhysicalDeviceQueueFamilyProperties(pd, Raw::at(count), Raw::at(props));
+        n = Mem::dwordAt(count, 0);
+        let found : i32 = -1;
+        for (i of 0..n) {
+            if (found < 0) {
+                let flags : i32 = Mem::dwordAt(
+                    props,
+                    (i as i64) * VKO_QUEUE_FAMILY_PROPERTIES_BYTES + VKO_QUEUE_FAMILY_PROPERTIES_QUEUE_FLAGS
+                );
+                if ((flags & VK_QUEUE_GRAPHICS_BIT) != 0) {
+                    let r : i32 = self.table.getPhysicalDeviceSurfaceSupportKHR(
+                        pd,
+                        i,
+                        self.surface,
+                        Raw::at(self.scratch + CTX_SCRATCH_FLAG)
+                    );
+                    if (VkErr::ok(r) && Mem::dwordAt(self.scratch, CTX_SCRATCH_FLAG) != 0) {
+                        found = i;
+                    }
+                    if (!VkErr::ok(r) && self.supportError == VK_SUCCESS) {
+                        // A lost surface answers "no" for every device; keep the reason,
+                        // or the message will blame the hardware.
+                        self.supportError = r;
+                    }
+                }
+            }
+        }
+        Mem::release(props);
+        return found;
+    }
+
+    /** How a device type ranks: discrete, then integrated, then everything else. */
+    pub(file) static fn rank(kind : i32) : i32 {
+        if (kind == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+            return 3;
+        }
+        if (kind == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+            return 2;
+        }
+        return 1;
+    }
+
+    /** Choose the best physical device that can present to the surface. */
+    pub(file) fn pickDevice(mut self, desc : RendererDesc) : void ! PlatformError {
+        let countAt : i64 = self.scratch + CTX_SCRATCH_DEVICE_COUNT;
+        Mem::putDword(countAt, 0, 0);
+        let r : i32 = self.table.enumeratePhysicalDevices(
+            self.instance,
+            Raw::at(countAt),
+            Raw::nil()
+        );
+        let n : i32 = Mem::dwordAt(countAt, 0);
+        if (!VkErr::ok(r) || n <= 0) {
+            throw PlatformError("vulkan: the loader reports no physical device");
+        }
+        let devices : i64 = Mem::takeZeroed((n as i64) * 8);
+        let props : i64 = Mem::takeZeroed(VKO_PHYSICAL_DEVICE_PROPERTIES_BYTES);
+        if (devices == 0 || props == 0) {
+            Mem::release(devices);
+            Mem::release(props);
+            throw PlatformError("vulkan: out of memory listing the physical devices");
+        }
+        r = self.table.enumeratePhysicalDevices(self.instance, Raw::at(countAt), Raw::at(devices));
+        if (!VkErr::ok(r)) {
+            Mem::release(devices);
+            Mem::release(props);
+            throw PlatformError(VkErr::message("vkEnumeratePhysicalDevices", r));
+        }
+        // VK_INCOMPLETE (a device appeared between the two calls) still lists `n` good ones.
+        n = Mem::dwordAt(countAt, 0).min(n);
+
+        let best : i64 = 0;
+        let bestRank : i32 = 0;
+        let bestFamily : i32 = -1;
+        let bestKind : i32 = 0;
+        for (i of 0..n) {
+            let pd : i64 = Mem::qwordOf(devices, i as i64);
+            let family : i32 = -1;
+            if (pd != 0) {
+                family = self.familyFor(pd);
+            }
+            if (family >= 0) {
+                self.table.getPhysicalDeviceProperties(pd, Raw::at(props));
+                let kind : i32 = Mem::dwordAt(props, VKO_PHYSICAL_DEVICE_PROPERTIES_DEVICE_TYPE);
+                let rank : i32 = VkContext::rank(kind);
+                // A CPU implementation is a way to run this code path, not a GPU: skipped
+                // unless the program asked for it, so `Auto` falls back to the built-in rasteriser.
+                let allowed : bool = kind != VK_PHYSICAL_DEVICE_TYPE_CPU || desc.softwareVulkan;
+                if (allowed && rank > bestRank) {
+                    best = pd;
+                    bestRank = rank;
+                    bestFamily = family;
+                    bestKind = kind;
+                }
+            }
+        }
+        Mem::release(devices);
+        if (best == 0) {
+            Mem::release(props);
+            if (self.supportError != VK_SUCCESS) {
+                throw PlatformError(
+                    VkErr::message(
+                        "asking whether a device can present to the window",
+                        self.supportError
+                    )
+                );
+            }
+            throw PlatformError(
+                "vulkan: no GPU can draw and present to this window (a software Vulkan is ignored unless RendererDesc.softwareVulkan is set)"
+            );
+        }
+        self.physical = best;
+        self.family = bestFamily;
+        self.kind = bestKind;
+
+        self.table.getPhysicalDeviceProperties(best, Raw::at(props));
+        self.maxPushBytes = Mem::dwordAt(
+            props,
+            VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_PUSH_CONSTANTS_SIZE
+        );
+        self.maxAniso = Mem::floatOf(
+            props,
+            VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_SAMPLER_ANISOTROPY / 4
+        );
+        // 4096 is the least every Vulkan device guarantees; a lower answer is a broken one.
+        self.maxImage2D = Mem::dwordAt(
+            props,
+            VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_IMAGE_DIMENSION2D
+        ).max(4096);
+        Mem::release(props);
+        self.table.getPhysicalDeviceMemoryProperties(best, Raw::at(self.memProps));
+    }
+
+    /** Create the logical device with the swapchain extension and, if present, anisotropy. */
+    pub(file) fn createDevice(mut self) : void ! PlatformError {
+        let features : i64 = Mem::takeZeroed(VKO_PHYSICAL_DEVICE_FEATURES_BYTES);
+        if (features == 0) {
+            throw PlatformError("vulkan: out of memory reading the device features");
+        }
+        self.table.getPhysicalDeviceFeatures(self.physical, Raw::at(features));
+        let canAniso : bool = Mem::dwordAt(
+            features,
+            VKO_PHYSICAL_DEVICE_FEATURES_SAMPLER_ANISOTROPY
+        ) != 0;
+        Mem::release(features);
+
+        let want : VkPhysicalDeviceFeatures = VkInit::physicalDeviceFeatures();
+        if (canAniso) {
+            want.samplerAnisotropy = 1;
+        }
+        let featureArr : VkPhysicalDeviceFeatures[] = malloc<VkPhysicalDeviceFeatures>(1);
+        featureArr[0] = want;
+
+        // One queue, full priority. The priority is a float the driver reads by
+        // pointer, so it lives in the block, not in a local.
+        Mem::putFloatOf(self.names, CTX_PRIORITY / 4, 1.0);
+        let qi : VkDeviceQueueCreateInfo = VkInit::deviceQueueCreateInfo();
+        qi.queueFamilyIndex = self.family;
+        qi.queueCount = 1;
+        qi.pQueuePriorities = Raw::at(self.names + CTX_PRIORITY);
+        let qarr : VkDeviceQueueCreateInfo[] = malloc<VkDeviceQueueCreateInfo>(1);
+        qarr[0] = qi;
+
+        // The swapchain extension, in the device-extension table.
+        self.putName(CTX_DEVICE_STRINGS, VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+        Mem::putQword(self.names, CTX_DEVICE_EXTENSIONS, self.names + CTX_DEVICE_STRINGS);
+
+        let dci : VkDeviceCreateInfo = VkInit::deviceCreateInfo();
+        dci.queueCreateInfoCount = 1;
+        dci.pQueueCreateInfos = VkAddr::deviceQueueCreateInfo(qarr);
+        dci.enabledExtensionCount = 1;
+        dci.ppEnabledExtensionNames = Raw::at(self.names + CTX_DEVICE_EXTENSIONS);
+        dci.pEnabledFeatures = VkAddr::physicalDeviceFeatures(featureArr);
+
+        let r : i32 = self.table.createDevice(self.physical, dci, Raw::at(self.scratch));
+        if (!VkErr::ok(r)) {
+            throw PlatformError(VkErr::message("vkCreateDevice", r));
+        }
+        self.device = Mem::qwordAt(self.scratch, 0);
+        self.anisotropy = canAniso;
+        self.table.getDeviceQueue(self.device, self.family, 0, Raw::at(self.scratch));
+        self.queue = Mem::qwordAt(self.scratch, 0);
+    }
+
+    /** The `propertyFlags` of memory type `i`. */
+    pub(crate) fn typeFlags(self, i : i32) : i32 {
+        return Mem::dwordAt(
+            self.memProps,
+            VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_MEMORY_TYPES + (i as i64) * VKO_MEMORY_TYPE_BYTES + VKO_MEMORY_TYPE_PROPERTY_FLAGS
+        );
+    }
+
+    /** How many memory types the device has. */
+    pub(crate) fn memoryTypeCount(self) : i32 {
+        return Mem::dwordAt(self.memProps, VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_MEMORY_TYPE_COUNT);
+    }
+
+    /** A short description of the device, by type. */
+    pub(crate) fn describe(self) : string {
+        if (self.kind == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+            return "vulkan: discrete GPU";
+        }
+        if (self.kind == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+            return "vulkan: integrated GPU";
+        }
+        if (self.kind == VK_PHYSICAL_DEVICE_TYPE_CPU) {
+            return "vulkan: software device";
+        }
+        return "vulkan: GPU";
+    }
+
+    /** Free the three blocks. */
+    pub(file) fn releaseBlocks(mut self) : void {
+        Mem::release(self.scratch);
+        Mem::release(self.names);
+        Mem::release(self.memProps);
+        self.scratch = 0;
+        self.names = 0;
+        self.memProps = 0;
+    }
+
+    /**
+     * Wait for the device to go idle; every object made from it may then be destroyed.
+     * The driver's answer: `VK_ERROR_DEVICE_LOST` is the caller's to act on.
+     */
+    pub(crate) fn waitIdle(self) : i32 {
+        if (self.device == 0) {
+            return VK_SUCCESS;
+        }
+        return self.table.deviceWaitIdle(self.device);
+    }
+
+    /** Destroy the device, the surface and the instance, in that order, and free the blocks. */
+    pub(crate) fn close(mut self) : void {
+        if (self.device != 0) {
+            self.table.deviceWaitIdle(self.device);
+            self.table.destroyDevice(self.device);
+            self.device = 0;
+        }
+        if (self.surface != 0) {
+            self.table.destroySurfaceKHR(self.instance, self.surface);
+            self.surface = 0;
+        }
+        if (self.instance != 0 && self.table.canDestroyInstance()) {
+            self.table.destroyInstance(self.instance);
+        }
+        // An instance without its destroy command is the loader's to reclaim at exit.
+        self.instance = 0;
+        self.releaseBlocks();
+    }
+}

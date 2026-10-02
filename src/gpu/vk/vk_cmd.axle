@@ -1,0 +1,213 @@
+// vk_cmd — the command pool, one-shot submissions, and the image barrier.
+//
+// Commands are recorded into command buffers, and a command buffer comes from a pool.
+// There is one pool, made with `RESET_COMMAND_BUFFER` so a frame's buffer is reset
+// and re-recorded in place rather than freed and reallocated sixty times a second.
+//
+// # One-shot work
+//
+// A texture upload is a handful of commands — barrier, copies, barrier — recorded,
+// submitted and *waited for*. `oneShotBegin` / `oneShotEnd` are that, and the wait is the right
+// shape: an upload is rare (a texture is made once), the staging buffer it reads can then
+// be freed on the spot, and a path that tried to be asynchronous would need exactly the
+// bookkeeping `VkGraveyard` exists for. Per-frame work never comes through here.
+//
+// # The barrier
+//
+// An image has a layout, and the layout changes at specific points: `UNDEFINED` to
+// `TRANSFER_DST` to write it, `TRANSFER_DST` to `SHADER_READ_ONLY` to sample it. Each change
+// is a pipeline barrier naming the stages that must finish and the ones that must wait,
+// and getting any of the four masks wrong is the kind of bug that works on the machine it
+// was written on. `imageBarrier` is the one place the record is filled; the callers say
+// the transition and the masks.
+//
+// The one-element array a barrier is passed through is kept for the pool's life, so a
+// per-frame barrier allocates nothing.
+
+use crate::gpu::vk::vk_context::{CTX_SCRATCH_CMD, VkContext};
+use crate::gpu::vk::vk_error::VkErr;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::sys::vk::vk_const::{
+    VK_COMMAND_BUFFER_LEVEL_PRIMARY, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, VK_QUEUE_FAMILY_IGNORED, VK_SUCCESS,
+};
+use crate::sys::vk::vk_table::VkAddr;
+use crate::sys::vk::vk_types::{
+    VkCommandBufferAllocateInfo, VkCommandBufferBeginInfo, VkCommandPoolCreateInfo,
+    VkImageMemoryBarrier, VkImageSubresourceRange, VkInit, VkSubmitInfo,
+};
+
+/** The command pool and the helpers that record into it. */
+pub(crate) class VkCmd {
+    /** `VkCommandPool`. */
+    pub(crate) pool    : i64 = 0;
+
+    /** The reusable one-element barrier array. */
+    barrier            : VkImageMemoryBarrier[];
+
+    /** The reusable one-element submit array. */
+    submit             : VkSubmitInfo[];
+
+    /**
+     * Whether the last `oneShotEnd` that failed had submitted its buffer before it
+     * failed — the work may then still be running, and what it reads must outlive it.
+     */
+    pub(crate) pending : bool = false;
+
+    /** Make the pool for `ctx`'s queue family; 0 in `pool` when the driver refused. */
+    constructor(ctx : VkContext) {
+        self.barrier = malloc<VkImageMemoryBarrier>(1);
+        self.submit = malloc<VkSubmitInfo>(1);
+        let info : VkCommandPoolCreateInfo = VkInit::commandPoolCreateInfo();
+        info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        info.queueFamilyIndex = ctx.family;
+        let r : i32 = ctx.table.createCommandPool(ctx.device, info, Raw::at(ctx.scratch));
+        if (VkErr::ok(r)) {
+            self.pool = Mem::qwordAt(ctx.scratch, 0);
+        }
+    }
+
+    /** Whether the pool exists. */
+    pub(crate) fn isReady(self) : bool {
+        return self.pool != 0;
+    }
+
+    /** Allocate `count` primary command buffers into the block at `out` (8 bytes each); whether it worked. */
+    pub(crate) fn allocate(self, ctx : VkContext, count : i32, out : i64) : bool {
+        let info : VkCommandBufferAllocateInfo = VkInit::commandBufferAllocateInfo();
+        info.commandPool = self.pool;
+        info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        info.commandBufferCount = count;
+        let r : i32 = ctx.table.allocateCommandBuffers(ctx.device, info, Raw::at(out));
+        return VkErr::ok(r);
+    }
+
+    /** Begin recording a command buffer for a single submission; whether it began. */
+    pub(crate) fn begin(self, ctx : VkContext, cb : i64) : bool {
+        let info : VkCommandBufferBeginInfo = VkInit::commandBufferBeginInfo();
+        info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        let r : i32 = ctx.table.beginCommandBuffer(cb, info);
+        return VkErr::ok(r);
+    }
+
+    /** A fresh command buffer, already recording, for a one-shot submission; 0 on failure. */
+    pub(crate) fn oneShotBegin(self, ctx : VkContext) : i64 {
+        let slot : i64 = ctx.scratch + CTX_SCRATCH_CMD;
+        if (!self.allocate(ctx, 1, slot)) {
+            return 0;
+        }
+        let cb : i64 = Mem::qwordAt(slot, 0);
+        if (!self.begin(ctx, cb)) {
+            self.recycle(ctx, cb);
+            return 0;
+        }
+        return cb;
+    }
+
+    /** Free one command buffer. */
+    pub(crate) fn recycle(self, ctx : VkContext, cb : i64) : void {
+        let slot : i64 = ctx.scratch + CTX_SCRATCH_CMD + 8;
+        Mem::putQword(slot, 0, cb);
+        ctx.table.freeCommandBuffers(ctx.device, self.pool, 1, Raw::at(slot));
+    }
+
+    /**
+     * End, submit, wait for the queue to go idle, and free a one-shot buffer; `VK_SUCCESS`
+     * or the first error.
+     *
+     * A buffer that was submitted but whose wait failed may still be pending, and freeing
+     * a pending buffer is invalid: it is left to the pool, which frees it when it is
+     * destroyed (after the device has gone idle), and `pending` says so to the caller,
+     * whose resources the work may still be using.
+     */
+    pub(crate) fn oneShotEnd(mut self, ctx : VkContext, cb : i64) : i32 {
+        let result : i32 = ctx.table.endCommandBuffer(cb);
+        let pending : bool = false;
+        if (VkErr::ok(result)) {
+            let slot : i64 = ctx.scratch + CTX_SCRATCH_CMD + 16;
+            Mem::putQword(slot, 0, cb);
+            let info : VkSubmitInfo = VkInit::submitInfo();
+            info.commandBufferCount = 1;
+            info.pCommandBuffers = Raw::at(slot);
+            self.submit[0] = info;
+            let sent : i32 = ctx.table.queueSubmit(
+                ctx.queue,
+                1,
+                VkAddr::submitInfo(self.submit),
+                0
+            );
+            result = sent;
+            if (VkErr::ok(sent)) {
+                result = ctx.table.queueWaitIdle(ctx.queue);
+                pending = !VkErr::ok(result);
+            }
+        }
+        if (!pending) {
+            self.recycle(ctx, cb);
+        }
+        self.pending = pending;
+        if (VkErr::ok(result)) {
+            return VK_SUCCESS;
+        }
+        return result;
+    }
+
+    /**
+     * Record a layout transition of `mips` levels from `baseMip` and `layers` layers of
+     * a colour or depth image, with the stage and access masks that make it safe.
+     */
+    pub(crate) fn imageBarrier(
+        mut self,
+        ctx : VkContext,
+        cb : i64,
+        image : i64,
+        aspect : i32,
+        baseMip : i32,
+        mips : i32,
+        layers : i32,
+        oldLayout : i32,
+        newLayout : i32,
+        srcAccess : i32,
+        dstAccess : i32,
+        srcStage : i32,
+        dstStage : i32
+    ) : void {
+        let b : VkImageMemoryBarrier = VkInit::imageMemoryBarrier();
+        b.srcAccessMask = srcAccess;
+        b.dstAccessMask = dstAccess;
+        b.oldLayout = oldLayout;
+        b.newLayout = newLayout;
+        b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = image;
+        b.subresourceRange = VkImageSubresourceRange {
+            aspectMask: aspect,
+            baseMipLevel: baseMip,
+            levelCount: mips,
+            baseArrayLayer: 0,
+            layerCount: layers,
+        };
+        self.barrier[0] = b;
+        ctx.table.cmdPipelineBarrier(
+            cb,
+            srcStage,
+            dstStage,
+            0,
+            0,
+            Raw::nil(),
+            0,
+            Raw::nil(),
+            1,
+            VkAddr::imageMemoryBarrier(self.barrier)
+        );
+    }
+
+    /** Destroy the pool (and with it every command buffer made from it). */
+    pub(crate) fn destroy(mut self, ctx : VkContext) : void {
+        if (self.pool != 0) {
+            ctx.table.destroyCommandPool(ctx.device, self.pool);
+            self.pool = 0;
+        }
+    }
+}

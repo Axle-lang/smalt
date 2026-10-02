@@ -1,0 +1,944 @@
+// vk_backend — the Vulkan renderer: a frame loop over everything the other files make.
+//
+// `VkBackend` is what `Renderer` talks to when there is a GPU. It owns the context, the
+// memory heap, the swapchain, the pipelines, the tables of meshes and textures and the 2-D
+// overlay, and its own part is the *frame*: acquire an image, record the commands that draw
+// the scene, submit, present — with two frames in flight, so the CPU records frame N + 1
+// while the GPU runs frame N.
+//
+// # One frame
+//
+//   1. wait on the fence of this frame's slot (the GPU has finished the frame that used it
+//      two frames ago), then sweep the graveyard of what no frame still running can name;
+//   2. acquire the next swapchain image — a swapchain that went out of date is rebuilt and
+//      the frame is skipped, which is how a window resize is absorbed;
+//   3. write the frame's uniform block and, if the program drew a 2-D overlay, copy it into
+//      this slot's staging buffer (`vk_overlay`);
+//   4. record: copy the overlay into its texture, begin the render pass, draw the opaque
+//      then the blended draws, draw the overlay, end the pass;
+//   5. submit — waiting on the acquire semaphore at the colour-output stage, signalling
+//      the image's own "finished" semaphore and this slot's fence — and present.
+//
+// A steady frame allocates nothing in steps 2 to 5: every array a Vulkan call reads by
+// pointer is a block or an array made at construction and rewritten in place. The
+// exceptions are a swapchain rebuild and an overlay that outgrew its texture or this slot's
+// staging buffer: those remake what is too small (the texture with a one-shot upload that
+// waits for the queue to go idle).
+//
+// # Failure
+//
+// Start-up failures raise `PlatformError` and leave nothing behind. After that nothing is
+// thrown. A swapchain that is out of date is rebuilt; one that is suboptimal is rebuilt
+// only when the window's size moved away from it (a driver may answer suboptimal frame
+// after frame at a size it is happy to keep presenting). A frame that cannot be drawn —
+// no image within `VKB_ACQUIRE_TIMEOUT`, a window with no area — returns false and the
+// next one tries again. Every other failure of the device or the surface (`VkErr::isFatal`:
+// lost, out of memory), wherever it is met, is permanent: `render` answers false from then
+// on, and `isLost`, which `Renderer::isLost` passes on, says so.
+//
+// After `release` every entry point is a no-op that answers "nothing": a `Renderer` used
+// after `close()` draws nothing and touches nothing it gave back.
+//
+// # Threads
+//
+// Everything here belongs to the thread that made the window.
+
+use crate::core::error::PlatformError;
+use crate::gpu::backend::{GpuBackend, OverlayView, RendererDesc};
+use crate::gpu::image::{Image, SamplerDesc};
+use crate::gpu::mesh_builder::MeshBuilder;
+use crate::gpu::scene::{DrawItem, Scene};
+use crate::gpu::vk::vk_cmd::VkCmd;
+use crate::gpu::vk::vk_context::VkContext;
+use crate::gpu::vk::vk_error::VkErr;
+use crate::gpu::vk::vk_frame::{DRAW_BYTES, FRAME_BYTES, FRAMES_IN_FLIGHT, VkFrame};
+use crate::gpu::vk::vk_graveyard::VkGraveyard;
+use crate::gpu::vk::vk_heap::GpuHeap;
+use crate::gpu::vk::vk_mem::{GpuBuffer, MemUse, VkMem};
+use crate::gpu::vk::vk_meshes::VkMeshes;
+use crate::gpu::vk::vk_overlay::VkOverlay;
+use crate::gpu::vk::vk_pipelines::VkPipelines;
+use crate::gpu::vk::vk_swapchain::VkSwapchain;
+use crate::gpu::vk::vk_textures::VkTextures;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::render::color::Color;
+use crate::sys::vk::vk_const::{
+    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_ERROR_OUT_OF_DATE_KHR,
+    VK_FENCE_CREATE_SIGNALED_BIT, VK_INDEX_TYPE_UINT32, VK_NOT_READY,
+    VK_PIPELINE_BIND_POINT_GRAPHICS, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    VK_SHADER_STAGE_FRAGMENT_BIT, VK_SHADER_STAGE_VERTEX_BIT, VK_SUBOPTIMAL_KHR,
+    VK_SUBPASS_CONTENTS_INLINE, VK_SUCCESS, VK_TIMEOUT,
+};
+use crate::sys::vk::vk_table::VkAddr;
+use crate::sys::vk::vk_types::{
+    VkDescriptorBufferInfo, VkDescriptorSetAllocateInfo, VkExtent2D, VkInit, VkOffset2D,
+    VkPresentInfoKHR, VkRect2D, VkRenderPassBeginInfo, VkSubmitInfo, VkViewport,
+    VkWriteDescriptorSet,
+};
+use crate::video::window::Window;
+
+/** The wait-forever timeout: `UINT64_MAX`, which is -1 as a signed 64-bit value. */
+const VKB_FOREVER : i64 = -1;
+
+/**
+ * How long an acquire may wait for an image, in nanoseconds: a tenth of a second. A
+ * window the compositor stopped showing (occluded on Wayland, unmapped on X11) can hold
+ * every image back indefinitely in FIFO mode, and a frame that waits forever is a program
+ * that cannot even answer its quit event.
+ */
+const VKB_ACQUIRE_TIMEOUT : i64 = 100000000;
+
+// Offsets in `block`, the small block every per-frame pointer argument lives in. Laid
+// out once so no two uses share a byte.
+
+/** The wait semaphore of a submit. */
+const BLK_WAIT : i64 = 0;
+
+/** The wait stage mask of a submit (4 bytes). */
+const BLK_STAGE : i64 = 8;
+
+/** The command buffer of a submit. */
+const BLK_CB : i64 = 16;
+
+/** The signal semaphore of a submit, which the present waits on. */
+const BLK_SIGNAL : i64 = 24;
+
+/** The swapchain a present targets. */
+const BLK_SWAP : i64 = 32;
+
+/** The image index acquire writes and present reads (4 bytes). */
+const BLK_INDEX : i64 = 40;
+
+/** A fence handle, for the wait and reset calls. */
+const BLK_FENCE : i64 = 48;
+
+/** The vertex buffer to bind. */
+const BLK_VERTEX : i64 = 56;
+
+/** The vertex buffer's offset — always zero. */
+const BLK_OFFSET : i64 = 64;
+
+/** The descriptor set to bind. */
+const BLK_SET : i64 = 72;
+
+/** The clear values: colour (4 floats), then depth and stencil. */
+const BLK_CLEAR : i64 = 80;
+
+/** Bytes in `block`. */
+const BLK_BYTES : i64 = 128;
+
+/** The Vulkan renderer. */
+pub(crate) class VkBackend : GpuBackend {
+    ctx       : VkContext;
+    heap      : GpuHeap;
+    grave     : VkGraveyard;
+    cmd       : VkCmd;
+    pipes     : VkPipelines;
+    swap      : VkSwapchain;
+    textures  : VkTextures;
+    meshes    : VkMeshes;
+    overlay   : VkOverlay;
+
+    /** Per-frame-in-flight objects. */
+    cbs       : i64 = 0;
+    avail     : i64[];
+    fences    : i64[];
+    ubos      : GpuBuffer[];
+    frameSets : i64[];
+
+    /** Reusable argument storage; see the `BLK_` offsets. */
+    block     : i64 = 0;
+    push      : i64 = 0;
+    vp        : VkViewport[];
+    sc        : VkRect2D[];
+    submitArr : VkSubmitInfo[];
+
+    /** The pipeline and texture set bound so far in the frame being recorded; 0 = none. */
+    curPipe   : i64 = 0;
+    curSet    : i64 = 0;
+
+    frameNo  : i64 = 0;
+    reqW     : i32 = 0;
+    reqH     : i32 = 0;
+    vsync    : bool = true;
+
+    /**
+     * Whether the swapchain must be rebuilt before the next frame. Set by `resize`, by an
+     * out-of-date or (resized) suboptimal acquire or present, and by `abandon`; cleared
+     * only by a build that succeeded.
+     */
+    dirty    : bool = true;
+    lost     : bool = false;
+    released : bool = false;
+
+    /**
+     * Open Vulkan on `win`, with room for `meshSlots` meshes and `textureSlots` textures
+     * (the overlay's is on top): a context, a heap, the pipelines, the per-frame objects,
+     * the overlay's texture and — last, see below — a swapchain. Raises `PlatformError`,
+     * having released everything made so far, when any step cannot be done.
+     */
+    constructor(
+        win : Window,
+        desc : RendererDesc,
+        meshSlots : i32,
+        textureSlots : i32
+    ) ! PlatformError {
+        self.ctx = new VkContext(win, desc)?;
+        self.heap = new GpuHeap(self.ctx);
+        self.grave = new VkGraveyard();
+        self.cmd = new VkCmd(self.ctx);
+        self.swap = new VkSwapchain();
+        self.textures = new VkTextures(textureSlots + 1);
+        self.meshes = new VkMeshes(meshSlots);
+        self.overlay = new VkOverlay();
+        self.vsync = desc.vsync;
+        self.reqW = win.width();
+        self.reqH = win.height();
+
+        let n : i64 = FRAMES_IN_FLIGHT as i64;
+        self.avail = malloc<i64>(n);
+        self.fences = malloc<i64>(n);
+        self.ubos = malloc<GpuBuffer>(n);
+        self.frameSets = malloc<i64>(n);
+        for (i of 0..n) {
+            self.avail[i] = 0;
+            self.fences[i] = 0;
+            self.ubos[i] = GpuBuffer::none();
+            self.frameSets[i] = 0;
+        }
+        self.block = Mem::takeZeroed(BLK_BYTES);
+        self.push = Mem::takeZeroed(DRAW_BYTES);
+        self.cbs = Mem::takeZeroed(n * 8);
+        self.vp = malloc<VkViewport>(1);
+        self.sc = malloc<VkRect2D>(1);
+        self.submitArr = malloc<VkSubmitInfo>(1);
+
+        let reason : string = "";
+        let format : i32 = self.swap.pickFormat(self.ctx);
+        if ((self.ctx.maxPushBytes as i64) < DRAW_BYTES) {
+            reason = "vulkan: the device allows fewer push-constant bytes than the backend uses";
+        } else if (self.block == 0 || self.push == 0 || self.cbs == 0) {
+            reason = "vulkan: out of memory taking the frame blocks";
+        } else if (!self.cmd.isReady()) {
+            reason = "vulkan: could not create a command pool";
+        } else if (format == 0) {
+            reason = "vulkan: the surface offers no colour format";
+        }
+        // Always built, so the field is always set: with a format of 0 the constructor
+        // makes nothing and `isReady` says so.
+        self.pipes = new VkPipelines(self.ctx, format, textureSlots + 1);
+        if (reason.byteLength == 0 && !self.pipes.isReady()) {
+            reason = "vulkan: could not build the pipelines (the device may lack a depth format)";
+        }
+        if (reason.byteLength == 0 && !self.makeFrameObjects()) {
+            reason = "vulkan: could not create the per-frame objects";
+        }
+        if (reason.byteLength == 0) {
+            // The overlay's slot is taken now, before the program can upload anything;
+            // `stageOverlay` grows it to the layer the first time one is drawn.
+            let slot : i32 = self.createTexture(new Image(1, 1, 1), VkOverlay::sampler());
+            self.overlay.adopt(slot, 1, 1);
+            if (slot < 0) {
+                reason = "vulkan: could not create the overlay texture";
+            }
+        }
+        // The swapchain comes last: a window that has carried a swapchain may not show a
+        // GDI or X11 blit any more, so nothing that can still fail is left after it — a
+        // failure before it hands the CPU a window it can draw to. A build that cannot be
+        // done *yet* (a window not mapped, with no extent) is left to the first frame;
+        // giving up now would send `Auto` to the CPU for good.
+        if (reason.byteLength == 0 && self.reqW > 0 && self.reqH > 0) {
+            let r : i32 = self.swap.build(
+                self.ctx,
+                self.heap,
+                self.pipes,
+                self.reqW,
+                self.reqH,
+                self.vsync,
+                0
+            );
+            if (r == VK_SUCCESS) {
+                self.dirty = false;
+            } else if (VkErr::isFatal(r)) {
+                reason = VkErr::message("creating the swapchain", r);
+            }
+        }
+        if (reason.byteLength != 0) {
+            self.release();
+            throw PlatformError(reason);
+        }
+    }
+
+    /** The command buffers, semaphores, fences, uniform buffers and uniform descriptor sets. */
+    pub(file) fn makeFrameObjects(mut self) : bool {
+        let n : i32 = FRAMES_IN_FLIGHT;
+        if (!self.cmd.allocate(self.ctx, n, self.cbs)) {
+            return false;
+        }
+        // The one-element arrays the descriptor calls read, rewritten for each slot.
+        let layouts : i64[] = malloc<i64>(1);
+        let bi : VkDescriptorBufferInfo[] = malloc<VkDescriptorBufferInfo>(1);
+        let w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
+        for (i of 0..n) {
+            let k : i64 = i as i64;
+            let sr : i32 = self.ctx.table.createSemaphore(
+                self.ctx.device,
+                VkInit::semaphoreCreateInfo(),
+                Raw::at(self.ctx.scratch)
+            );
+            if (!VkErr::ok(sr)) {
+                return false;
+            }
+            self.avail[k] = Mem::qwordAt(self.ctx.scratch, 0);
+
+            let fi = VkInit::fenceCreateInfo();
+            fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+            let fr : i32 = self.ctx.table.createFence(
+                self.ctx.device,
+                fi,
+                Raw::at(self.ctx.scratch)
+            );
+            if (!VkErr::ok(fr)) {
+                return false;
+            }
+            self.fences[k] = Mem::qwordAt(self.ctx.scratch, 0);
+
+            let ubo : GpuBuffer = VkMem::makeBuffer(
+                self.ctx,
+                self.heap,
+                FRAME_BYTES,
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                MemUse::Stream
+            );
+            if (ubo.isNone() || ubo.mapped() == 0) {
+                // A buffer made but not mapped is not in `ubos` yet: `release` would miss it.
+                VkMem::destroyBuffer(self.ctx, self.heap, ubo);
+                return false;
+            }
+            self.ubos[k] = ubo;
+
+            layouts[0] = self.pipes.frameLayout;
+            let ai : VkDescriptorSetAllocateInfo = VkInit::descriptorSetAllocateInfo();
+            ai.descriptorPool = self.pipes.pool;
+            ai.descriptorSetCount = 1;
+            ai.pSetLayouts = VkAddr::handles(layouts);
+            let dr : i32 = self.ctx.table.allocateDescriptorSets(
+                self.ctx.device,
+                ai,
+                Raw::at(self.ctx.scratch)
+            );
+            if (!VkErr::ok(dr)) {
+                return false;
+            }
+            self.frameSets[k] = Mem::qwordAt(self.ctx.scratch, 0);
+
+            bi[0] = VkDescriptorBufferInfo { buffer: ubo.buffer, offset: 0, range: FRAME_BYTES };
+            let write : VkWriteDescriptorSet = VkInit::writeDescriptorSet();
+            write.dstSet = self.frameSets[k];
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            write.pBufferInfo = VkAddr::descriptorBufferInfo(bi);
+            w[0] = write;
+            self.ctx.table.updateDescriptorSets(
+                self.ctx.device,
+                1,
+                VkAddr::writeDescriptorSet(w),
+                0,
+                Raw::nil()
+            );
+        }
+        return true;
+    }
+
+    /** "vulkan: <kind of device>". */
+    pub(crate) fn name(self) : string {
+        return self.ctx.describe();
+    }
+
+    /** True: this is the GPU. */
+    pub(crate) fn isGpu(self) : bool {
+        return true;
+    }
+
+    /**
+     * Whether the backend is finished — the device or the surface was lost, or the driver
+     * ran out of memory; permanent.
+     */
+    pub(crate) fn isLost(self) : bool {
+        return self.lost;
+    }
+
+    /** Whether nothing more can be done: lost, or released. */
+    pub(file) fn finished(self) : bool {
+        return self.lost || self.released;
+    }
+
+    /** The swapchain's width, or the last size asked for when none is built. */
+    pub(crate) fn width(self) : i32 {
+        if (self.swap.isBuilt()) {
+            return self.swap.w;
+        }
+        return self.reqW;
+    }
+
+    /** The swapchain's height, or the last size asked for when none is built. */
+    pub(crate) fn height(self) : i32 {
+        if (self.swap.isBuilt()) {
+            return self.swap.h;
+        }
+        return self.reqH;
+    }
+
+    /** Note a new client size; the swapchain is rebuilt at the next frame. */
+    pub(crate) fn resize(mut self, w : i32, h : i32) : void {
+        if (self.released) {
+            return;
+        }
+        if (w != self.reqW || h != self.reqH) {
+            self.reqW = w;
+            self.reqH = h;
+            self.dirty = true;
+        }
+    }
+
+    /** The frame a resource released *now* is buried at: the next one to be recorded. */
+    pub(file) fn burialFrame(self) : i64 {
+        return self.frameNo + 1;
+    }
+
+    /** Leave the backend lost if `r` says the device or the surface is gone. */
+    pub(file) fn note(mut self, r : i32) : void {
+        if (VkErr::isFatal(r)) {
+            self.lost = true;
+        }
+    }
+
+    /**
+     * Wait for the GPU and destroy everything buried — the answer to a full graveyard.
+     * The graveyard is empty afterwards, whatever the wait said: after a device loss,
+     * destroying what it held is still allowed and is all that is left to do.
+     */
+    pub(file) fn drain(mut self) : void {
+        self.note(self.ctx.waitIdle());
+        self.grave.flush(self.ctx, self.heap, self.pipes.pool);
+    }
+
+    /** Upload geometry; the slot or -1. */
+    pub(crate) fn createMesh(mut self, mesh : MeshBuilder) : i32 {
+        if (self.finished()) {
+            return -1;
+        }
+        let slot : i32 = self.meshes.create(self.ctx, self.heap, mesh);
+        if (slot < 0 && self.grave.waiting() > 0) {
+            // Memory that is buried but not yet swept may be all that is missing.
+            self.drain();
+            slot = self.meshes.create(self.ctx, self.heap, mesh);
+        }
+        return slot;
+    }
+
+    /** Replace a mesh's geometry; whether it was. */
+    pub(crate) fn updateMesh(mut self, slot : i32, mesh : MeshBuilder) : bool {
+        if (self.finished()) {
+            return false;
+        }
+        if (self.meshes.update(self.ctx, self.heap, self.grave, slot, mesh, self.burialFrame())) {
+            return true;
+        }
+        if (self.grave.waiting() > 0) {
+            // A full graveyard, or memory that is buried but not yet swept: either way a
+            // drain may be all that is missing.
+            self.drain();
+            return self.meshes.update(
+                self.ctx,
+                self.heap,
+                self.grave,
+                slot,
+                mesh,
+                self.burialFrame()
+            );
+        }
+        return false;
+    }
+
+    /**
+     * Release a mesh; safe while frames that drew it are in flight. A full graveyard is
+     * drained first, after which it has room: the second bury cannot fail.
+     */
+    pub(crate) fn destroyMesh(mut self, slot : i32) : void {
+        if (self.released) {
+            return;
+        }
+        if (!self.meshes.destroy(self.grave, slot, self.burialFrame())) {
+            self.drain();
+            self.meshes.destroy(self.grave, slot, self.burialFrame());
+        }
+    }
+
+    /** One try at an upload; the slot or -1, leaving the backend lost on a device failure. */
+    pub(file) fn tryTexture(mut self, image : Image, sampler : SamplerDesc) : i32 {
+        let slot : i32 = self.textures.create(
+            self.ctx,
+            self.heap,
+            self.cmd,
+            self.pipes,
+            self.grave,
+            self.burialFrame(),
+            image,
+            sampler
+        );
+        self.note(self.textures.lastError);
+        return slot;
+    }
+
+    /** Upload an image; the slot or -1. */
+    pub(crate) fn createTexture(mut self, image : Image, sampler : SamplerDesc) : i32 {
+        if (self.finished()) {
+            return -1;
+        }
+        let slot : i32 = self.tryTexture(image, sampler);
+        if (slot < 0 && !self.lost && self.grave.waiting() > 0) {
+            // Buried memory, or buried descriptor sets the pool still counts, may be all
+            // that is missing.
+            self.drain();
+            slot = self.tryTexture(image, sampler);
+        }
+        return slot;
+    }
+
+    /** Release a texture; safe while frames that sampled it are in flight. See `destroyMesh`. */
+    pub(crate) fn destroyTexture(mut self, slot : i32) : void {
+        if (self.released) {
+            return;
+        }
+        if (!self.textures.destroy(self.grave, slot, self.burialFrame())) {
+            self.drain();
+            self.textures.destroy(self.grave, slot, self.burialFrame());
+        }
+    }
+
+    /** Rebuild the swapchain for the requested size; whether one now exists. */
+    pub(file) fn rebuildSwapchain(mut self) : bool {
+        if (self.reqW <= 0 || self.reqH <= 0) {
+            return false;
+        }
+        let r : i32 = self.swap.recreate(
+            self.ctx,
+            self.heap,
+            self.pipes,
+            self.grave,
+            self.burialFrame(),
+            self.reqW,
+            self.reqH,
+            self.vsync
+        );
+        if (r == VK_SUCCESS) {
+            self.dirty = false;
+            return true;
+        }
+        // Out of date (the surface changed under the call) or no area: try next frame. A
+        // lost surface or device, or no memory, is the end — not a frame skipped forever.
+        self.note(r);
+        return false;
+    }
+
+    /** Whether the window's size has moved away from the swapchain's. */
+    pub(file) fn sizeMoved(self) : bool {
+        return self.reqW != self.swap.w || self.reqH != self.swap.h;
+    }
+
+    /**
+     * Make sure the overlay's texture holds a `ov.w` x `ov.h` layer and copy the layer
+     * into frame slot `f`'s staging buffer; whether the overlay can be drawn this frame.
+     *
+     * A texture that is too small is released and a bigger one made: the slot this frees
+     * is free only until the very next call takes one again, and nothing else runs in
+     * between, so the overlay keeps its place in the table.
+     */
+    pub(file) fn stageOverlay(mut self, f : i32, ov : OverlayView) : bool {
+        if (ov.w <= 0 || ov.h <= 0) {
+            return false;
+        }
+        if (self.overlay.needsTexture(ov.w, ov.h)) {
+            let tw : i32 = VkOverlay::capacityFor(ov.w, self.ctx.maxImage2D);
+            let th : i32 = VkOverlay::capacityFor(ov.h, self.ctx.maxImage2D);
+            if (self.overlay.slot >= 0) {
+                self.destroyTexture(self.overlay.slot);
+            }
+            let slot : i32 = self.createTexture(new Image(tw, th, 1), VkOverlay::sampler());
+            self.overlay.adopt(slot, tw, th);
+            if (slot < 0) {
+                return false;
+            }
+        }
+        return self.overlay.stage(self.ctx, self.heap, f, ov);
+    }
+
+    /** Draw item `it` into `cb`, rebinding pipeline and texture only when they change. */
+    pub(file) fn recordDraw(mut self, cb : i64, it : DrawItem) : void {
+        let vb : i64 = self.meshes.vertexBuffer(it.meshSlot);
+        let ib : i64 = self.meshes.indexBuffer(it.meshSlot);
+        let count : i32 = self.meshes.indexCount(it.meshSlot);
+        let set : i64 = self.textures.setOf(it.texSlot);
+        if (vb == 0 || ib == 0 || count <= 0 || set == 0) {
+            return;
+        }
+        let blend : bool = it.material.opacity < 1.0;
+        let pipe : i64 = self.pipes.scenePipeline(blend, !it.material.cullBackface);
+        if (pipe != self.curPipe) {
+            self.ctx.table.cmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
+            self.curPipe = pipe;
+        }
+        if (set != self.curSet) {
+            Mem::putQword(self.block, BLK_SET, set);
+            self.ctx.table.cmdBindDescriptorSets(
+                cb,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                self.pipes.layout,
+                1,
+                1,
+                Raw::at(self.block + BLK_SET),
+                0,
+                Raw::nil()
+            );
+            self.curSet = set;
+        }
+        VkFrame::writeDraw(self.push, it);
+        self.ctx.table.cmdPushConstants(
+            cb,
+            self.pipes.layout,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            0,
+            DRAW_BYTES as i32,
+            Raw::at(self.push)
+        );
+        Mem::putQword(self.block, BLK_VERTEX, vb);
+        self.ctx.table.cmdBindVertexBuffers(
+            cb,
+            0,
+            1,
+            Raw::at(self.block + BLK_VERTEX),
+            Raw::at(self.block + BLK_OFFSET)
+        );
+        self.ctx.table.cmdBindIndexBuffer(cb, ib, 0, VK_INDEX_TYPE_UINT32);
+        self.ctx.table.cmdDrawIndexed(cb, count, 1, 0, 0, 0);
+    }
+
+    /** Record the whole frame into `cb` against swapchain image `index`. */
+    pub(file) fn record(
+        mut self,
+        cb : i64,
+        f : i32,
+        index : i32,
+        scene : Scene,
+        drawOverlay : bool
+    ) : bool {
+        if (!self.cmd.begin(self.ctx, cb)) {
+            return false;
+        }
+        if (drawOverlay) {
+            self.overlay.recordUpload(self.ctx, self.cmd, self.textures, cb, f);
+        }
+
+        let clear : Color = scene.clearColor();
+        Mem::putFloatOf(self.block, BLK_CLEAR / 4, clear.r);
+        Mem::putFloatOf(self.block, BLK_CLEAR / 4 + 1, clear.g);
+        Mem::putFloatOf(self.block, BLK_CLEAR / 4 + 2, clear.b);
+        Mem::putFloatOf(self.block, BLK_CLEAR / 4 + 3, 1.0);
+        Mem::putFloatOf(self.block, BLK_CLEAR / 4 + 4, 1.0);
+        Mem::putDword(self.block, BLK_CLEAR + 20, 0);
+
+        let w : i32 = self.swap.w;
+        let h : i32 = self.swap.h;
+        let begin : VkRenderPassBeginInfo = VkInit::renderPassBeginInfo();
+        begin.renderPass = self.pipes.renderPass;
+        begin.framebuffer = self.swap.framebuffer(index);
+        begin.renderArea = VkRect2D {
+            offset: VkOffset2D { x: 0, y: 0 },
+            extent: VkExtent2D { width: w, height: h },
+        };
+        begin.clearValueCount = 2;
+        begin.pClearValues = Raw::at(self.block + BLK_CLEAR);
+        self.ctx.table.cmdBeginRenderPass(cb, begin, VK_SUBPASS_CONTENTS_INLINE);
+
+        self.vp[0] = VkViewport {
+            x: (0.0 as f32),
+            y: (0.0 as f32),
+            width: ((w as f64) as f32),
+            height: ((h as f64) as f32),
+            minDepth: (0.0 as f32),
+            maxDepth: (1.0 as f32),
+        };
+        self.sc[0] = VkRect2D {
+            offset: VkOffset2D { x: 0, y: 0 },
+            extent: VkExtent2D { width: w, height: h },
+        };
+        self.ctx.table.cmdSetViewport(cb, 0, 1, VkAddr::viewport(self.vp));
+        self.ctx.table.cmdSetScissor(cb, 0, 1, VkAddr::rect2D(self.sc));
+
+        Mem::putQword(self.block, BLK_SET, self.frameSets[f as i64]);
+        self.ctx.table.cmdBindDescriptorSets(
+            cb,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            self.pipes.layout,
+            0,
+            1,
+            Raw::at(self.block + BLK_SET),
+            0,
+            Raw::nil()
+        );
+
+        self.curPipe = 0;
+        self.curSet = 0;
+        let n : i32 = scene.drawCount();
+        for (k of 0..n) {
+            self.recordDraw(cb, scene.item(scene.orderAt(k)));
+        }
+
+        if (drawOverlay) {
+            self.overlay.recordDraw(
+                self.ctx,
+                self.pipes,
+                self.textures,
+                cb,
+                self.block + BLK_SET,
+                w,
+                h
+            );
+        }
+        self.ctx.table.cmdEndRenderPass(cb);
+        return VkErr::ok(self.ctx.table.endCommandBuffer(cb));
+    }
+
+    /** Submit `cb` for image `index`; whether it was submitted (false leaves the backend lost). */
+    pub(file) fn submit(mut self, cb : i64, f : i32, index : i32) : bool {
+        let signal : i64 = self.swap.finished(index);
+        Mem::putQword(self.block, BLK_WAIT, self.avail[f as i64]);
+        Mem::putDword(self.block, BLK_STAGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+        Mem::putQword(self.block, BLK_CB, cb);
+        Mem::putQword(self.block, BLK_SIGNAL, signal);
+        let si : VkSubmitInfo = VkInit::submitInfo();
+        si.waitSemaphoreCount = 1;
+        si.pWaitSemaphores = Raw::at(self.block + BLK_WAIT);
+        si.pWaitDstStageMask = Raw::at(self.block + BLK_STAGE);
+        si.commandBufferCount = 1;
+        si.pCommandBuffers = Raw::at(self.block + BLK_CB);
+        si.signalSemaphoreCount = 1;
+        si.pSignalSemaphores = Raw::at(self.block + BLK_SIGNAL);
+        self.submitArr[0] = si;
+        let r : i32 = self.ctx.table.queueSubmit(
+            self.ctx.queue,
+            1,
+            VkAddr::submitInfo(self.submitArr),
+            self.fences[f as i64]
+        );
+        if (!VkErr::ok(r)) {
+            // The fence was reset and the acquire semaphore is signalled, and nothing will
+            // signal either: a retry would wait on that fence forever. Whatever the code,
+            // the backend is finished — `render` answers false from here on instead of hanging.
+            self.lost = true;
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Present image `index` once the submit's signal semaphore is; whether the image was
+     * shown. Out of date marks the swapchain for a rebuild, and so does suboptimal when the
+     * window's size has moved; any other failure leaves the backend lost.
+     */
+    pub(file) fn present(mut self) : bool {
+        Mem::putQword(self.block, BLK_SWAP, self.swap.handle);
+        let pi : VkPresentInfoKHR = VkInit::presentInfo();
+        pi.waitSemaphoreCount = 1;
+        pi.pWaitSemaphores = Raw::at(self.block + BLK_SIGNAL);
+        pi.swapchainCount = 1;
+        pi.pSwapchains = Raw::at(self.block + BLK_SWAP);
+        pi.pImageIndices = Raw::at(self.block + BLK_INDEX);
+        let pr : i32 = self.ctx.table.queuePresentKHR(self.ctx.queue, pi);
+        if (pr == VK_ERROR_OUT_OF_DATE_KHR || (pr == VK_SUBOPTIMAL_KHR && self.sizeMoved())) {
+            self.dirty = true;
+        }
+        self.note(pr);
+        return pr >= 0;
+    }
+
+    /**
+     * Give up on a frame whose image was acquired but will not be drawn: an empty submit
+     * consumes the acquire semaphore and signals the (already reset) fence, and the
+     * swapchain is rebuilt to get the unpresented image back; always false.
+     */
+    pub(file) fn abandon(mut self, f : i32) : bool {
+        self.submitEmpty(f);
+        self.dirty = true;
+        return false;
+    }
+
+    /** Draw `scene`, composite `overlay`, and present; whether a frame was shown. */
+    pub(crate) fn render(mut self, scene : Scene, overlay : OverlayView, win : Window) : bool {
+        if (self.finished() || win.minimised() || !win.isOpen()) {
+            return false;
+        }
+        if (self.reqW <= 0 || self.reqH <= 0) {
+            return false;
+        }
+        if (self.dirty || !self.swap.isBuilt()) {
+            if (!self.rebuildSwapchain()) {
+                return false;
+            }
+        }
+
+        let frame : i64 = self.frameNo + 1;
+        let f : i32 = (frame % (FRAMES_IN_FLIGHT as i64)) as i32;
+        let k : i64 = f as i64;
+        Mem::putQword(self.block, BLK_FENCE, self.fences[k]);
+        let wr : i32 = self.ctx.table.waitForFences(
+            self.ctx.device,
+            1,
+            Raw::at(self.block + BLK_FENCE),
+            1,
+            VKB_FOREVER
+        );
+        if (!VkErr::ok(wr)) {
+            // Device lost or out of memory: what that slot's frame used may still be in
+            // use, so nothing is swept and nothing more is drawn.
+            self.lost = true;
+            return false;
+        }
+        self.grave.sweep(self.ctx, self.heap, self.pipes.pool, frame - (FRAMES_IN_FLIGHT as i64));
+
+        let ar : i32 = self.ctx.table.acquireNextImageKHR(
+            self.ctx.device,
+            self.swap.handle,
+            VKB_ACQUIRE_TIMEOUT,
+            self.avail[k],
+            0,
+            Raw::at(self.block + BLK_INDEX)
+        );
+        if (ar == VK_TIMEOUT || ar == VK_NOT_READY) {
+            // No image yet, and nothing was signalled or reset: the next frame asks again.
+            return false;
+        }
+        if (ar == VK_ERROR_OUT_OF_DATE_KHR) {
+            self.dirty = true;
+            return false;
+        }
+        if (!VkErr::ok(ar)) {
+            // Device lost, surface lost, out of memory: none is recoverable from here.
+            self.lost = true;
+            return false;
+        }
+        let index : i32 = Mem::dwordAt(self.block, BLK_INDEX);
+        // Only now is the fence reset: a frame abandoned before this point leaves it
+        // signalled, and the next try's wait returns at once instead of deadlocking.
+        let fr : i32 = self.ctx.table.resetFences(
+            self.ctx.device,
+            1,
+            Raw::at(self.block + BLK_FENCE)
+        );
+        if (!VkErr::ok(fr)) {
+            // Out of memory, and the fence's state is unknown: an empty submit that signals
+            // it might be invalid, and a wait on it might never return. Finished.
+            self.lost = true;
+            return false;
+        }
+        // From here on the fence is unsignalled and the acquire semaphore pending: every way
+        // out either submits the frame or `abandon`s it, which keeps both consistent.
+        if (self.swap.framebuffer(index) == 0) {
+            return self.abandon(f);
+        }
+
+        VkFrame::writeFrame(self.ubos[k].mapped(), scene);
+        let drawOverlay : bool = overlay.used && self.stageOverlay(f, overlay);
+        if (self.lost) {
+            // Making the overlay's texture met a lost device.
+            return self.abandon(f);
+        }
+
+        let cb : i64 = Mem::qwordOf(self.cbs, k);
+        if (!VkErr::ok(self.ctx.table.resetCommandBuffer(cb, 0))) {
+            return self.abandon(f);
+        }
+        if (!self.record(cb, f, index, scene, drawOverlay)) {
+            // Nothing was recorded, so nothing would ever signal this slot's fence and the
+            // acquire semaphore would be left signalled.
+            return self.abandon(f);
+        }
+        if (!self.submit(cb, f, index)) {
+            return false;
+        }
+        // The frame is on the GPU and owns this slot's fence whatever the present says.
+        self.frameNo = frame;
+        if (ar == VK_SUBOPTIMAL_KHR && self.sizeMoved()) {
+            self.dirty = true;
+        }
+        return self.present();
+    }
+
+    /**
+     * Submit no commands, but wait on frame slot `f`'s acquire semaphore and signal its
+     * fence: the semaphore is consumed and a later wait on the fence returns.
+     */
+    pub(file) fn submitEmpty(mut self, f : i32) : void {
+        Mem::putQword(self.block, BLK_WAIT, self.avail[f as i64]);
+        Mem::putDword(self.block, BLK_STAGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+        let si : VkSubmitInfo = VkInit::submitInfo();
+        si.waitSemaphoreCount = 1;
+        si.pWaitSemaphores = Raw::at(self.block + BLK_WAIT);
+        si.pWaitDstStageMask = Raw::at(self.block + BLK_STAGE);
+        self.submitArr[0] = si;
+        let r : i32 = self.ctx.table.queueSubmit(
+            self.ctx.queue,
+            1,
+            VkAddr::submitInfo(self.submitArr),
+            self.fences[f as i64]
+        );
+        if (!VkErr::ok(r)) {
+            self.lost = true;
+        }
+    }
+
+    /**
+     * Destroy everything, in the reverse of the order it was made; safe on a half-built
+     * backend, and a second call does nothing.
+     */
+    pub(crate) fn release(mut self) : void {
+        if (self.released) {
+            return;
+        }
+        self.released = true;
+        self.ctx.waitIdle();
+        for (i of 0..FRAMES_IN_FLIGHT) {
+            let k : i64 = i as i64;
+            if (!self.ubos[k].isNone()) {
+                VkMem::destroyBuffer(self.ctx, self.heap, self.ubos[k]);
+                self.ubos[k] = GpuBuffer::none();
+            }
+            if (self.fences[k] != 0) {
+                self.ctx.table.destroyFence(self.ctx.device, self.fences[k]);
+                self.fences[k] = 0;
+            }
+            if (self.avail[k] != 0) {
+                self.ctx.table.destroySemaphore(self.ctx.device, self.avail[k]);
+                self.avail[k] = 0;
+            }
+        }
+        self.overlay.release(self.ctx, self.heap);
+        self.meshes.destroyAll(self.ctx, self.heap);
+        self.textures.destroyAll(self.ctx, self.heap, self.pipes);
+        self.grave.flush(self.ctx, self.heap, self.pipes.pool);
+        self.swap.destroyBuilt(self.ctx, self.heap);
+        self.pipes.destroy(self.ctx);
+        self.cmd.destroy(self.ctx);
+        self.heap.destroy(self.ctx);
+        Mem::release(self.block);
+        Mem::release(self.push);
+        Mem::release(self.cbs);
+        self.block = 0;
+        self.push = 0;
+        self.cbs = 0;
+        self.ctx.close();
+    }
+}
