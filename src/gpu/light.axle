@@ -1,0 +1,64 @@
+// light — the lights and the fog a scene adds to the one sun it always has.
+//
+// The sun is `render::vertex::DirectionalLight`, unchanged: a direction the light
+// *travels* and a colour. What this file adds are the two things a game wants next
+// and an engine usually makes you build yourself — a lamp you can place, and a
+// distance haze.
+//
+// Both are deliberately the smallest honest model. A point light has a position, a
+// colour and a *range*: its contribution falls to zero at the range, quadratically
+// (`(1 - d / range)²`), because a game needs a distance past which a torch is
+// simply not there, and inverse-square never gets there. Fog is linear between two
+// distances from the camera. The same formulas run in `shaders/scene.frag`.
+
+use crate::math::vec::Vec3;
+use crate::render::color::Color;
+
+/** A light at a point, reaching `range` units and no further. */
+pub struct PointLight {
+    /** Where it is, in world space. */
+    pub position : Vec3;
+
+    /** Its colour times its intensity; components may exceed 1. */
+    pub color    : Color;
+
+    /** The distance at which it has faded to nothing. */
+    pub range    : f64;
+
+    /** A light of `color` at `position`, reaching `range`. */
+    pub static fn make(position : Vec3, color : Color, range : f64) : PointLight {
+        return PointLight { position: position, color: color, range: range };
+    }
+}
+
+/**
+ * A linear distance haze: nothing before `start`, solid `color` from `end`.
+ *
+ * A fog whose `end` is not past its `start` is no fog, which is what [`Fog::none`]
+ * is — there is no separate switch to forget to set.
+ */
+pub struct Fog {
+    /** What a fully fogged pixel is. */
+    pub color : Color;
+
+    /** Distance from the eye at which fog begins. */
+    pub start : f64;
+
+    /** Distance from the eye at which it is complete. */
+    pub end   : f64;
+
+    /** No fog. */
+    pub static fn none() : Fog {
+        return Fog { color: Color::black(), start: 0.0, end: 0.0 };
+    }
+
+    /** Fog of `color` rising linearly from `start` to `end`. */
+    pub static fn linear(color : Color, start : f64, end : f64) : Fog {
+        return Fog { color: color, start: start, end: end };
+    }
+
+    /** Whether this fog does anything. */
+    pub fn isOn(self) : bool {
+        return self.end > self.start;
+    }
+}

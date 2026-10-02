@@ -1,0 +1,200 @@
+// handle — what a program holds in place of a GPU object.
+//
+// A mesh or a texture that lives on a GPU is not an Axle object: its storage is
+// the driver's, it may be rewritten or released while a frame that reads it is
+// still in flight, and its lifetime therefore cannot be the compiler's scope
+// rules. So a program holds a *handle* — a table index and the generation that
+// index was handed out at — and the renderer owns the object.
+//
+// The generation is what makes a stale handle harmless. Release a mesh and its
+// index is reused; a handle kept from before names the old generation and
+// resolves to nothing, so drawing with it skips the draw instead of drawing
+// whatever took its place. That is the whole of "reliable" here: the failure of
+// using a handle after releasing it is a mesh that does not appear, never one
+// belonging to something else.
+//
+// A table's generations start at a *seed* its owner picks, not at zero: the renderer
+// a program builds after another was lost would otherwise hand out `{3, 0}` again,
+// and a handle kept from the first would resolve in the second. Two tables with
+// different seeds can only agree by chance — one in about a billion.
+//
+// `HandleTable` is bounded. A voxel world has thousands of chunk meshes and a
+// table that grew without limit would turn a leak (handles never released) into
+// an out-of-memory; a bound turns it into `acquire` answering -1 at the
+// capacity the program chose.
+
+/** A mesh uploaded to a renderer. */
+pub struct MeshHandle {
+    /** Index into the renderer's mesh table; -1 for no mesh. */
+    pub index : i32 = -1;
+
+    /** The generation `index` was handed out at. */
+    pub gen   : i32 = 0;
+
+    /** The handle that names no mesh — what a failed upload answers. */
+    pub static fn none() : MeshHandle {
+        return MeshHandle { index: -1, gen: 0 };
+    }
+
+    /** Whether this names no mesh at all. */
+    pub fn isNone(self) : bool {
+        return self.index < 0;
+    }
+}
+
+/** A texture uploaded to a renderer. */
+pub struct TextureHandle {
+    /** Index into the renderer's texture table; -1 for no texture. */
+    pub index : i32 = -1;
+
+    /** The generation `index` was handed out at. */
+    pub gen   : i32 = 0;
+
+    /** The handle that names no texture — what a failed upload answers. */
+    pub static fn none() : TextureHandle {
+        return TextureHandle { index: -1, gen: 0 };
+    }
+
+    /** Whether this names no texture at all. */
+    pub fn isNone(self) : bool {
+        return self.index < 0;
+    }
+}
+
+/**
+ * A bounded table from handles to the backend's own slot numbers.
+ *
+ * One entry per live object. A free entry links to the next through `links`, so
+ * `acquire` and `release` are both constant time and the table never scans.
+ *
+ * A live entry may hold `EMPTY` instead of a slot: a handle to geometry that has
+ * no triangles (an all-air chunk, a chunk whose last block was mined). It stays
+ * valid and draws nothing, so the program keeps one handle per chunk whatever
+ * the chunk holds.
+ */
+pub class HandleTable {
+    /** The slot a live entry holds when its object has nothing to upload. */
+    pub static EMPTY : i32 = -2;
+
+    /** The backend slot each live entry maps to (or `EMPTY`), -1 when the entry is free. */
+    slots            : i32[];
+
+    /** The generation each entry is currently at. */
+    gens             : i32[];
+
+    /** For a free entry, the next free one; -1 ends the list. */
+    links            : i32[];
+
+    cap      : i32;
+    freeHead : i32 = -1;
+    high     : i32 = 0;
+    count    : i32 = 0;
+
+    /**
+     * A table of at most `capacity` live entries (at least one), whose generations
+     * start at `seed` (0 .. 2^30; see the module header).
+     */
+    constructor(capacity : i32, seed : i32) {
+        self.cap = capacity.max(1);
+        let start : i32 = seed & 0x3FFFFFFF;
+        let n : i64 = self.cap as i64;
+        self.slots = malloc<i32>(n);
+        self.gens = malloc<i32>(n);
+        self.links = malloc<i32>(n);
+        for (i of 0..n) {
+            self.slots[i] = -1;
+            self.gens[i] = start;
+            self.links[i] = -1;
+        }
+    }
+
+    /** Live entries. */
+    pub fn live(self) : i32 {
+        return self.count;
+    }
+
+    /** Most entries the table will hold. */
+    pub fn capacity(self) : i32 {
+        return self.cap;
+    }
+
+    /** The generation entry `index` is at, or -1 outside the table (no handle has it). */
+    pub fn generation(self, index : i32) : i32 {
+        if (index < 0 || index >= self.cap) {
+            return -1;
+        }
+        return self.gens[index as i64];
+    }
+
+    /**
+     * Take an entry for backend slot `slot` (or `EMPTY`); the entry's index, or -1
+     * when the table is full or `slot` is neither.
+     */
+    pub fn acquire(mut self, slot : i32) : i32 {
+        if (slot < 0 && slot != HandleTable::EMPTY) {
+            return -1;
+        }
+        let index : i32 = -1;
+        if (self.freeHead >= 0) {
+            index = self.freeHead;
+            self.freeHead = self.links[index as i64];
+        } else if (self.high < self.cap) {
+            index = self.high;
+            self.high += 1;
+        } else {
+            return -1;
+        }
+        self.slots[index as i64] = slot;
+        self.links[index as i64] = -1;
+        self.count += 1;
+        return index;
+    }
+
+    /** Whether a handle names a live entry of this table. */
+    pub fn holds(self, index : i32, gen : i32) : bool {
+        if (index < 0 || index >= self.cap) {
+            return false;
+        }
+        return self.gens[index as i64] == gen && self.slots[index as i64] != -1;
+    }
+
+    /**
+     * The backend slot a handle names: -1 when it is stale or free, `EMPTY` when it
+     * is live and holds nothing. A handle from another table resolves only if both its
+     * index and its generation match, which the seeds make a matter of chance.
+     */
+    pub fn resolve(self, index : i32, gen : i32) : i32 {
+        if (!self.holds(index, gen)) {
+            return -1;
+        }
+        return self.slots[index as i64];
+    }
+
+    /** Point a live entry at another slot (or `EMPTY`); whether the handle was live. */
+    pub fn rebind(mut self, index : i32, gen : i32, slot : i32) : bool {
+        if (!self.holds(index, gen) || (slot < 0 && slot != HandleTable::EMPTY)) {
+            return false;
+        }
+        self.slots[index as i64] = slot;
+        return true;
+    }
+
+    /**
+     * Free the entry a handle names; the slot it held (`EMPTY` if none), or -1 when
+     * the handle was stale (a second release answers -1 and frees nothing).
+     */
+    pub fn release(mut self, index : i32, gen : i32) : i32 {
+        if (!self.holds(index, gen)) {
+            return -1;
+        }
+        let slot : i32 = self.slots[index as i64];
+        self.slots[index as i64] = -1;
+        // Wraps to 0 past 2^30, explicitly: a table cycled a billion times on one index
+        // comes round again, which is the same chance as two seeds agreeing.
+        self.gens[index as i64] = (gen + 1) & 0x3FFFFFFF;
+        self.links[index as i64] = self.freeHead;
+        self.freeHead = index;
+        self.count -= 1;
+        return slot;
+    }
+}

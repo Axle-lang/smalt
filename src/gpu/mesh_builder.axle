@@ -1,0 +1,542 @@
+// mesh_builder — triangles, assembled on the CPU in the shape a GPU reads them.
+//
+// This is the front door for geometry: a program appends vertices and triangles,
+// and the renderer uploads the result. It is the answer to "how do I give a GPU
+// my model" that the rest of the API is built so as not to ask a second time —
+// the same builder feeds the Vulkan backend (copied into a vertex buffer as it
+// stands) and the software one (converted to a `Mesh`).
+//
+// # The vertex
+//
+// Thirty-two bytes, and the layout is a contract with `shaders/scene.vert`:
+//
+//     byte  0  position   3 x f32                     POSITION_AT
+//     byte 12  uv         2 x f32                     UV_AT
+//     byte 20  normal     4 x snorm8   (x, y, z, 0)   NORMAL_AT
+//     byte 24  colour     4 x unorm8   (r, g, b, a)   COLOR_AT
+//     byte 28  layer      u32          (0 .. 255)     LAYER_AT
+//
+// The offsets are named once, here: the writer below stores at them, the Vulkan
+// pipeline's vertex attributes are declared from them, and `gpu_check` reads a
+// written vertex back at them.
+//
+// Two of those fields are what a voxel renderer needs and a plain model loader
+// does not. The *colour* is per vertex and multiplies the albedo and the texel,
+// which is where a mesh's baked light lives: a block face's smooth light and its
+// ambient occlusion are four numbers a corner, computed once when the chunk is
+// meshed and never again. The *layer* picks which tile of a texture array the
+// face uses, so a whole world is one texture and one bind.
+//
+// # Reuse
+//
+// `clear()` empties the builder and keeps its storage, so a program that re-meshes
+// a chunk every time a block changes builds into the same builder each time and,
+// after the first few, allocates nothing. Growth is by doubling, bounded.
+//
+// A builder owns its storage and needs no release.
+
+use crate::kernel::mem::Mem;
+use crate::math::geom::Aabb;
+use crate::math::vec::{Vec2, Vec3};
+use crate::render::color::Color;
+use crate::render::mesh::Mesh;
+use crate::render::vertex::Vertex;
+
+/** Triangle geometry in the GPU's vertex format. */
+pub class MeshBuilder {
+    /** Words (4 bytes) in one vertex. */
+    pub static VERTEX_WORDS : i32 = 8;
+
+    /** Bytes in one vertex — the stride the pipeline's vertex binding declares. */
+    pub static VERTEX_BYTES : i32 = 32;
+
+    /** Byte offset of the position, three `f32`. */
+    pub static POSITION_AT  : i32 = 0;
+
+    /** Byte offset of the texture coordinate, two `f32`. */
+    pub static UV_AT        : i32 = 12;
+
+    /** Byte offset of the normal, four `snorm8`. */
+    pub static NORMAL_AT    : i32 = 20;
+
+    /** Byte offset of the colour, four `unorm8`, red first. */
+    pub static COLOR_AT     : i32 = 24;
+
+    /** Byte offset of the texture-array layer, one `u32`. */
+    pub static LAYER_AT     : i32 = 28;
+
+    /**
+     * The most texture-array layers a vertex may name: what an `Image` holds. A
+     * layer past it is refused like an index past the vertices — the GPU would
+     * clamp it to the last tile and show the wrong block without a word.
+     */
+    pub static MAX_LAYER    : i32 = 255;
+
+    /**
+     * The most vertices one builder will hold.
+     *
+     * Not the GPU's limit (a 32-bit index reaches four billion) but the point at
+     * which a request is a bug: 4 194 304 vertices is 128 MiB, a mesh no chunk,
+     * model or sprite batch comes near.
+     */
+    pub static MAX_VERTICES : i32 = 4194304;
+
+    /** The most indices one builder will hold. */
+    pub static MAX_INDICES  : i32 = 16777216;
+
+    verts   : i32[];
+    indices : i32[];
+    vcap    : i32;
+    icap    : i32;
+    vcount  : i32 = 0;
+    icount  : i32 = 0;
+    minX    : f64 = 0.0;
+    minY    : f64 = 0.0;
+    minZ    : f64 = 0.0;
+    maxX    : f64 = 0.0;
+    maxY    : f64 = 0.0;
+    maxZ    : f64 = 0.0;
+
+    /** A builder with room for `vertices` corners and `indices` index slots to start with. */
+    constructor(vertices : i32, indices : i32) {
+        self.vcap = vertices.max(4).min(MeshBuilder::MAX_VERTICES);
+        self.icap = indices.max(6).min(MeshBuilder::MAX_INDICES);
+        self.verts = malloc<i32>((self.vcap as i64) * (MeshBuilder::VERTEX_WORDS as i64));
+        self.indices = malloc<i32>(self.icap as i64);
+    }
+
+    /** Vertices appended so far. */
+    pub fn vertices(self) : i32 {
+        return self.vcount;
+    }
+
+    /** Index slots appended so far. */
+    pub fn indexSlots(self) : i32 {
+        return self.icount;
+    }
+
+    /** Triangles appended so far. */
+    pub fn triangles(self) : i32 {
+        return self.icount / 3;
+    }
+
+    /** Whether nothing is worth drawing yet. */
+    pub fn isEmpty(self) : bool {
+        return self.icount < 3;
+    }
+
+    /** The vertex storage's address, for the upload to read. Valid until the next append. */
+    pub fn vertexBase(self) : i64 {
+        return Mem::addressOf(self.verts);
+    }
+
+    /** The index storage's address, for the upload to read. Valid until the next append. */
+    pub fn indexBase(self) : i64 {
+        return Mem::addressOf(self.indices);
+    }
+
+    /** Bytes of vertex data. */
+    pub fn vertexBytes(self) : i64 {
+        return (self.vcount as i64) * (MeshBuilder::VERTEX_BYTES as i64);
+    }
+
+    /** Bytes of index data (32-bit indices). */
+    pub fn indexBytes(self) : i64 {
+        return (self.icount as i64) * 4;
+    }
+
+    /** The smallest box holding every vertex, in the mesh's own space; a point when empty. */
+    pub fn bounds(self) : Aabb {
+        return Aabb::make(
+            Vec3::make(self.minX, self.minY, self.minZ),
+            Vec3::make(self.maxX, self.maxY, self.maxZ)
+        );
+    }
+
+    /**
+     * Empty the builder, keeping its storage.
+     *
+     * The call a re-meshing loop makes before each build.
+     */
+    pub fn clear(mut self) : void {
+        self.vcount = 0;
+        self.icount = 0;
+        self.minX = 0.0;
+        self.minY = 0.0;
+        self.minZ = 0.0;
+        self.maxX = 0.0;
+        self.maxY = 0.0;
+        self.maxZ = 0.0;
+    }
+
+    /**
+     * Grow the vertex storage to hold `needed` vertices.
+     *
+     * The old array is freed by hand. Handing an array's address out
+     * (`vertexBase`) is what stops the compiler reclaiming it on reassignment —
+     * it can no longer prove nobody else holds it — and `grow` knows what the
+     * compiler cannot: an address taken from `vertexBase` is documented to die at
+     * the next append.
+     */
+    pub(file) fn growVertices(mut self, needed : i32) : bool {
+        if (needed > MeshBuilder::MAX_VERTICES) {
+            return false;
+        }
+        let cap : i32 = self.vcap;
+        while (cap < needed) {
+            cap = (cap * 2).min(MeshBuilder::MAX_VERTICES);
+        }
+        let words : i64 = (cap as i64) * (MeshBuilder::VERTEX_WORDS as i64);
+        let next : i32[] = malloc<i32>(words);
+        Mem::copy(
+            Mem::addressOf(next),
+            Mem::addressOf(self.verts),
+            (self.vcount as i64) * (MeshBuilder::VERTEX_BYTES as i64)
+        );
+        free(self.verts);
+        self.verts = next;
+        self.vcap = cap;
+        return true;
+    }
+
+    /** Grow the index storage to hold `needed` indices; see `growVertices`. */
+    pub(file) fn growIndices(mut self, needed : i32) : bool {
+        if (needed > MeshBuilder::MAX_INDICES) {
+            return false;
+        }
+        let cap : i32 = self.icap;
+        while (cap < needed) {
+            cap = (cap * 2).min(MeshBuilder::MAX_INDICES);
+        }
+        let next : i32[] = malloc<i32>(cap as i64);
+        Mem::copy(Mem::addressOf(next), Mem::addressOf(self.indices), (self.icount as i64) * 4);
+        free(self.indices);
+        self.indices = next;
+        self.icap = cap;
+        return true;
+    }
+
+    /**
+     * One component of a normal as a signed byte, 0..255 in the low bits of the result.
+     * A NaN component is 0: the conversion of a NaN to an integer has no defined value.
+     */
+    pub(file) static fn snorm(v : f64) : i32 {
+        let c : f64 = v;
+        if (c != c) {
+            c = 0.0;
+        }
+        if (c > 1.0) {
+            c = 1.0;
+        }
+        if (c < -1.0) {
+            c = -1.0;
+        }
+        return (((c * 127.0) + 0.5).floorToInt() as i32) & 0xFF;
+    }
+
+    /** Whether `v` is a number and not an infinity. */
+    pub(file) static fn finite(v : f64) : bool {
+        return (v - v) == 0.0;
+    }
+
+    /**
+     * A vertex colour as the word the vertex stores: four unorm8 channels, red in
+     * the low byte — so the bytes in memory are R, G, B, A.
+     *
+     * Not the `0xAARRGGBB` an `Image` texel is, nor the `0x00RRGGBB` a `Frame` draws
+     * with: a HUD colour passed here comes out with red and blue swapped and alpha 0.
+     * Build a vertex colour with this or `rgbaOf`, never from one of those words.
+     */
+    pub static fn rgba(r : i32, g : i32, b : i32, a : i32) : i32 {
+        let wide : i64 = (((a & 0xFF) as i64) << 24) | (((b & 0xFF) as i64) << 16) | (((g & 0xFF) as i64) << 8) | ((r & 0xFF) as i64);
+        return wide as i32;
+    }
+
+    /** A vertex colour from a `Color` and an opacity, both 0..1. */
+    pub static fn rgbaOf(c : Color, alpha : f64) : i32 {
+        return MeshBuilder::rgba(
+            Color::channel(c.r),
+            Color::channel(c.g),
+            Color::channel(c.b),
+            Color::channel(alpha)
+        );
+    }
+
+    /** Opaque white — a vertex that leaves the albedo and the texel as they are. */
+    pub static fn white() : i32 {
+        return MeshBuilder::rgba(255, 255, 255, 255);
+    }
+
+    /**
+     * Append one vertex; its index, or -1 when the builder is at its bound, a
+     * position is not a finite number (it would poison `bounds` and every culling
+     * test made from it), or `layer` is outside 0 .. `MAX_LAYER`.
+     *
+     * `color` is the word `rgba` / `rgbaOf` make, and `layer` the texture-array
+     * layer the corner samples (0 for a plain texture).
+     */
+    pub fn vertex(
+        mut self,
+        x : f64,
+        y : f64,
+        z : f64,
+        nx : f64,
+        ny : f64,
+        nz : f64,
+        u : f64,
+        v : f64,
+        color : i32,
+        layer : i32
+    ) : i32 {
+        if (layer < 0 || layer > MeshBuilder::MAX_LAYER) {
+            return -1;
+        }
+        if (!MeshBuilder::finite(x) || !MeshBuilder::finite(y) || !MeshBuilder::finite(z)) {
+            return -1;
+        }
+        if (self.vcount >= self.vcap && !self.growVertices(self.vcount + 1)) {
+            return -1;
+        }
+        let at : i64 = (self.vcount as i64) * (MeshBuilder::VERTEX_WORDS as i64);
+        let base : i64 = Mem::addressOf(self.verts);
+        let pos : i64 = at + ((MeshBuilder::POSITION_AT / 4) as i64);
+        let uv : i64 = at + ((MeshBuilder::UV_AT / 4) as i64);
+        Mem::putFloatOf(base, pos, x);
+        Mem::putFloatOf(base, pos + 1, y);
+        Mem::putFloatOf(base, pos + 2, z);
+        Mem::putFloatOf(base, uv, u);
+        Mem::putFloatOf(base, uv + 1, v);
+        Mem::putWordOf(
+            base,
+            at + ((MeshBuilder::NORMAL_AT / 4) as i64),
+            MeshBuilder::snorm(nx) | (MeshBuilder::snorm(ny) << 8) | (MeshBuilder::snorm(nz) << 16)
+        );
+        Mem::putWordOf(base, at + ((MeshBuilder::COLOR_AT / 4) as i64), color);
+        Mem::putWordOf(base, at + ((MeshBuilder::LAYER_AT / 4) as i64), layer);
+        if (self.vcount == 0) {
+            self.minX = x;
+            self.maxX = x;
+            self.minY = y;
+            self.maxY = y;
+            self.minZ = z;
+            self.maxZ = z;
+        } else {
+            self.minX = self.minX.min(x);
+            self.minY = self.minY.min(y);
+            self.minZ = self.minZ.min(z);
+            self.maxX = self.maxX.max(x);
+            self.maxY = self.maxY.max(y);
+            self.maxZ = self.maxZ.max(z);
+        }
+        let index : i32 = self.vcount;
+        self.vcount += 1;
+        return index;
+    }
+
+    /** Append one vertex from vectors — the same as `vertex`, spelled for the caller who has them. */
+    pub fn vertexAt(mut self, p : Vec3, n : Vec3, uv : Vec2, color : i32, layer : i32) : i32 {
+        return self.vertex(p.x, p.y, p.z, n.x, n.y, n.z, uv.x, uv.y, color, layer);
+    }
+
+    /**
+     * Append one triangle by vertex index; whether it was added.
+     *
+     * Refused, and nothing appended, when an index names a vertex that does not
+     * exist yet: an out-of-range index is the one mistake a GPU answers with a
+     * device loss rather than a wrong picture.
+     */
+    pub fn triangle(mut self, a : i32, b : i32, c : i32) : bool {
+        if (a < 0 || b < 0 || c < 0 || a >= self.vcount || b >= self.vcount || c >= self.vcount) {
+            return false;
+        }
+        if (self.icount + 3 > self.icap && !self.growIndices(self.icount + 3)) {
+            return false;
+        }
+        let at : i64 = self.icount as i64;
+        let base : i64 = Mem::addressOf(self.indices);
+        Mem::putWordOf(base, at, a);
+        Mem::putWordOf(base, at + 1, b);
+        Mem::putWordOf(base, at + 2, c);
+        self.icount += 3;
+        return true;
+    }
+
+    /**
+     * Append a quad as two triangles, `(a, b, c)` and `(a, c, d)`.
+     *
+     * Counter-clockwise as seen from the front, which is the winding the
+     * pipeline treats as facing the viewer. All or nothing: room for both
+     * triangles is made first, so a full builder never keeps half a quad.
+     */
+    pub fn quad(mut self, a : i32, b : i32, c : i32, d : i32) : bool {
+        if (a < 0 || b < 0 || c < 0 || d < 0 || a >= self.vcount || b >= self.vcount || c >= self.vcount || d >= self.vcount) {
+            return false;
+        }
+        if (self.icount + 6 > self.icap && !self.growIndices(self.icount + 6)) {
+            return false;
+        }
+        if (!self.triangle(a, b, c)) {
+            return false;
+        }
+        return self.triangle(a, c, d);
+    }
+
+    /**
+     * Append a flat quad from its four corners, counter-clockwise from the front.
+     *
+     * One normal for all four (the face's), the whole texture mapped bottom-left,
+     * bottom-right, top-right, top-left, and a colour per corner — the call a block
+     * mesher makes per visible face. `faceRun` is the same for a face that stretches
+     * over several cells and must tile its texture.
+     */
+    pub fn face(
+        mut self,
+        p0 : Vec3,
+        p1 : Vec3,
+        p2 : Vec3,
+        p3 : Vec3,
+        normal : Vec3,
+        layer : i32,
+        c0 : i32,
+        c1 : i32,
+        c2 : i32,
+        c3 : i32
+    ) : bool {
+        return self.faceRun(p0, p1, p2, p3, normal, layer, 1.0, 1.0, c0, c1, c2, c3);
+    }
+
+    /**
+     * A `face` whose texture repeats `runU` times along its bottom edge (p0 to p1) and
+     * `runV` times up its side (p0 to p3) — what a greedy-merged run of block faces is.
+     *
+     * The sampler must repeat (`SamplerDesc::repeat`, the default) for the tiling to show.
+     * If a vertex cannot be added (the builder is at its bound) the vertices already added
+     * stay as orphans and false is returned; `clear` and build again.
+     */
+    pub fn faceRun(
+        mut self,
+        p0 : Vec3,
+        p1 : Vec3,
+        p2 : Vec3,
+        p3 : Vec3,
+        normal : Vec3,
+        layer : i32,
+        runU : f64,
+        runV : f64,
+        c0 : i32,
+        c1 : i32,
+        c2 : i32,
+        c3 : i32
+    ) : bool {
+        let a : i32 = self.vertexAt(p0, normal, Vec2::make(0.0, runV), c0, layer);
+        let b : i32 = self.vertexAt(p1, normal, Vec2::make(runU, runV), c1, layer);
+        let c : i32 = self.vertexAt(p2, normal, Vec2::make(runU, 0.0), c2, layer);
+        let d : i32 = self.vertexAt(p3, normal, Vec2::make(0.0, 0.0), c3, layer);
+        return self.quad(a, b, c, d);
+    }
+
+    /**
+     * Append the triangles of a CPU `Mesh`, every vertex white and on layer 0.
+     *
+     * The bridge from `Primitives::cube` and the rest: a mesh built for the
+     * software device draws on the GPU unchanged. All or nothing: a mesh that does
+     * not fit leaves the builder as it was.
+     */
+    pub fn append(mut self, mesh : Mesh) : bool {
+        let first : i32 = self.vcount;
+        let firstIndex : i32 = self.icount;
+        let box : Aabb = self.bounds();
+        let white : i32 = MeshBuilder::white();
+        for (i of 0..mesh.vertices()) {
+            let v : Vertex = mesh.vertex(i);
+            if (self.vertexAt(v.position, v.normal, v.uv, white, 0) < 0) {
+                self.rollBack(first, firstIndex, box);
+                return false;
+            }
+        }
+        for (t of 0..mesh.triangles()) {
+            let base : i32 = t * 3;
+            let ok : bool = self.triangle(
+                first + mesh.index(base),
+                first + mesh.index(base + 1),
+                first + mesh.index(base + 2)
+            );
+            if (!ok) {
+                self.rollBack(first, firstIndex, box);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Undo a partial `append`: back to `vertices` corners, `indexSlots` slots and `box`. */
+    pub(file) fn rollBack(mut self, vertices : i32, indexSlots : i32, box : Aabb) : void {
+        self.vcount = vertices;
+        self.icount = indexSlots;
+        self.minX = box.min.x;
+        self.minY = box.min.y;
+        self.minZ = box.min.z;
+        self.maxX = box.max.x;
+        self.maxY = box.max.y;
+        self.maxZ = box.max.z;
+    }
+
+    /** A builder holding a copy of `mesh`; empty if `mesh` is past the builder's bounds. */
+    pub static fn fromMesh(mesh : Mesh) : MeshBuilder {
+        let b = new MeshBuilder(mesh.vertices(), mesh.indexSlots());
+        b.append(mesh);
+        return b;
+    }
+
+    /** The vertex at `i` as a CPU `Vertex`, for the software device; an empty one out of range. */
+    pub fn vertexOut(self, i : i32) : Vertex {
+        if (i < 0 || i >= self.vcount) {
+            return Vertex::empty();
+        }
+        let at : i64 = (i as i64) * (MeshBuilder::VERTEX_WORDS as i64);
+        let base : i64 = Mem::addressOf(self.verts);
+        let packed : i32 = Mem::wordOf(base, at + 5);
+        return Vertex::make(
+            Vec3::make(
+                Mem::floatOf(base, at),
+                Mem::floatOf(base, at + 1),
+                Mem::floatOf(base, at + 2)
+            ),
+            Vec3::make(
+                MeshBuilder::unsnorm(packed & 0xFF),
+                MeshBuilder::unsnorm((packed >>> 8) & 0xFF),
+                MeshBuilder::unsnorm((packed >>> 16) & 0xFF)
+            ),
+            Vec2::make(Mem::floatOf(base, at + 3), Mem::floatOf(base, at + 4))
+        );
+    }
+
+    /** A signed byte (0..255 as stored) back to -1..1. */
+    pub(file) static fn unsnorm(b : i32) : f64 {
+        let s : i32 = b;
+        if (s > 127) {
+            s -= 256;
+        }
+        return (s as f64) / 127.0;
+    }
+
+    /** The index at slot `i`, or 0 out of range. */
+    pub fn indexOut(self, i : i32) : i32 {
+        if (i < 0 || i >= self.icount) {
+            return 0;
+        }
+        return Mem::wordOf(Mem::addressOf(self.indices), i as i64);
+    }
+
+    /** This geometry as a CPU `Mesh` — position, normal and uv; the colour and layer are dropped. */
+    pub fn toMesh(self) : Mesh {
+        let m = new Mesh(self.vcount.max(1), self.icount.max(3));
+        for (i of 0..self.vcount) {
+            m.setVertex(i, self.vertexOut(i));
+        }
+        for (k of 0..self.icount) {
+            m.setIndex(k, self.indexOut(k));
+        }
+        return m;
+    }
+}

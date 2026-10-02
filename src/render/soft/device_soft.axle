@@ -73,8 +73,18 @@ pub class SoftDevice : RenderDevice, Closeable {
 
     /** Bind the camera whose view and projection the next draws use. */
     pub fn setCamera(mut self, camera : Camera) : void {
-        self.viewProj = camera.viewProjection();
-        let eye = camera.eye();
+        self.setViewProjection(camera.viewProjection(), camera.eye());
+    }
+
+    /**
+     * Bind a view-projection matrix and the eye it was made for.
+     *
+     * What `setCamera` does once it has read them out of a `Camera`; split out
+     * so a caller that holds the two values — a `gpu::Scene` carries exactly
+     * these — need not keep a camera alive to hand them over.
+     */
+    pub fn setViewProjection(mut self, viewProj : Mat4, eye : Vec3) : void {
+        self.viewProj = viewProj;
         self.eyeX = eye.x;
         self.eyeY = eye.y;
         self.eyeZ = eye.z;

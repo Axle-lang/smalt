@@ -1,0 +1,429 @@
+// image — pixels on their way to a GPU, and how the sampler should read them.
+//
+// A `Texture` (render/texture.axle) is what the CPU rasteriser samples: opaque
+// `0x00RRGGBB` words, one layer. A GPU texture needs more — an alpha channel, so a
+// leaf can have holes and a window can be glass, and *layers*, so a hundred block
+// faces are one texture and one bind instead of a hundred. `Image` is that.
+//
+// The word is `0xAARRGGBB`, little-endian in memory as B, G, R, A: the order
+// `VK_FORMAT_B8G8R8A8_UNORM` reads. That is not a coincidence to be converted
+// away at upload — it is the point. `Frame` and `Texture` already write
+// `0x00RRGGBB`, so an image made from either is the same bytes with the alpha
+// byte filled in, and the upload is one copy with no per-pixel swizzle.
+//
+// An image is a flat `i32[]`: `layers` planes of `w * h` words, layer-major,
+// row 0 at the top. Like `Texture` it owns its storage and needs no release.
+//
+// # Mip levels
+//
+// Built here, on the CPU, when the texture is uploaded (`mipTail`), not blitted on
+// the GPU: a blit averages the four texels as they are, and a texel that is a hole
+// in a leaf is transparent *black*, so every level would darken the leaf's edge and
+// thin its coverage until the alpha test erased it in the distance. A level here is
+// the 2 x 2 box of the one above with its colour weighted by alpha, and — when the
+// sampler says which alpha-test threshold the texture is drawn with — its alpha
+// scaled so the share of texels that pass the test stays the share level 0 has.
+
+use crate::kernel::mem::Mem;
+use crate::render::texture::Texture;
+
+/** How a texture is sampled once it is on the GPU. */
+pub struct SamplerDesc {
+    /** Pick the nearest texel instead of blending four — pixel art, a checker. */
+    pub nearest    : bool = false;
+
+    /** Build and use a mip chain, so a distant surface averages instead of shimmering. */
+    pub mipmaps    : bool = true;
+
+    /**
+     * The alpha-test threshold the texture will be drawn with (`Material::cutoff`),
+     * 0..1. Above 0, every mip level keeps the share of texels at or above it that
+     * the full-size image has, so foliage and fences do not thin out with distance.
+     * 0 (the default) averages alpha plainly, which is right for blended glass.
+     */
+    pub cutout     : f64 = 0.0;
+
+    /** Anisotropic taps, 1..16; 1 is off. Used where the device supports it. */
+    pub anisotropy : i32 = 1;
+
+    /** Repeat past the edge (a tiled floor); false clamps to the edge texel. */
+    pub repeat     : bool = true;
+}
+
+/** An RGBA image of one or more layers. */
+pub class Image {
+    /**
+     * The alpha byte of an opaque texel, as it sits in the packed word: 0xFF000000
+     * read as a signed 32-bit value. A literal because a shift of 255 into the
+     * sign bit is the kind of expression a constant folder is entitled to refuse.
+     */
+    pub static OPAQUE     : i32 = -16777216;
+
+    /** The most layers an image may have — the guaranteed floor of `maxImageArrayLayers`. */
+    pub static MAX_LAYERS : i32 = 256;
+
+    /** The widest or tallest image: what desktop GPUs take, and 1 GiB at 16384 x 16384. */
+    pub static MAX_SIDE   : i32 = 16384;
+
+    /** The most texels an image holds, all layers counted: 1 GiB of storage. */
+    pub static MAX_TEXELS : i64 = 268435456;
+
+    words  : i32[];
+    w      : i32;
+    h      : i32;
+    layers : i32;
+
+    /**
+     * A `w` by `h` image of `layers` layers, every texel transparent black.
+     *
+     * Sizes are clamped to 1 .. `MAX_SIDE`, the layer count to `MAX_LAYERS`, and
+     * the layers then to what fits in `MAX_TEXELS`: an image is allocated whole,
+     * so a caller's arithmetic going wrong should produce a small wrong image and
+     * not a request for the address space.
+     */
+    constructor(w : i32, h : i32, layers : i32) {
+        self.w = w.max(1).min(Image::MAX_SIDE);
+        self.h = h.max(1).min(Image::MAX_SIDE);
+        let plane : i64 = (self.w as i64) * (self.h as i64);
+        let fit : i64 = (Image::MAX_TEXELS / plane).max(1);
+        self.layers = (layers.max(1).min(Image::MAX_LAYERS) as i64).min(fit) as i32;
+        let count : i64 = plane * (self.layers as i64);
+        self.words = malloc<i32>(count);
+        for (i of 0..count) {
+            self.words[i] = 0;
+        }
+    }
+
+    /** Width in texels. */
+    pub fn width(self) : i32 {
+        return self.w;
+    }
+
+    /** Height in texels. */
+    pub fn height(self) : i32 {
+        return self.h;
+    }
+
+    /** Layers. */
+    pub fn layerCount(self) : i32 {
+        return self.layers;
+    }
+
+    /** Words in one layer. */
+    pub fn layerWords(self) : i64 {
+        return (self.w as i64) * (self.h as i64);
+    }
+
+    /** Words in the whole image. */
+    pub fn wordCount(self) : i64 {
+        return self.layerWords() * (self.layers as i64);
+    }
+
+    /** Bytes in the whole image. */
+    pub fn byteCount(self) : i64 {
+        return self.wordCount() * 4;
+    }
+
+    /**
+     * The words' address, for the upload.
+     *
+     * Valid for as long as the image is. Read it, copy from it, do not keep it:
+     * the contract is the same as `Surface::base`.
+     */
+    pub fn base(self) : i64 {
+        return Mem::addressOf(self.words);
+    }
+
+    /** A packed texel from four 0..255 channels. */
+    pub static fn pack(r : i32, g : i32, b : i32, a : i32) : i32 {
+        let wide : i64 = (((a & 0xFF) as i64) << 24) | (((r & 0xFF) as i64) << 16) | (((g & 0xFF) as i64) << 8) | ((b & 0xFF) as i64);
+        return wide as i32;
+    }
+
+    /** Write one texel; out-of-range coordinates or layers are ignored. */
+    pub fn put(mut self, x : i32, y : i32, layer : i32, argb : i32) : void {
+        if (x < 0 || y < 0 || layer < 0 || x >= self.w || y >= self.h || layer >= self.layers) {
+            return;
+        }
+        let at : i64 = (layer as i64) * self.layerWords() + (y as i64) * (self.w as i64) + (x as i64);
+        self.words[at] = argb;
+    }
+
+    /** One texel, or 0 outside the image. */
+    pub fn get(self, x : i32, y : i32, layer : i32) : i32 {
+        if (x < 0 || y < 0 || layer < 0 || x >= self.w || y >= self.h || layer >= self.layers) {
+            return 0;
+        }
+        let at : i64 = (layer as i64) * self.layerWords() + (y as i64) * (self.w as i64) + (x as i64);
+        return self.words[at];
+    }
+
+    /** Fill every texel of every layer with `argb`. */
+    pub fn fill(mut self, argb : i32) : void {
+        let count : i64 = self.wordCount();
+        for (i of 0..count) {
+            self.words[i] = argb;
+        }
+    }
+
+    /**
+     * A one-texel image of `argb`, alpha as given — `solid(-1)` is the opaque white
+     * an untextured draw binds.
+     */
+    pub static fn solid(argb : i32) : Image {
+        let img = new Image(1, 1, 1);
+        img.fill(argb);
+        return img;
+    }
+
+    /**
+     * An opaque copy of a CPU texture: its `0x00RRGGBB` words with the alpha
+     * byte set to 255.
+     */
+    pub static fn fromTexture(t : Texture) : Image {
+        let img = new Image(t.width(), t.height(), 1);
+        for (y of 0..t.height()) {
+            for (x of 0..t.width()) {
+                img.put(x, y, 0, Image::OPAQUE | (t.texel(x, y) & 0xFFFFFF));
+            }
+        }
+        return img;
+    }
+
+    /**
+     * An atlas laid out as a vertical strip of square tiles, cut into layers.
+     *
+     * The shape a block game's texture atlas usually has. As one image it can
+     * only be sampled with its neighbours bleeding into each tile's edge as
+     * soon as a mip chain is built; as layers each tile is its own image and
+     * mips, anisotropy and repeat all behave. `tile` is the tile's side; columns
+     * past `tile` are ignored, rows beyond a whole number of tiles are ignored, and
+     * tiles past `MAX_LAYERS` are dropped.
+     */
+    pub static fn fromStrip(strip : Image, tile : i32) : Image {
+        let side : i32 = tile.max(1);
+        let count : i32 = (strip.height() / side).max(1).min(Image::MAX_LAYERS);
+        let img = new Image(side, side, count);
+        for (l of 0..count) {
+            for (y of 0..side) {
+                for (x of 0..side) {
+                    img.put(x, y, l, strip.get(x, l * side + y, 0));
+                }
+            }
+        }
+        return img;
+    }
+
+    /** Mip levels a `w` x `h` image has: floor(log2(max)) + 1. */
+    pub static fn mipLevels(w : i32, h : i32) : i32 {
+        let m : i32 = w.max(h).max(1);
+        let levels : i32 = 1;
+        while (m > 1) {
+            m = m / 2;
+            levels += 1;
+        }
+        return levels;
+    }
+
+    /** A side of `side` texels at mip level `m`: halved `m` times, at least 1. */
+    pub static fn levelSide(side : i32, m : i32) : i32 {
+        let s : i32 = side.max(1);
+        for (i of 0..m) {
+            s = (s / 2).max(1);
+        }
+        return s;
+    }
+
+    /** Words in mip levels 1 .. `levels - 1`, every layer. */
+    pub fn mipTailWords(self, levels : i32) : i64 {
+        let total : i64 = 0;
+        for (m of 1..levels) {
+            let lw : i64 = Image::levelSide(self.w, m) as i64;
+            let lh : i64 = Image::levelSide(self.h, m) as i64;
+            total += lw * lh * (self.layers as i64);
+        }
+        return total;
+    }
+
+    /** The share of the `count` words at `base` (an `i32[]`) whose alpha is at least `cut` (0..255). */
+    pub(file) static fn coverage(words : i32[], start : i64, count : i64, cut : i32) : f64 {
+        if (count <= 0) {
+            return 0.0;
+        }
+        let pass : i64 = 0;
+        for (i of 0..count) {
+            if (((words[start + i] >>> 24) & 0xFF) >= cut) {
+                pass += 1;
+            }
+        }
+        return (pass as f64) / (count as f64);
+    }
+
+    /** The share of `count` words at `start` that pass `cut` once their alpha is scaled by `s`. */
+    pub(file) static fn scaledCoverage(
+        words : i32[],
+        start : i64,
+        count : i64,
+        cut : i32,
+        s : f64
+    ) : f64 {
+        let pass : i64 = 0;
+        for (i of 0..count) {
+            let a : f64 = (((words[start + i] >>> 24) & 0xFF) as f64) * s;
+            if (a.min(255.0) >= (cut as f64)) {
+                pass += 1;
+            }
+        }
+        return (pass as f64) / (count.max(1) as f64);
+    }
+
+    /**
+     * Mip levels 1 .. `levels - 1` of every layer, level-major then layer-major: the
+     * words that follow level 0 — the image itself — in an upload. See the module
+     * header for how a level is made; `cutout` is `SamplerDesc::cutout`.
+     */
+    pub fn mipTail(self, levels : i32, cutout : f64) : i32[] {
+        let tail : i32[] = malloc<i32>(self.mipTailWords(levels).max(1));
+        let cut : i32 = (cutout.max(0.0).min(1.0) * 255.0 + 0.5).floorToInt() as i32;
+        let at : i64 = 0;
+        // Level by level, each layer read from the level above: level 0 is `words`,
+        // every later one is the part of `tail` written the step before.
+        let srcAt : i64 = 0;
+        let sw : i32 = self.w;
+        let sh : i32 = self.h;
+        for (m of 1..levels) {
+            let dw : i32 = Image::levelSide(self.w, m);
+            let dh : i32 = Image::levelSide(self.h, m);
+            let srcPlane : i64 = (sw as i64) * (sh as i64);
+            let dstPlane : i64 = (dw as i64) * (dh as i64);
+            let levelAt : i64 = at;
+            for (l of 0..self.layers) {
+                let src : i64 = srcAt + (l as i64) * srcPlane;
+                let dst : i64 = levelAt + (l as i64) * dstPlane;
+                if (m == 1) {
+                    Image::downsample(self.words, src, sw, sh, tail, dst, dw, dh);
+                } else {
+                    Image::downsample(tail, src, sw, sh, tail, dst, dw, dh);
+                }
+                if (cut > 0) {
+                    let want : f64 = Image::coverage(
+                        self.words,
+                        (l as i64) * self.layerWords(),
+                        self.layerWords(),
+                        cut
+                    );
+                    Image::keepCoverage(tail, dst, dstPlane, cut, want);
+                }
+            }
+            at = levelAt + dstPlane * (self.layers as i64);
+            srcAt = levelAt;
+            sw = dw;
+            sh = dh;
+        }
+        return tail;
+    }
+
+    /**
+     * Write the `dw` x `dh` level below the `sw` x `sh` plane at `src[srcAt]` into
+     * `dst[dstAt]`: each texel the 2 x 2 box above it (clamped at an odd edge), its
+     * colour weighted by alpha and its alpha the plain mean.
+     */
+    pub(file) static fn downsample(
+        src : i32[],
+        srcAt : i64,
+        sw : i32,
+        sh : i32,
+        dst : i32[],
+        dstAt : i64,
+        dw : i32,
+        dh : i32
+    ) : void {
+        for (y of 0..dh) {
+            for (x of 0..dw) {
+                let r : i64 = 0;
+                let g : i64 = 0;
+                let b : i64 = 0;
+                let a : i64 = 0;
+                let pr : i64 = 0;
+                let pg : i64 = 0;
+                let pb : i64 = 0;
+                for (k of 0..4) {
+                    let sx : i32 = (x * 2 + (k & 1)).min(sw - 1);
+                    let sy : i32 = (y * 2 + (k >> 1)).min(sh - 1);
+                    let t : i32 = src[srcAt + (sy as i64) * (sw as i64) + (sx as i64)];
+                    let ta : i64 = ((t >>> 24) & 0xFF) as i64;
+                    let tr : i64 = ((t >>> 16) & 0xFF) as i64;
+                    let tg : i64 = ((t >>> 8) & 0xFF) as i64;
+                    let tb : i64 = (t & 0xFF) as i64;
+                    r += tr;
+                    g += tg;
+                    b += tb;
+                    a += ta;
+                    pr += tr * ta;
+                    pg += tg * ta;
+                    pb += tb * ta;
+                }
+                // Weighted by alpha when anything here is visible, so a hole's colour
+                // does not leak into the edge; the plain mean when nothing is.
+                if (a > 0) {
+                    r = (pr + a / 2) / a;
+                    g = (pg + a / 2) / a;
+                    b = (pb + a / 2) / a;
+                } else {
+                    r = (r + 2) / 4;
+                    g = (g + 2) / 4;
+                    b = (b + 2) / 4;
+                }
+                let alpha : i64 = (a + 2) / 4;
+                dst[dstAt + (y as i64) * (dw as i64) + (x as i64)] = Image::pack(
+                    r as i32,
+                    g as i32,
+                    b as i32,
+                    alpha as i32
+                );
+            }
+        }
+    }
+
+    /**
+     * Scale the alpha of the `count` texels at `words[start]` so that a share `want`
+     * of them is at least `cut` — the bisection a coverage-preserving mip chain makes
+     * per level. Colour is left as it is.
+     */
+    pub(file) static fn keepCoverage(
+        words : i32[],
+        start : i64,
+        count : i64,
+        cut : i32,
+        want : f64
+    ) : void {
+        let lo : f64 = 0.0;
+        let hi : f64 = 4.0;
+        for (step of 0..12) {
+            let mid : f64 = (lo + hi) * 0.5;
+            if (Image::scaledCoverage(words, start, count, cut, mid) < want) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        let s : f64 = (lo + hi) * 0.5;
+        for (i of 0..count) {
+            let t : i32 = words[start + i];
+            let a : i64 = ((((t >>> 24) & 0xFF) as f64) * s + 0.5).floorToInt().min(255);
+            words[start + i] = Image::pack((t >>> 16) & 0xFF, (t >>> 8) & 0xFF, t & 0xFF, a as i32);
+        }
+    }
+
+    /** Layer `layer` as a CPU texture, alpha dropped — what the software device samples. */
+    pub fn toTexture(self, layer : i32) : Texture {
+        let t = new Texture(self.w, self.h);
+        let l : i32 = layer.max(0).min(self.layers - 1);
+        for (y of 0..self.h) {
+            for (x of 0..self.w) {
+                t.put(x, y, self.get(x, y, l) & 0xFFFFFF);
+            }
+        }
+        return t;
+    }
+}

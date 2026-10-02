@@ -43,6 +43,9 @@ pub class Mem {
     /** Bytes in an `i64` / an `f64`. */
     pub(file) static WIDE_BYTES : i64 = 8;
 
+    /** Bytes in an `f32`. */
+    pub(file) static FLOAT_BYTES : i64 = 4;
+
     /** U+FFFD, for a byte sequence that does not decode. */
     pub(file) static REPLACEMENT : i32 = 65533;
 
@@ -182,6 +185,27 @@ pub class Mem {
         unsafe {
             let slot : ptr<f64> = (base + index * Mem::WIDE_BYTES) as ptr<f64>;
             *slot = v;
+        }
+    }
+
+    /**
+     * The 32-bit float element at `index`, widened to `f64`.
+     *
+     * The width a GPU vertex buffer and a uniform block are made of: the
+     * arithmetic around it stays `f64`, only the stored value narrows.
+     */
+    pub static fn floatOf(base : i64, index : i64) : f64 {
+        unsafe {
+            let slot : ptr<f32> = (base + index * Mem::FLOAT_BYTES) as ptr<f32>;
+            return (*slot) as f64;
+        }
+    }
+
+    /** Store `v` at `index`, narrowed to 32 bits. */
+    pub static fn putFloatOf(base : i64, index : i64, v : f64) : void {
+        unsafe {
+            let slot : ptr<f32> = (base + index * Mem::FLOAT_BYTES) as ptr<f32>;
+            *slot = v as f32;
         }
     }
 

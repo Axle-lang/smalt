@@ -1,0 +1,475 @@
+// scene — one frame's worth of "what to draw", described and not yet drawn.
+//
+// The shape every graphics API converged on is *bind state, then draw*, and the
+// older `RenderDevice` follows it call for call: `setCamera`, `setLight`,
+// `beginFrame`, `drawMesh`, `endFrame`. That is right for a driver and tiresome for
+// a game, and it has a cost a GPU makes visible — a draw issued while the state it
+// depends on is half-set is a frame lit by last frame's sun.
+//
+// A `Scene` is the other half of the bargain. The program says what the frame
+// *contains*: where the camera is, the sun, the lamps, the haze, and a list of
+// (mesh, texture, material, transform). Nothing is drawn until `Renderer::render`,
+// which orders the list, resolves the handles, and issues the lot — so the order
+// the program described things in is not the order they cost.
+//
+// # What the renderer does with the list
+//
+//   * opaque and cut-out draws go first, in the order they were added (a program
+//     that wants state-sorted draws adds them in that order);
+//   * blended draws (`Material::opacity < 1`) go after, farthest first, by the
+//     distance from the camera to the draw's centre — the model's origin for `add`,
+//     the box's centre for `addBounded`, so world-space chunks drawn with an identity
+//     model still sort. The cheap rule, and the right one for chunk-sized and
+//     sprite-sized objects;
+//   * a draw whose mesh or texture handle is stale is skipped.
+//
+// # Reuse
+//
+// `reset()` empties the lists and keeps the storage. A frame loop builds the same
+// `Scene` every frame and, after the first, allocates nothing.
+//
+// # Windows of mutation
+//
+// A scene is written by the program between `reset()` and `Renderer::render`; the
+// renderer writes the resolved slots and the order during `render` and nothing
+// else does; backends only read. The three never overlap.
+
+use crate::gpu::handle::{MeshHandle, TextureHandle};
+use crate::gpu::light::{Fog, PointLight};
+use crate::math::geom::{Aabb, Frustum};
+use crate::math::mat::Mat4;
+use crate::math::vec::Vec3;
+use crate::render::camera::Camera;
+use crate::render::color::Color;
+use crate::render::vertex::{DirectionalLight, Material};
+
+/** One thing to draw. */
+pub struct DrawItem {
+    /** The geometry. */
+    pub mesh     : MeshHandle;
+
+    /** The texture it samples. */
+    pub tex      : TextureHandle;
+
+    /** How it answers light. */
+    pub material : Material;
+
+    /** Mesh space into world space. */
+    pub model    : Mat4;
+
+    /** The backend's mesh slot, written by the renderer in `render`; -1 until then. */
+    pub meshSlot : i32 = -1;
+
+    /** The backend's texture slot, written by the renderer in `render`; -1 until then. */
+    pub texSlot  : i32 = -1;
+
+    /** Where a blended draw is sorted from: the model's origin, or its box's centre. */
+    pub centre   : Vec3;
+
+    /** Squared distance from the camera to `centre`, written by `prepare`. */
+    pub depth    : f64 = 0.0;
+}
+
+/** The description of one frame. */
+pub class Scene {
+    /** Point lights a scene carries; the shader's array is this long. */
+    pub static MAX_POINT_LIGHTS : i32 = 8;
+
+    /** Draws a scene will hold; one more is refused rather than grown into. */
+    pub static MAX_DRAWS        : i32 = 65536;
+
+    items       : DrawItem[];
+    order       : i32[];
+
+    /** Scratch the size of `order`, for the merge sort of the blended draws. */
+    spare       : i32[];
+    cap         : i32;
+    count       : i32 = 0;
+    opaqueCount : i32 = 0;
+    culled      : i32 = 0;
+    lamps       : PointLight[];
+    lampCount   : i32 = 0;
+    viewProj    : Mat4 = Mat4::identity();
+    eyePos      : Vec3 = Vec3::zero();
+    frustum     : Frustum;
+
+    /** Whether a camera has been set: before one is, `addBounded` has nothing to cull against. */
+    hasCamera   : bool = false;
+    sun         : DirectionalLight = DirectionalLight::noon();
+    ambientCol  : Color = Color::white();
+    skyCol      : Color = Color::white();
+    fogState    : Fog = Fog::none();
+    clearCol    : Color = Color::rgb(0.05, 0.06, 0.1);
+
+    /** An empty scene with room for `draws` draws to start with. */
+    constructor(draws : i32) {
+        self.cap = draws.max(16).min(Scene::MAX_DRAWS);
+        self.items = malloc<DrawItem>(self.cap as i64);
+        self.order = malloc<i32>(self.cap as i64);
+        self.spare = malloc<i32>(self.cap as i64);
+        self.lamps = malloc<PointLight>(Scene::MAX_POINT_LIGHTS as i64);
+        self.frustum = Frustum::ofMatrix(Mat4::identity());
+    }
+
+    /**
+     * Start a new frame: no draws, no lamps. The camera, sun, ambient, fog and
+     * clear colour are kept — they usually do not change between frames, and a
+     * program that changes one calls its setter.
+     */
+    pub fn reset(mut self) : void {
+        self.count = 0;
+        self.opaqueCount = 0;
+        self.culled = 0;
+        self.lampCount = 0;
+    }
+
+    /**
+     * Where the viewer is and what they see through.
+     *
+     * Takes the matrices and the eye *by value*: a `Scene` does not hold the
+     * `Camera`, so the camera can move after this call without the scene
+     * changing under the frame it was describing.
+     */
+    pub fn setCamera(mut self, camera : Camera) : void {
+        self.viewProj = camera.viewProjection();
+        self.eyePos = camera.eye();
+        self.frustum = Frustum::ofMatrix(self.viewProj);
+        self.hasCamera = true;
+    }
+
+    /** The camera as a matrix and an eye, for a program that computes its own. */
+    pub fn setViewProjection(mut self, viewProj : Mat4, eye : Vec3) : void {
+        self.viewProj = viewProj;
+        self.eyePos = eye;
+        self.frustum = Frustum::ofMatrix(viewProj);
+        self.hasCamera = true;
+    }
+
+    /** The sun. */
+    pub fn setSun(mut self, light : DirectionalLight) : void {
+        self.sun = light;
+    }
+
+    /** The ambient light every surface gets, multiplied by its material's `ambient`. */
+    pub fn setAmbient(mut self, color : Color) : void {
+        self.ambientCol = color;
+    }
+
+    /**
+     * The colour of the sky's light this frame, for materials whose vertices carry a sky
+     * channel (`Material::voxel`): the colour a corner that sees the whole sky receives.
+     * Set it from the time of day; nothing needs re-meshing when it changes.
+     */
+    pub fn setSkyLight(mut self, color : Color) : void {
+        self.skyCol = color;
+    }
+
+    /** The distance haze; `Fog::none()` turns it off. */
+    pub fn setFog(mut self, fog : Fog) : void {
+        self.fogState = fog;
+    }
+
+    /** The colour the frame is cleared to — the sky, if nothing draws one. */
+    pub fn setClear(mut self, color : Color) : void {
+        self.clearCol = color;
+    }
+
+    /** Add a point light for this frame; false when the scene already has the maximum. */
+    pub fn addLight(mut self, light : PointLight) : bool {
+        if (self.lampCount >= Scene::MAX_POINT_LIGHTS) {
+            return false;
+        }
+        self.lamps[self.lampCount as i64] = light;
+        self.lampCount += 1;
+        return true;
+    }
+
+    /** Make room for one more draw; false at `MAX_DRAWS`. */
+    pub(file) fn room(mut self) : bool {
+        if (self.count < self.cap) {
+            return true;
+        }
+        if (self.cap >= Scene::MAX_DRAWS) {
+            return false;
+        }
+        let bigger : i32 = (self.cap * 2).min(Scene::MAX_DRAWS);
+        let items : DrawItem[] = malloc<DrawItem>(bigger as i64);
+        let order : i32[] = malloc<i32>(bigger as i64);
+        let spare : i32[] = malloc<i32>(bigger as i64);
+        for (i of 0..self.count) {
+            items[i] = self.items[i];
+        }
+        // The old arrays are never handed out, so the compiler reclaims them when the
+        // fields are reassigned below; freeing them here as well would be a double free.
+        self.items = items;
+        self.order = order;
+        self.spare = spare;
+        self.cap = bigger;
+        return true;
+    }
+
+    /**
+     * Add a draw: `mesh` seen through `tex` with `material`, placed by `model`.
+     *
+     * False when the scene is full. A stale handle is not detected here — the
+     * handle is checked when the frame is rendered, which is when it matters.
+     */
+    pub fn add(
+        mut self,
+        mesh : MeshHandle,
+        tex : TextureHandle,
+        material : Material,
+        model : Mat4
+    ) : bool {
+        return self.push(mesh, tex, material, model, Vec3::make(model.m03, model.m13, model.m23));
+    }
+
+    /** Append a draw sorted by `centre`; false when the scene is full. */
+    pub(file) fn push(
+        mut self,
+        mesh : MeshHandle,
+        tex : TextureHandle,
+        material : Material,
+        model : Mat4,
+        centre : Vec3
+    ) : bool {
+        if (!self.room()) {
+            return false;
+        }
+        self.items[self.count as i64] = DrawItem {
+            mesh: mesh,
+            tex: tex,
+            material: material,
+            model: model,
+            centre: centre,
+        };
+        self.count += 1;
+        return true;
+    }
+
+    /**
+     * Add a draw only if `bounds` — the mesh's box in *world* space — touches the
+     * view frustum; whether it was added.
+     *
+     * The cheapest triangle is the one never submitted. A chunk's box is already
+     * in world space; for a moved model, transform the corners first. A blended draw
+     * added here is sorted by the box's centre, not the model's origin.
+     *
+     * The test is made against the camera set *when this is called*: set this frame's
+     * camera before adding bounded draws. Before any camera at all, nothing is culled.
+     */
+    pub fn addBounded(
+        mut self,
+        mesh : MeshHandle,
+        tex : TextureHandle,
+        material : Material,
+        model : Mat4,
+        bounds : Aabb
+    ) : bool {
+        if (self.hasCamera && !self.frustum.touchesBox(bounds)) {
+            self.culled += 1;
+            return false;
+        }
+        return self.push(mesh, tex, material, model, bounds.centre());
+    }
+
+    /** Draws added since `reset`. */
+    pub fn drawCount(self) : i32 {
+        return self.count;
+    }
+
+    /** Draws `addBounded` refused since `reset` — what the frustum saved. */
+    pub fn culledCount(self) : i32 {
+        return self.culled;
+    }
+
+    /** Lamps added since `reset`. */
+    pub fn lightCount(self) : i32 {
+        return self.lampCount;
+    }
+
+    /** The lamp at `i`, or an unlit one out of range. */
+    pub fn lightAt(self, i : i32) : PointLight {
+        if (i < 0 || i >= self.lampCount) {
+            return PointLight::make(Vec3::zero(), Color::black(), 1.0);
+        }
+        return self.lamps[i as i64];
+    }
+
+    /** The view-projection matrix, in OpenGL clip convention (the device converts). */
+    pub fn viewProjection(self) : Mat4 {
+        return self.viewProj;
+    }
+
+    /** The camera's position. */
+    pub fn eye(self) : Vec3 {
+        return self.eyePos;
+    }
+
+    /** The sun. */
+    pub fn sunLight(self) : DirectionalLight {
+        return self.sun;
+    }
+
+    /** The ambient colour. */
+    pub fn ambient(self) : Color {
+        return self.ambientCol;
+    }
+
+    /** The sky light colour, for sky-lit vertices. */
+    pub fn skyLightColor(self) : Color {
+        return self.skyCol;
+    }
+
+    /** The fog. */
+    pub fn fog(self) : Fog {
+        return self.fogState;
+    }
+
+    /** The clear colour. */
+    pub fn clearColor(self) : Color {
+        return self.clearCol;
+    }
+
+    /** Draw `i` in submission order, or an empty item out of range. */
+    pub(crate) fn item(self, i : i32) : DrawItem {
+        if (i < 0 || i >= self.count) {
+            return DrawItem {
+                mesh: MeshHandle::none(),
+                tex: TextureHandle::none(),
+                material: Material::matte(Color::white()),
+                model: Mat4::identity(),
+                centre: Vec3::zero(),
+            };
+        }
+        return self.items[i as i64];
+    }
+
+    /** Record the backend slots the renderer resolved for draw `i`. */
+    pub(crate) fn bind(mut self, i : i32, meshSlot : i32, texSlot : i32) : void {
+        if (i < 0 || i >= self.count) {
+            return;
+        }
+        let it : DrawItem = self.items[i as i64];
+        it.meshSlot = meshSlot;
+        it.texSlot = texSlot;
+        self.items[i as i64] = it;
+    }
+
+    /** The submission index of the draw at position `k` of the draw order. */
+    pub(crate) fn orderAt(self, k : i32) : i32 {
+        if (k < 0 || k >= self.count) {
+            return -1;
+        }
+        return self.order[k as i64];
+    }
+
+    /** How many draws come first as opaque; the rest are blended, far to near. */
+    pub(crate) fn opaqueDraws(self) : i32 {
+        return self.opaqueCount;
+    }
+
+    /**
+     * Fix the draw order for this frame.
+     *
+     * Opaque and cut-out draws keep the order they were added in; blended ones
+     * follow, farthest from the camera first, equal depths in the order they were
+     * added. The blended tail is merge-sorted, bottom up, through `spare`: the order
+     * is rebuilt from the submission order every frame, so nothing about last
+     * frame's makes it nearly sorted, and a world of water chunks is thousands of
+     * blended draws — n log n, whatever they look like.
+     */
+    pub(crate) fn prepare(mut self) : void {
+        let n : i32 = self.count;
+        let k : i32 = 0;
+        for (i of 0..n) {
+            let it : DrawItem = self.items[i as i64];
+            let dx : f64 = it.centre.x - self.eyePos.x;
+            let dy : f64 = it.centre.y - self.eyePos.y;
+            let dz : f64 = it.centre.z - self.eyePos.z;
+            it.depth = dx * dx + dy * dy + dz * dz;
+            self.items[i as i64] = it;
+            // One predicate for both passes, so a NaN opacity lands in exactly one of
+            // them (opaque) instead of neither and leaving a slot of `order` unwritten.
+            if (!(it.material.opacity < 1.0)) {
+                self.order[k as i64] = i;
+                k += 1;
+            }
+        }
+        self.opaqueCount = k;
+        for (i of 0..n) {
+            if (self.items[i as i64].material.opacity < 1.0) {
+                self.order[k as i64] = i;
+                k += 1;
+            }
+        }
+        self.sortBlended(self.opaqueCount, n);
+    }
+
+    /**
+     * Sort `order[lo .. hi)` farthest first, stably: runs of 1, 2, 4 … merged pairwise,
+     * back and forth between `order` and `spare`, and copied back if the last pass
+     * ended in `spare`.
+     */
+    pub(file) fn sortBlended(mut self, lo : i32, hi : i32) : void {
+        let width : i32 = 1;
+        let inOrder : bool = true;
+        while (lo + width < hi) {
+            let start : i32 = lo;
+            while (start < hi) {
+                let mid : i32 = (start + width).min(hi);
+                let end : i32 = (start + width * 2).min(hi);
+                self.mergeInto(inOrder, start, mid, end);
+                start = end;
+            }
+            inOrder = !inOrder;
+            width *= 2;
+        }
+        if (!inOrder) {
+            for (i of lo..hi) {
+                self.order[i as i64] = self.spare[i as i64];
+            }
+        }
+    }
+
+    /**
+     * Merge the sorted runs `[a, mid)` and `[mid, end)` of `order` into `spare` (or of
+     * `spare` into `order` when `fromOrder` is false), farthest first, the left run
+     * winning ties so equal depths keep their order.
+     */
+    pub(file) fn mergeInto(mut self, fromOrder : bool, a : i32, mid : i32, end : i32) : void {
+        let i : i32 = a;
+        let j : i32 = mid;
+        for (k of a..end) {
+            let left : i32 = -1;
+            let right : i32 = -1;
+            if (i < mid) {
+                left = self.runAt(fromOrder, i);
+            }
+            if (j < end) {
+                right = self.runAt(fromOrder, j);
+            }
+            let takeLeft : bool = j >= end || (i < mid && !(self.items[left as i64].depth < self.items[right as i64].depth));
+            let pick : i32 = right;
+            if (takeLeft) {
+                pick = left;
+                i += 1;
+            } else {
+                j += 1;
+            }
+            if (fromOrder) {
+                self.spare[k as i64] = pick;
+            } else {
+                self.order[k as i64] = pick;
+            }
+        }
+    }
+
+    /** `order[k]`, or `spare[k]` when `fromOrder` is false. */
+    pub(file) fn runAt(self, fromOrder : bool, k : i32) : i32 {
+        if (fromOrder) {
+            return self.order[k as i64];
+        }
+        return self.spare[k as i64];
+    }
+}

@@ -1,8 +1,10 @@
 // vertex — what a mesh stores per corner, and what shades it.
 //
-// A vertex carries position, normal and texture coordinate. There is no
-// per-vertex colour: a tint belongs to the material, and paying 24 bytes
-// a corner for a constant is what turns a mesh into a memory problem.
+// The CPU `Vertex` carries position, normal and texture coordinate. There is
+// no per-vertex colour: a tint belongs to the material, and paying 24 bytes
+// a corner for a constant is what turns a mesh into a memory problem. (The
+// GPU vertex `gpu::MeshBuilder` writes is another record, packed to 32
+// bytes, and does carry a colour — baked light — and a texture layer.)
 //
 // `Material` and `DirectionalLight` live here too, because they are the
 // other half of the same question — a fragment's colour is a vertex
@@ -60,6 +62,49 @@ pub struct Material {
     /** Whether to discard triangles facing away from the camera. */
     pub cullBackface : bool;
 
+    /**
+     * How opaque the surface is, 0..1. Below 1 a GPU device blends it over
+     * what is behind; the software device draws it opaque.
+     */
+    pub opacity      : f64 = 1.0;
+
+    /**
+     * Alpha-test threshold, 0..1: a fragment whose alpha falls below it is not
+     * drawn at all (a leaf's holes). The alpha tested is the texel's times the
+     * vertex colour's times `opacity`, so a half-transparent material with a
+     * cutoff of 0.5 discards everything but fully opaque texels. 0 means no test.
+     * GPU devices only.
+     */
+    pub cutoff       : f64 = 0.0;
+
+    /**
+     * How much of the sun reaches the surface, 0..1 — its diffuse term and its
+     * highlight both. 0 shades from the albedo, the ambient term and the mesh's
+     * baked vertex colour (plus the point lights, see `lampLight`) — the shape a
+     * voxel world's pre-lit faces want. The GPU scales by it; `gpu::SoftBackend`
+     * can only switch the sun on or off, so it reads below 0.5 as 0 and the rest
+     * as 1; `SoftDevice` used directly ignores it.
+     */
+    pub directLight  : f64 = 1.0;
+
+    /**
+     * How much of the scene's point lights reaches the surface, 0..1, apart
+     * from the sun: a torch lights a voxel face whose sky light is baked into
+     * its vertices. GPU devices only — the CPU has no point lights.
+     */
+    pub lampLight    : f64 = 1.0;
+
+    /**
+     * Whether the vertex colour carries *baked light with a sky channel*.
+     *
+     * When set, a vertex's colour is read as light, not tint: its RGB is light from
+     * emitters (torches) and its alpha is the share of the sky that reaches that
+     * corner. The light on the surface is `rgb + skyLight * alpha`, where `skyLight`
+     * is the scene's per-frame sky colour (`Scene::setSkyLight`). The vertices are
+     * written once; the time of day is one colour. GPU devices only.
+     */
+    pub skyLight     : bool = false;
+
     /** A matte, untextured surface of colour `albedo`. */
     pub static fn matte(albedo : Color) : Material {
         return Material {
@@ -81,6 +126,50 @@ pub struct Material {
             shininess: 16.0,
             textured: true,
             cullBackface: true,
+        };
+    }
+
+    /**
+     * A textured surface lit entirely by what the mesh's vertices carry.
+     *
+     * No sun, no point lights, no highlight: the ambient term is full, so the
+     * result is albedo x texel x vertex colour. What a mesh whose light was
+     * computed when it was built (a voxel's smooth light and ambient occlusion)
+     * is drawn with. On the software device, which has no vertex colour, it
+     * reads as an evenly lit textured surface.
+     */
+    pub static fn baked() : Material {
+        return Material {
+            albedo: Color::white(),
+            ambient: 1.0,
+            specular: 0.0,
+            shininess: 16.0,
+            textured: true,
+            cullBackface: true,
+            directLight: 0.0,
+            lampLight: 0.0,
+        };
+    }
+
+    /**
+     * A textured surface lit by baked light with a sky channel — what a streamed voxel
+     * world's faces are drawn with.
+     *
+     * Like `baked`, no sun reaches it — the vertex colour's alpha is read as the sky's
+     * share instead, and the scene's `skyLight` colour is what moves it from noon to night
+     * with no re-mesh (see `Material::skyLight`). Unlike `baked`, the point lights do: a
+     * `PointLight` per torch lights the faces around it on top of the baked block light.
+     */
+    pub static fn voxel() : Material {
+        return Material {
+            albedo: Color::white(),
+            ambient: 1.0,
+            specular: 0.0,
+            shininess: 16.0,
+            textured: true,
+            cullBackface: true,
+            directLight: 0.0,
+            skyLight: true,
         };
     }
 
