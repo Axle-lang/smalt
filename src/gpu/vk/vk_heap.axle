@@ -9,19 +9,22 @@
 //
 // The algorithm:
 //
-//   * A block is 64 MiB and belongs to one (memory type, linear | optimal) pair.
-//     Buffers are linear and images are optimal-tiled, and keeping them in separate
-//     blocks is the simplest honest way to respect `bufferImageGranularity` without
-//     reading it.
+//   * A block belongs to one (memory type, linear | optimal) pair. Buffers are
+//     linear and images are optimal-tiled, and keeping them in separate blocks is
+//     the simplest honest way to respect `bufferImageGranularity` without reading it.
+//   * Blocks grow with use: a pair's first block is 4 MiB, and each new one as big as
+//     what the pair already holds, up to 64 MiB. A program that draws a cube does not
+//     pay 64 MiB for every kind of memory it touches once, and a streamed world still
+//     reaches 64 MiB blocks after a handful — far under the driver's 4096.
 //   * Inside a block, free space is a sorted list of (offset, size) ranges.
 //     Allocation is first-fit with alignment; release inserts in order and merges
 //     with both neighbours.
-//   * A request over half a block gets a block of its own, exactly sized, which
+//   * A request over half a full-size block gets a block of its own, exactly sized, which
 //     goes back to the driver when it empties. So does any emptied block that is
 //     not the last of its kind, and any emptied block of plain system memory (host
 //     visible, not device-local): that is where texture uploads stage, and keeping
 //     64 MiB of it for an upload that happened once is waste.
-//   * When the driver refuses a 64 MiB block, the request is tried once more with a
+//   * When the driver refuses a new block, the request is tried once more with a
 //     block exactly its size: a heap with 40 MiB left can still take a 1 MiB texture.
 //     A memory type the driver has refused is remembered as full — the next request
 //     does not ask again — until a block of that type is given back.
@@ -81,8 +84,11 @@ pub(crate) struct HeapAlloc {
 
 /** The sub-allocator over one device's memory. */
 pub(crate) class GpuHeap {
-    /** Bytes in a standard block. */
+    /** Bytes in a full-size block, the most a shared block grows to. */
     pub static BLOCK_BYTES : i64 = 67108864;
+
+    /** Bytes in a pair's first block. */
+    pub static FIRST_BLOCK_BYTES : i64 = 4194304;
 
     /** Blocks the heap can hold at once. */
     pub static MAX_BLOCKS  : i32 = 256;
@@ -367,7 +373,7 @@ pub(crate) class GpuHeap {
             if (self.full[memType as i64] != 0) {
                 return HeapAlloc::none();
             }
-            let nb : i32 = self.newBlock(ctx, memType, linear, GpuHeap::BLOCK_BYTES, 0);
+            let nb : i32 = self.newBlock(ctx, memType, linear, self.nextBlockBytes(memType, linear, size), 0);
             if (nb >= 0) {
                 let i : i32 = self.fit(nb, size, align);
                 if (i < 0) {
@@ -379,7 +385,7 @@ pub(crate) class GpuHeap {
                 }
                 return self.made(nb, at, size);
             }
-            // No 64 MiB left: fall through to a block of just this size.
+            // No room for a new block: fall through to one of just this size.
         }
         let db : i32 = self.newBlock(ctx, memType, linear, size, 1);
         if (db < 0) {
@@ -394,6 +400,22 @@ pub(crate) class GpuHeap {
             return HeapAlloc::none();
         }
         return self.made(db, at, size);
+    }
+
+    /**
+     * The size of the next shared block of a (memory type, linear) pair: as much as the
+     * pair's shared blocks already hold — doubling it — from `FIRST_BLOCK_BYTES` up to
+     * `BLOCK_BYTES`, and never less than twice the request that asks for it.
+     */
+    pub(file) fn nextBlockBytes(self, memType : i32, linear : i32, size : i64) : i64 {
+        let held : i64 = 0;
+        for (b of 0..self.high) {
+            let bi : i64 = b as i64;
+            if (self.live[bi] != 0 && self.dedicated[bi] == 0 && self.types[bi] == memType && self.linear[bi] == linear) {
+                held += self.sizes[bi];
+            }
+        }
+        return held.max(size * 2).max(GpuHeap::FIRST_BLOCK_BYTES).min(GpuHeap::BLOCK_BYTES);
     }
 
     /** Give the driver block `b` back; its memory type may then have room again. */
