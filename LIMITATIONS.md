@@ -30,10 +30,12 @@ account of what it does not do.
 
 **It builds and runs on Windows.** With axle 0.14.1 every example builds, `examples/gpu_check`
 passes, and `gpu_cube --gpu --smoke` (and `--software --smoke`) draws, releases and re-uploads
-while frames are in flight, and tears down — on a discrete GPU, and under the Khronos validation
-layer with synchronization checks without one message. Not established: that a real driver's
-picture is right (nothing asserts its pixels), that the committed SPIR-V is what the GLSL
-compiles to (it is recompiled by hand — `doc/GPU.md`, "Changing a shader"), the sub-allocator
+while frames are in flight, reads a frame back, and tears down — on a discrete GPU. The built-in
+path ran once under the Khronos validation layer with synchronization checks without one
+message; the program shaders, passes, texture updates and read-back (`examples/gpu_shaders`,
+which checks the pixels it reads back) have not been run under it. Not established: that the
+built-in shading's picture is right (its pixels are read back, not asserted), that the committed
+SPIR-V is what the GLSL compiles to (`tools/build_shaders.sh` regenerates it), the sub-allocator
 under random traffic, a Linux build and run (both ports only type-check), and X11 / Wayland
 surface creation, which has never executed (the records' layouts are checked).
 
@@ -42,11 +44,11 @@ What the GPU path does *not* have:
 | | |
 |---|---|
 | **Other APIs** | OpenGL, Direct3D and Metal are not written. The costs recorded when this entry was "no GPU backend" still stand for them: GL 3.3 Core is the cheapest (no creation structs, no unions); D3D12 is ~100 vtable slots per interface by hand; WebGPU reintroduces a shared library. `GpuBackend` (`src/gpu/backend.axle`) is the seam one would implement. |
-| **Custom shaders** | One lit pipeline and the overlay's. A `Material` that carries a pipeline would be the hook; the pipeline layout, descriptor sets and frame block are already shaped for it. |
-| **Render targets, post effects, shadows, MSAA, HDR, instancing** | None. One render pass, drawing into the swapchain. A voxel game's bloom, god-rays and underwater tint need render-to-texture first. |
-| **Sky** | Clear colour plus fog. A gradient, discs or a cloud dome are CPU code in the one program that has them, or a future pass. |
+| **Program shaders** | SPIR-V the program compiles itself (`tools/spirv_tables.py`); the CPU fallback runs none of it. A full-screen pass reads the frame before it, one kept frame and the scene's depth — not its own output, nor arbitrary targets of the program's. At most `Scene::MAX_PASSES` (12) a frame. |
+| **Shadows, MSAA, instancing** | None. A program bakes its shadows into its vertices, as voxel does, or has none. |
+| **HDR** | The passes' targets are 16-bit float where the device has them; the window is 8-bit, and the last pass's output is clamped to it. |
 | **Mesh memory** | Host-visible and coherent, written by `memcpy`. A discrete GPU reads it across the bus unless the heap finds device-local host-visible memory (an integrated GPU, or resizable BAR). A staged upload to device-only memory is the next step for large static scenes. |
-| **Texture upload** | Synchronous: a one-shot submit and a wait. Right for load time, wrong for streaming textures every frame. |
+| **Texture upload** | The first upload of a texture is synchronous — a one-shot submit and a wait — and so is any mip chain. A texture made without one can be rewritten every frame with `Renderer::updateTexture`, recorded into the next frame without waiting. |
 | **Point lights** | Eight per frame, per-pixel, no shadows. |
 | **Device name** | Only the *kind* of device (discrete, integrated, software) is reported: turning the driver's C string into an Axle `string` has no precedent in this library yet. |
 | **Lost devices** | Permanent: `render` answers false from then on and `Renderer::isLost()` turns true (device lost, surface lost, or out of memory); the program drops the renderer and makes a `Backend::Software` one. No attempt to rebuild a device that was reset or removed. |
@@ -505,13 +507,16 @@ Neither has been observed waking on a real event.
 
 ### 3.3b The GPU layer
 
-Held by two Axle programs and the seam script. `examples/gpu_check` is the headless self-test —
+Held by three Axle programs and the seam script. `examples/gpu_check` is the headless self-test —
 the mesh builder's vertex layout and what a vertex refuses, handles (and two tables seeded
-apart), images and their mip chains, scene ordering (3 000 blended draws) and culling, every
-member of both shader blocks, the facts written in two places agreeing, the Vulkan and surface
-record layouts, the SPIR-V modules' headers and sizes — and passes. `examples/gpu_cube --smoke`
-is the run on a device: frames, a release and re-upload in flight, a double close, a closed
-renderer refusing to draw. `tools/check_seam.sh --selftest` plants each violation it looks for.
+apart), images and their mip chains (an sRGB one averaged in linear light), scene ordering (3 000
+blended draws) and culling, the shader and draw vector a draw takes, every member of both shader
+blocks, the facts written in two places agreeing, `Mat4::inverse`, the Vulkan and surface record
+layouts, the SPIR-V modules' headers and sizes — and passes. `examples/gpu_cube --smoke` is the run
+on a device: frames, a release and re-upload in flight, a frame read back, a double close, a
+closed renderer refusing to draw. `examples/gpu_shaders` runs a program's background, mesh
+shader, passes and texture updates, and checks the frame it reads back pixel by pixel.
+`tools/check_seam.sh --selftest` plants each violation it looks for.
 The assertions in `gpu_check` have not been negative-controlled one by one.
 
 ### 3.4 Not verified

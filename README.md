@@ -52,7 +52,7 @@
 | **Language** | 100% [Axle](https://axle-lang.dev) — no C, no bindings, no vendored library |
 | **Platforms** | Windows (Win32: `kernel32`, `user32`, `gdi32`, `winmm`) and Linux, on X11 (`X11`, `asound`, `c`) or Wayland (`wayland-client`, `asound`, `c`) — one source tree, the target picks the backend and a feature picks between the two Linux ones |
 | **Scope** | What a 3D game needs — roughly SDL3 minus gamepads, plus the maths and the renderer SDL leaves to you |
-| **Rendering** | `Renderer`: a scene described once per frame and drawn by Vulkan 1.0 if the machine has a loader, by the CPU rasteriser if not — one program, both. The CPU path is a full software pipeline (near-plane clipping, culling, depth buffer, perspective-correct interpolation, Blinn-Phong); the GPU path adds vertex-colour baked light, point lights, fog, alpha test and blending, and texture arrays with mip chains; both have a 2-D overlay. See [`doc/GPU.md`](doc/GPU.md) for what is checked and what is not |
+| **Rendering** | `Renderer`: a scene described once per frame and drawn by Vulkan 1.0 if the machine has a loader, by the CPU rasteriser if not — one program, both. The CPU path is a full software pipeline (near-plane clipping, culling, depth buffer, perspective-correct interpolation, Blinn-Phong); the GPU path adds vertex-colour baked light, point lights, fog, alpha test and blending, texture arrays with mip chains (sRGB ones averaged in linear light), a program's own SPIR-V shaders and full-screen passes, and frame read-back; both have a 2-D overlay. See [`doc/GPU.md`](doc/GPU.md) for what is checked and what is not |
 | **2-D** | A clipped `Frame` over any surface: rectangles, rounded rectangles, rules, borders, rings, blends, traces — plus two baked anti-aliased faces and a formatter that writes figures as bytes, so a repaint allocates nothing |
 | **Idling** | `Events::wait` blocks in the OS until something happens. A program that repaints on change costs no measurable CPU between changes |
 | **Failure** | A subsystem that cannot start raises `PlatformError` **from its constructor** — there is no half-built object to test |
@@ -74,7 +74,7 @@
 - 😴 **A loop that actually sleeps** — `Events::wait(win, clock, timeoutMs)` blocks in the OS until something arrives. A tool that repaints on change idles at no measurable CPU, instead of choosing between spinning a core and answering input late.
 - ⏱️ **Both halves of a frame loop** — `FramePacer` hands out a variable `dt` *and* fixed simulation steps (`steps()` / `alpha()`) drained from the same measurement, so the simulation and the frame cannot drift apart into two timelines.
 - 🎨 **A complete software 3D pipeline** — clip, project, cull, half-space fill with a reciprocal depth buffer, perspective-correct attributes, one directional light. Nothing to install.
-- 🖥️ **A GPU path that is not a binding** — `Renderer` loads Vulkan with `dlopen` / `LoadLibraryExW` (no `-lvulkan`, no SDK), draws a `Scene` you described, and falls back to the CPU rasteriser on a machine with no driver. A game never sees an instance, a queue or a barrier. The bindings were written from the Khronos registry with every record measured against the real C headers, and that layout is checked again before a driver sees one; `gpu_cube --gpu --smoke` runs on real hardware, clean under the Khronos validation layer. [Design →](doc/GPU.md)
+- 🖥️ **A GPU path that is not a binding** — `Renderer` loads Vulkan with `dlopen` / `LoadLibraryExW` (no `-lvulkan`, no SDK), draws a `Scene` you described, and falls back to the CPU rasteriser on a machine with no driver. A game never sees an instance, a queue or a barrier. The bindings were written from the Khronos registry with every record measured against the real C headers, and that layout is checked again before a driver sees one; `gpu_cube --gpu --smoke` runs on real hardware, clean under the Khronos validation layer. A program brings its own shading as SPIR-V — mesh stages, a background, full-screen passes over the frame — and can read a frame back. [Design →](doc/GPU.md)
 - 🔊 **Sound with no callback** — every low-latency audio API wants to call *you*, and Axle cannot hand out a function address. `waveOut` opened with `CALLBACK_NULL` reports a finished block as a flag you poll; ALSA's `snd_pcm_avail_update` answers the same question. One three-call cycle, both platforms.
 - 🧯 **Failure and teardown are the compiler's business** — constructors raise, `Closeable` is enforced, and `defer` covers the six ways out of `Bmp::read`.
 - 🪶 **Nothing to ship** — the produced binary runs on a stock Windows box, or against the `libX11` / `libwayland-client` and `libasound` any Linux desktop already has. No runtime DLL, no redistributable, no vendored library.
@@ -201,12 +201,13 @@ A textured cube on a tiled floor, lit and depth-tested, at a locked 60 fps. `WAS
 |---|---|
 | `spinning_cube` | the full 3D pipeline — camera, meshes, textures, lights, the rasteriser |
 | `gpu_cube` | the same through `Renderer` — a scene, baked vertex light, a lamp, fog, glass, a 2-D overlay — on a GPU or on the CPU fallback (`--software`, `--gpu`); R releases and re-uploads the crate, a lost GPU carries on on the CPU, and `--smoke` draws 120 frames and checks the teardown |
+| `gpu_shaders` | a program's own shading through `Renderer` — a background whose texture is rewritten every frame, a mesh shader, two full-screen passes — and checks the frame it reads back; exits 0 with nothing to check on a machine with no GPU |
 | `ui_panel` | the 2-D surface — a clipped card, rounded corners, anti-aliased text, a live figure, `Events::wait`, and `F12` to a BMP |
 | `donut3d` | **its own** renderer, over `SoftDevice::pixels()` — smalt is only the window |
 | `mario3d` | same: a game that already had a renderer and just wanted a framebuffer |
 | `hello_window` | the smallest thing that opens and closes cleanly |
 | `self_check` | asserts the maths, the frame pacer, the clip, the glyph metrics, the formatters and the containers — runs headless, no display needed |
-| `gpu_check` | asserts what surrounds the driver — the mesh builder's vertex layout, handles, images and their mip chains, the scene's ordering and culling, the shader blocks' byte offsets, the Vulkan record layouts — headless, no GPU needed |
+| `gpu_check` | asserts what surrounds the driver — the mesh builder's vertex layout, handles, images and their mip chains, the scene's ordering, culling and passes, the shader blocks' byte offsets, `Mat4::inverse`, the Vulkan record layouts — headless, no GPU needed |
 | `audio_check` | asserts the WAV decode and the device's block cycle |
 | `proc_check` | asserts the window procedure — headless, under a second |
 
@@ -271,6 +272,7 @@ Layers, bottom to top. **A module never reaches upward.**
                                   │
    ┌──────────────────────────────▼──────────────────────────────────────┐
    │  gpu/      renderer · scene · mesh_builder · image · handle · light  │
+   │            shader (a program's SPIR-V)                               │
    │            backend (trait) · soft/ (the CPU, behind it)              │
    │            vk/ the Vulkan backend            → doc/GPU.md            │
    ├─────────────────────────────────────────────────────────────────────┤

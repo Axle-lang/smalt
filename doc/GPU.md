@@ -5,11 +5,12 @@ the design: what a game writes, what is behind it, who owns what, how it is chec
 because it is the reason the work was done — how a CPU-rasterised game such as
 [voxel-axle](https://github.com/Axle-lang/voxel-axle) moves onto it.
 
-> **Status.** It builds with `axle` 0.14.1 on Windows, `examples/gpu_check` passes, and
-> `examples/gpu_cube --gpu --smoke` draws, re-uploads and tears down on a discrete GPU through
-> Vulkan (and `--software` on the CPU). Nothing asserts the pixels a driver draws, and the
-> Linux ports type-check (`axle check --target x86_64-unknown-linux-gnu`, X11 and Wayland) but
-> have not been built or run — see
+> **Status.** It builds with `axle` 0.14.1 on Windows, `examples/gpu_check` passes,
+> `examples/gpu_cube --gpu --smoke` draws, re-uploads, reads a frame back and tears down on a
+> discrete GPU through Vulkan (and `--software` on the CPU), and `examples/gpu_shaders` runs a
+> program's own mesh, background and pass shaders and checks the frame it reads back.
+> voxel-axle draws through it. The Linux ports type-check (`axle check --target
+> x86_64-unknown-linux-gnu`, X11 and Wayland) but have not been built or run — see
 > [How it is checked](#how-it-is-checked-and-what-is-not).
 
 ## The idea
@@ -65,6 +66,9 @@ while (running) {
 | `MeshHandle` / `TextureHandle` | What a program holds in place of a GPU object. Index plus generation: a released handle resolves to nothing, even after its index is reused, and a handle from a renderer that was closed does not resolve in the next one (each numbers its generations from its own seed). |
 | `Material` | The existing struct, five fields richer: `opacity`, `cutoff` (alpha test), `directLight` (the sun), `lampLight` (the point lights) and `skyLight`. `Material::baked()` shades from vertex colour alone; `Material::voxel()` reads the vertex colour as baked light with a sky channel (below) and is lit by point lights. |
 | `renderer.overlay()` | The 2-D layer: a `Frame` over a CPU buffer composited on top of the 3-D frame, one pixel per pixel from the top-left. A HUD written for `Surface::frame()` runs on it unchanged — except that a word of zero is transparent, so black is drawn as `0x010101`. |
+| `ShaderDesc` / `ShaderHandle` | A program's own shading, as SPIR-V: a mesh shader for its draws, a background behind them, passes over the finished frame. See [A program's own shading](#a-programs-own-shading). |
+| `updateTexture` | New texels for a texture made without a mip chain, recorded into the next frame without waiting for the GPU — a table a program recomputes every frame. |
+| `captureNext` / `captured` | The next frame's pixels, read back: `captured().frame()` is a `Frame` `Bmp::write` takes as it is. On either backend. |
 
 ### The vertex
 
@@ -82,22 +86,75 @@ not the `0xAARRGGBB` of an `Image` texel nor the `0x00RRGGBB` a `Frame` draws: b
 `MeshBuilder::rgba` / `rgbaOf`. A vertex is refused (-1) when its position is not a finite number
 or its layer is past `MeshBuilder::MAX_LAYER`, the last layer an `Image` holds.
 
+Indices are 32-bit in the builder; a mesh of at most 65 536 vertices is uploaded with 16-bit
+ones, half the size (`vk_meshes`).
+
 Two of those fields are what a voxel mesher needs and a model loader does not. The
 **colour** is per vertex and multiplies the albedo and the texel — it is where a mesh's
 baked light lives. The **layer** picks the tile of a texture array, so a whole world is one
 texture and one bind.
+
+## A program's own shading
+
+The built-in shading is a textured mesh lit by a sun, eight lamps and an ambient, fogged. A
+program whose look is its own brings its own stages instead (`gpu/shader.axle`), compiled to
+SPIR-V and uploaded once — `gfx.uploadShader(ShaderDesc { kind, vert, vertBytes, frag,
+fragBytes })` answers a handle, or none on the CPU fallback. A shader is one of three kinds:
+
+| Kind | Stages | Used by | Reads |
+|---|---|---|---|
+| `Mesh` | vertex and fragment, over the 32-byte vertex | the draws added after `scene.useShader(h)` (until `useShader(ShaderHandle::none())` or `reset`) | set 1 binding 0: the draw's texture |
+| `Background` | fragment | `scene.setBackground(h, tex)`: drawn over the whole frame before any draw, with no depth | set 1: its texture |
+| `Pass` | fragment | `scene.addPass(h, tex, keep)`: drawn over the whole frame after the draws, in the order added | set 1: its texture; set 2: `shaders/post.glsl` |
+
+Everything around the stages stays smalt's: the vertex format, the pipelines (a mesh shader gets
+the same four — opaque or blended, one face or both — chosen by its draw's `Material`), the
+targets, the order. A full-screen kind has no vertex stage of its own; smalt's full-screen
+triangle feeds it `vUv`, (0, 0) at the top-left.
+
+**What a shader is told** is in `shaders/frame.glsl`, which a program's GLSL includes:
+
+* the frame block `fr` — the view-projection and its inverse (`invViewProj`: a pass turns a
+  pixel and its depth back into a world point), the eye, the lights, the target's size, and
+  **32 `user` vectors** whose meaning is the program's alone (`scene.setUser(i, Vec4)`);
+* the draw's push block `dr` — its model matrix, its material, and **one `user` vector**
+  (`scene.setDrawUser(v)`, taken by every draw, background and pass added after it).
+
+A mesh shader also has the two vertex fields the built-in stages leave alone: the normal's
+fourth component and bits 8–31 of the layer word (`MeshBuilder::vertexRaw(RawVertex { … })`
+writes them; bits 0–7 stay the texture layer).
+
+**A pass** samples what came before it (`shaders/post.glsl`): `prevColor`, what the pass before
+drew (the 3-D frame, for the first); `baseColor`, the last pass added with `keep` (or the 3-D
+frame); `sceneDepth`, the 3-D frame's depth, 0 at the near plane and 1 at the far one — 1 where
+only the background is. A bloom is three of them: an extract, a blur, and a composite that adds
+`prevColor` (the blur) to `baseColor` (the frame the extract was kept from).
+
+**The targets.** The 3-D frame is drawn into a colour target of the backend's own (16-bit float
+where the device has one), then each pass draws from one target into another, and the last pass —
+or a plain copy, when the program added none — draws into the window, with the overlay on top.
+Three targets are always enough: a pass reads at most two and never the one it writes. A frame
+holds at most `Scene::MAX_PASSES` (12) passes.
+
+**Textures in linear light.** `SamplerDesc.srgb` uploads the texels as sRGB-encoded and averages
+the mip chain in linear light, so a shader that lights in linear light samples linear light. The
+built-in shading does not ask for it.
+
+`examples/gpu_shaders` is all of it, small: a background, a tinting mesh shader, two passes, and
+a frame read back and checked.
 
 ## Architecture
 
 ```
    your game                                  uses: Renderer Scene MeshBuilder Image Material ...
  ┌──────────────────────────────────────────────────────────────────────────────────────┐
- │ gpu/        renderer · scene · handle · mesh_builder · image · light · backend        │
- │             trait GpuBackend                                                          │
+ │ gpu/        renderer · scene · handle · mesh_builder · image · light · shader         │
+ │             backend (trait GpuBackend)                                                │
  │   soft/     backend_soft          (the CPU rasteriser, behind the same trait)         │
  │   vk/       vk_backend · vk_overlay · vk_swapchain · vk_pipelines · vk_textures       │
- │             vk_meshes · vk_heap · vk_mem · vk_graveyard · vk_cmd · vk_context         │
- │             vk_frame · vk_error · spirv · vk_check (the headless test door)           │
+ │             vk_targets · vk_shaders · vk_uploads · vk_readback · vk_meshes            │
+ │             vk_heap · vk_mem · vk_graveyard · vk_cmd · vk_context · vk_frame          │
+ │             vk_error · spirv · vk_check (the headless test door)                      │
  ├──────────────────────────────────────────────────────────────────────────────────────┤
  │ render/  video/  math/                                                               │
  │   video/<port>/sys_vk_surface    SEAM   a window -> a VkSurfaceKHR                   │
@@ -140,7 +197,10 @@ none.
 | Fact | Carrier | Single writer | Window | Readers |
 |---|---|---|---|---|
 | The frame's description (camera, sun, lamps, fog, draws) | `Scene` fields | the program | between `reset()` and `render()` | `Renderer::render`, backends |
-| Resolved mesh / texture slot of each draw | `DrawItem.meshSlot` / `.texSlot` | `Renderer::render` | inside `render()`, before the backend call | the backend |
+| Resolved mesh / texture / shader slot of each draw, background and pass | `DrawItem.meshSlot` / `.texSlot` / `.shaderSlot`, `PassItem` | `Renderer::render` | inside `render()`, before the backend call | the backend |
+| A program shader's modules and pipelines | `VkShaders` slot | `VkShaders` (upload / release; a release waits for the device to go idle) | any time, single thread | `VkBackend` when recording |
+| New texels for a texture | `VkUploads` queue | `Renderer::updateTexture` (copied to the CPU at once, to the slot's staging buffer once its fence is waited on) | recorded ahead of the next frame's scene pass | that frame's draws |
+| A frame read back | `VkReadback` | `captureNext` arms it; the frame's commands copy the window's image; its fence's wait converts it | until the next `captureNext` | `captured()` |
 | Draw order (opaque in submission order, then blended far to near) | `Scene.order` | `Scene::prepare`, called by `Renderer::render` | inside `render()` | the backend |
 | Which backend slot a handle names | `HandleTable` | `Renderer` (upload / release) | any time, single thread | `Renderer` |
 | A mesh's GPU buffers | `VkMeshes` slot | `VkMeshes::create` / `update` | `update` writes a *new* pair and buries the old | `VkBackend::recordDraw` |
@@ -168,10 +228,12 @@ can predict it:
 | Mip chains, anisotropy, filter choice | yes | **ignored** — nearest |
 | `Material::baked()` / `Material::voxel()`, `Scene::setSkyLight` | shades from vertex colour (and the sky colour) | switches the sun off for the draw; the sky colour is ignored — evenly lit |
 | `directLight` between 0 and 1 | scales the sun, highlight included | on below 0.5, off above |
+| A program's shaders (`uploadShader`) | yes | **none**: the handle is none, a mesh shader's draws take the built-in shading, a background or pass is not drawn |
+| `updateTexture`, `captureNext` | yes | yes |
 
-Both shade in the same space: the swapchain and textures are `B8G8R8A8_UNORM`, so lighting and
-mip averaging run on the gamma-encoded values, as the CPU rasteriser does — the two backends
-match, and neither is linear-light correct. (A surface that offers no `B8G8R8A8_UNORM` is given
+Both shade in the same space: the swapchain and textures are `B8G8R8A8_UNORM` (unless a sampler
+asks for `srgb`), so the built-in lighting and mip averaging run on the gamma-encoded values, as
+the CPU rasteriser does — the two backends match, and neither is linear-light correct. (A surface that offers no `B8G8R8A8_UNORM` is given
 its first format; if that is an sRGB one the picture comes out lighter than the CPU's.)
 
 ## The Vulkan backend
@@ -191,10 +253,12 @@ but read at measured offsets (`vk_out`).
 
 **One frame**, with two in flight: wait the slot's fence → sweep the graveyard → acquire an
 image, waiting at most a tenth of a second (an out-of-date swapchain is rebuilt and the frame
-skipped — that is how a resize is absorbed) → write the frame block, stage the overlay → record
-(overlay upload, render pass, opaque then blended draws, overlay) → submit → present. A steady
-frame allocates nothing; a swapchain rebuild and an overlay that outgrew its texture (made with
-room to spare, so a drag-resize remakes it a handful of times) are the exceptions.
+skipped — that is how a resize is absorbed) → write the frame block, stage the overlay and any
+texture updates → record (the uploads; the scene pass: background, opaque then blended draws;
+each program pass; the present pass: the last pass or a copy, then the overlay; a read-back when
+one was asked for) → submit → present. A steady frame allocates nothing; a swapchain rebuild
+(which remakes the targets with it) and an overlay that outgrew its texture (made with room to
+spare, so a drag-resize remakes it a handful of times) are the exceptions.
 
 **Failure** has three outcomes, decided by the code and not by where it was met: out of date →
 rebuild next frame; no image yet, no area → skip the frame; anything else (`VkErr::isFatal`: a
@@ -218,7 +282,10 @@ reading.
 **Textures** carry their whole mip chain from the CPU: `Image::mipTail` builds each level as the
 2 x 2 box of the one above, its colour weighted by alpha (a hole's black does not darken a leaf's
 edge) and, with `SamplerDesc.cutout`, its alpha scaled so the share of texels that pass the alpha
-test stays what level 0 has. One one-shot submit copies every level of every layer.
+test stays what level 0 has; with `SamplerDesc.srgb`, averaged in linear light. One one-shot
+submit copies every level of every layer. A texture made without a chain can be rewritten every
+frame (`updateTexture`, `vk_uploads`): the copy is recorded into the next frame's own commands,
+ahead of its scene pass, and nothing waits.
 
 **Shaders** are GLSL in `shaders/`, committed as SPIR-V (`src/gpu/vk/spirv.axle`), so a consumer
 needs no glslang. See [Changing a shader](#changing-a-shader).
@@ -229,18 +296,18 @@ the view-projection when the frame block is written. Counter-clockwise stays the
 
 ### Changing a shader
 
-The SPIR-V is not rebuilt by the Axle build, so a shader edit is three steps, by hand:
+The SPIR-V is not rebuilt by the Axle build. After a shader edit:
 
-1. Compile and validate each changed module:
-   `glslangValidator -V --target-env vulkan1.0 --spirv-val -I shaders shaders/scene.frag -o scene.frag.spv`.
-2. Replace its table in `src/gpu/vk/spirv.axle` with the module's words — eight to a line, as
-   signed decimals — and its `*Bytes()` with the module's size.
-3. If `frame.glsl` changed, read the blocks' offsets back out of the module
+1. Run `tools/build_shaders.sh <path to glslang>`. It compiles every module of `shaders/` for
+   Vulkan 1.0 and rewrites `src/gpu/vk/spirv.axle` through `tools/spirv_tables.py` — which a
+   program uses the same way for its own shaders, with `-I` pointing at smalt's `shaders/` for
+   `frame.glsl` and `post.glsl` (`examples/gpu_shaders/build_shaders.sh` is one).
+2. If `frame.glsl` changed, read the blocks' offsets back out of a module
    (`spirv-dis scene.frag.spv | grep "OpMemberDecorate.*Offset"`) and make the `FRAME_` / `DRAW_`
    constants in `vk_frame.axle` say the same; `GpuCheck::constants` then checks they still tile.
 
 `examples/gpu_check` checks each module's header and size; that the words are what the GLSL
-compiles to is only as true as step 2 was done.
+compiles to is as true as the last run of the script.
 
 ## How it is checked, and what is not
 
@@ -248,124 +315,56 @@ All of it is Axle, plus `check_seam.sh`:
 
 | Check | What it holds |
 |---|---|
-| `axle build` / `axle check` (both examples; Windows, Linux X11, Linux Wayland) | The Axle compiles for every target `axle.toml` promises. |
-| `examples/gpu_check` | Run in Axle, headless: the vertex layout byte by byte at the shader's offsets and what a vertex refuses; handles, including empty ones and two tables seeded apart; images, their size clamps and their mip chains (alpha-weighted colour, coverage kept for a cut-out at level 3); draw order — 3 000 blended draws sorted far to near, ties stable — and culling, with and without a camera; every member of both shader blocks at the byte the GLSL gives it, `lampLight` included; the facts written twice agreeing (`GpuCheck::constants`); the Vulkan records' and this port's surface record's layouts; each SPIR-V module's header and size. |
-| `examples/gpu_cube --gpu --smoke` / `--software --smoke` | A real device (or the CPU) opens, draws 120 frames with a mesh and a texture released and re-uploaded halfway — while the frames that drew them are in flight — then the renderer is closed twice and a closed renderer is shown to refuse a frame and an upload. Exit code 0 when all held. Pixels are not asserted. |
+| `axle build` / `axle check` (the examples; Windows, Linux X11, Linux Wayland) | The Axle compiles for every target `axle.toml` promises. |
+| `examples/gpu_check` | Run in Axle, headless: the vertex layout byte by byte at the shader's offsets and what a vertex refuses; handles, including empty ones and two tables seeded apart; images, their size clamps and their mip chains (alpha-weighted colour, coverage kept for a cut-out at level 3); draw order — 3 000 blended draws sorted far to near, ties stable — and culling, with and without a camera; every member of both shader blocks at the byte the GLSL gives it, `lampLight`, the inverse view-projection and the `user` vectors included; a raw vertex's program bits; the shader and draw vector a draw takes, and the passes a scene accepts and refuses; `Mat4::inverse` both ways; an sRGB mip level averaged in linear light; the facts written twice agreeing (`GpuCheck::constants`); the Vulkan records' and this port's surface record's layouts; each SPIR-V module's header and size. |
+| `examples/gpu_cube --gpu --smoke` / `--software --smoke` | A real device (or the CPU) opens, draws 120 frames with a mesh and a texture released and re-uploaded halfway — while the frames that drew them are in flight — reads one frame back, then the renderer is closed twice and a closed renderer is shown to refuse a frame and an upload. Exit code 0 when all held. |
+| `examples/gpu_shaders` | A program's shaders on a real device: a background whose texture is rewritten each frame, a mesh shader, two passes; the frame read back has each one's mark where it should. |
 | `gpu_cube --gpu --smoke` under the Khronos validation layer | The same run with `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation` and `VK_KHRONOS_VALIDATION_VALIDATE_SYNC=1` (core, object-lifetime, thread-safety and synchronization checks): not one error or warning. A run, not a gate — the layer is not part of the tree. |
 | `VkContext` at start-up | The record layouts again, on the machine that is about to use them, before any reaches a driver. |
 | `check_seam.sh` (`--selftest`) | The OS stays inside the port directories — an `extern "C" from`, a bare `extern "C" fn`, a `native fn` or an `@link` outside a port is refused, and so is a `use` that crosses into another port. |
 
-**Not checked:** that the picture a real driver draws is right (gpu_cube has run on one Windows
-discrete GPU; nothing asserts its pixels); the sub-allocator under random traffic; that the
+**Not checked:** that the built-in shading's picture is right (gpu_cube has run on one Windows
+discrete GPU; its pixels are read back, not asserted); the program shaders, passes, texture
+updates and read-back under the validation layer (gpu_shaders checks their pixels, without it); the sub-allocator under random traffic; that the
 embedded SPIR-V is what the GLSL compiles to (see [Changing a shader](#changing-a-shader)); X11
 and Wayland surface creation, and any Linux build and run (they type-check); a swapchain rebuilt
 under the validation layer (no run resizes the window); a lost device or surface (the paths are
 written, not provoked); high-DPI; multiple monitors.
 
-## Porting voxel-axle
+## How voxel-axle uses it
 
-voxel-axle is a good test of the design because it is the opposite of a toy: 25 000 lines, an
-infinite streamed world, a CPU rasteriser that already does greedy meshing, smooth light, ambient
-occlusion, soft shadows, a sky, clouds, bloom and god-rays, on worker threads. What it asks of a
-GPU backend, and what this branch gives:
+voxel-axle is the test the design was written against: 25 000 lines, an infinite streamed world,
+and a CPU rasteriser with greedy meshing, smooth coloured light, ambient occlusion, soft sun
+shadows, a one-bounce tint, a ray-marched cloud deck, fog toward the sky, bloom, god-rays and an
+underwater haze. It now draws through `Renderer` when there is a GPU, and keeps its own
+rasteriser when there is not; its `engine/render/gpu` is the whole port. What each piece became:
 
-| voxel-axle today | On `Renderer` |
+| voxel-axle | On `Renderer` |
 |---|---|
-| Chunk faces in `FaceMesh` (cell, direction, tile, run length, per-corner light bytes), projected and rasterised on CPU worker crews | Mesh each chunk once into a `MeshBuilder` — one `face()` per visible face, four corner colours, `layer` = the tile — and `uploadMesh` it. **The projection, clipping, z-buffer and fill disappear**; so do the raster crews and their column bands. |
-| A re-mesh when a block changes | `builder.clear()`, mesh again, `updateMesh(handle, builder)`. Safe while frames are in flight. An empty builder (an all-air chunk, the last block mined) keeps the handle valid and draws nothing, so one handle per chunk is enough. |
-| Frustum culling per chunk (`chunkVisible`) | `scene.addBounded(handle, tex, material, model, chunkBox)` — the frustum test is in `Scene`. |
-| The 128 px HD atlas as a vertical strip with a CPU mip chain and anisotropic sampler | `Image::fromStrip(atlas, 128)` → layers → one texture with its mip chain (built at upload, alpha-weighted, coverage kept with `SamplerDesc.cutout` for the leaves), anisotropy and no bleeding between tiles. |
-| Smooth light + AO computed per corner *per frame* (the sun moves) | Bake `block RGB` and a `sky` factor into the vertex colour once per light change, and let the day cycle drive a scene uniform — see below. |
-| Transparent water, leaves with holes | `Material.opacity` (blended, sorted far to near by the chunk box's centre, since chunks share an identity model) and `Material.cutoff` (alpha test; no sorting, writes depth). |
-| Torch light | A `PointLight` per torch near the camera (eight at a time), on top of the baked block light — `Material::voxel()` has `lampLight` 1 and `directLight` 0, so torches light it and the sun does not. |
-| Mobs (box models), selection wireframe | `MeshBuilder` boxes with a model matrix per mob; a wireframe is a thin-box mesh. |
-| HUD, hotbar, menus, text (`Frame`, `BitmapFont`) | `renderer.overlay()` — the same `Frame`. **No change.** |
-| Sky gradient, sun and moon discs, clouds, god-rays, bloom, underwater tint | **Not provided by this branch.** See the next section. |
-| Worker threads for raster | Gone from the 3-D path; the light engine and mesher threads stay. `Renderer` itself is single-threaded, like the window. |
+| Chunk faces in `FaceMesh`, lit per corner per frame | Each chunk meshed into two `MeshBuilder`s (one-sided; water and partial tops two-sided) when its mesh or its light changes. A corner carries what it read of the light volumes — the light levels and occlusion in the layer word's program bits, the sun's visibility in `normal.w`, the bounce and sky access in the colour — and a `Mesh` shader does the per-frame arithmetic, the CPU's line for line. |
+| The day | Thirty `user` vectors a frame: the sun, its tint, the sky's colours, the light model's constants. Day turns to night with no re-mesh. |
+| World coordinates hundreds of thousands of blocks out | A render origin at the eye's chunk; chunk meshes are chunk-local and placed by whole blocks. |
+| Sky, sun, moon, cloud deck | A `Background` shader; the deck is a texture rewritten each frame (`updateTexture`). |
+| Fog toward the sky behind each surface, god-rays, underwater, bloom | `Pass` shaders reading `sceneDepth` and `invViewProj`; the bloom is an extract, a blur and a composite, with `keep`. |
+| Mobs, torches, the selection outline | One mesh rebuilt each frame. |
+| HUD and pause menu | `overlay()`, unchanged; the menu's veil is a pass, since the overlay cannot darken what is under it. |
+| `--snap` | `captureNext` / `captured`. |
 
-### The one thing the generic shader needed, and how it is met
-
-voxel's light is not static: the sun moves, so every corner's light changes every frame, and the
-CPU path recomputes it per corner per frame. Re-baking every vertex of a streamed world each frame
-would give back everything the GPU won. The way out is to split the baked light into the two parts
-that actually vary on different schedules:
-
-* **block light** (torches) — changes when a block changes; baked into the vertex colour's RGB;
-* **sky light** — changes with the time of day; baked into the vertex colour's *alpha* as "how
-  much of the sky reaches this corner" (0..255, ambient occlusion folded in), and multiplied by a
-  **scene-wide sky tint** the program sets each frame (`Scene::setSkyLight`).
-
-With `Material::voxel()` the shader computes `light = vertexRGB + skyTint × vertexA`. Day turns to
-night by changing one colour, with no re-mesh and no re-upload. Soft sun shadows and one-bounce
-colour bleed are *not* in this model — they are screen-space or per-frame effects of the CPU
-renderer and would need their own passes.
-
-### What the mesher's side looks like
-
-Illustrative, and not compiled — voxel-axle's `ChunkMesher` already holds every number used
-here (`FaceMesh` in `kworld/meshbuf.axle`: per face the cell, `(dir << 8) | tile`, the run
-length, two light bytes per corner, and an ambient-occlusion byte of two bits per corner):
-
-```rs
-fn meshSlot(b : MeshBuilder, m : FaceMesh, slot : i32) : void {
-    b.clear();                                   // keeps the storage: no allocation after warm-up
-    for (i of 0..m.fcount[slot]) {
-        let f = slot * World::MAX_FACES_PER_CHUNK + i;
-        let dir  = (m.ftile[f] >> 8) & 7;
-        let tile = m.ftile[f] & 0xFF;            // the texture-array layer
-        let corners = faceCorners(m, f, dir);    // 4 world-space Vec3, counter-clockwise from outside
-        let c0 = bakedLight(m, f, 0);            // MeshBuilder::rgba(blockR, blockG, blockB, sky)
-        let c1 = bakedLight(m, f, 1);            //   — the nibbles x17, the occlusion folded into `sky`
-        let c2 = bakedLight(m, f, 2);
-        let c3 = bakedLight(m, f, 3);
-        b.face(corners[0], corners[1], corners[2], corners[3], normalOf(dir), tile, c0, c1, c2, c3);
-    }
-}
-
-// on a block edit or a chunk arriving:
-meshSlot(builder, faces, slot);
-renderer.updateMesh(chunk[slot], builder);       // or uploadMesh the first time
-
-// every frame:
-scene.reset();
-scene.setCamera(camera);
-scene.setSkyLight(daylight.skyColour());         // the whole day cycle is this one call
-for (s of 0..slots) {
-    scene.addBounded(chunk[s], atlas, Material::voxel(), Mat4::identity(), chunkBox(s));
-}
-```
-
-### What would still have to be written
-
-Said plainly, because a port is not a recompile:
-
-1. **The sky.** Clear colour plus fog gets a horizon; the gradient, the sun and moon discs and the
-   cloud dome (a ray-marched dome in the CPU renderer) are CPU code today. The honest first step is
-   to keep rendering them on the CPU into a screen-sized buffer once per frame and upload it as a
-   background texture; a sky pass in the GPU renderer is the proper one and a candidate for a custom
-   shader hook (below).
-2. **Post effects** (bloom, god-rays, underwater): render-to-texture and a full-screen pass. The
-   backend has one render pass and no off-screen targets.
-3. **The mesher** must emit `MeshBuilder` faces. It already knows everything needed (cell,
-   direction, tile, run length, corner light bytes); the work is the vertex write, not the
-   algorithm.
-4. **Texture streaming** is not needed (one atlas), but **mesh memory** is: see the limits.
-
-None of these needs a design change in smalt; (1) and (2) are what "custom shader / render
-target" support would give, and are the next step, not this one.
+A pinned capture on each backend, side by side, is how the two are compared: 95–99 % of the
+pixels within four levels of each other.
 
 ## Limits and next steps
 
 * **Linux type-checks but has not been built or run** — see the status note at the top.
-* **No custom shaders.** One lit pipeline (plus the overlay). A user shader hook would be a
-  `Material` carrying a pipeline handle; the pieces it needs (pipeline layout, descriptor sets,
-  the frame block) are already shaped for it.
-* **No render targets, no post effects, no shadows, no MSAA, no HDR, no instancing.**
+* **A program's shaders are SPIR-V it compiles itself** (`tools/spirv_tables.py`); the CPU
+  fallback cannot run them. A pass reads two colour targets and the depth, no more.
+* **No shadow maps, no MSAA, no instancing.** A program draws shadows the way voxel does — baked
+  into its vertices — or not at all.
 * **Meshes are host-visible**, written by `memcpy`. A discrete GPU reads them across the bus (the
   heap prefers device-local host-visible memory where it exists). A staged upload to device-only
   memory is the next step for large static scenes.
-* **Textures are uploaded synchronously** (a one-shot submit and a wait). Fine for load time, not
-  for streaming textures every frame.
+* **A texture's first upload is synchronous** (a one-shot submit and a wait), and so is a mip
+  chain's; only a texture without one can be rewritten every frame (`updateTexture`).
 * **Eight point lights**, per-pixel, no shadows.
 * **The device name is not shown** — only its kind (discrete, integrated, software) — because
   turning a C string into an Axle `string` has no precedent in the library yet.
