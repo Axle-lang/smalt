@@ -1,0 +1,199 @@
+// gpu_shaders — a program's own shading on the GPU, drawn and read back.
+//
+// Everything `gpu::shader` adds, in one small frame whose every pixel is known, and the
+// frame read back (`Renderer::captureNext`) to check that the GPU drew it:
+//
+//   * a background shader shows a 2 x 2 texture, rewritten every frame with
+//     `Renderer::updateTexture` — so the colour behind everything is this frame's;
+//   * a quad in the middle is drawn with a mesh shader that reads what the built-in
+//     stages leave alone: the draw's `user` vector, the layer word's upper bits and the
+//     normal's fourth byte (`MeshBuilder::vertexRaw`);
+//   * two passes run over the frame: the first inverts it, the second keeps the inverted
+//     colour where the scene drew (depth below 1) and the scene's own colour where only
+//     the background is — reading the previous pass, the kept colour and the depth.
+//
+// So the corner of the capture must be the texture's colour, and its middle the quad's
+// colour inverted. Exit code: the number of pixels that were not; 0 is green. On a
+// machine with no GPU it says so and exits 0 — the CPU fallback runs no SPIR-V.
+//
+// Shaders: `shaders/`, compiled into `src/shaders.axle` by `build_shaders.sh`.
+
+use smalt::{
+    Platform, PlatformError, Clock, Events, Renderer, RendererDesc, Backend, Scene,
+    MeshBuilder, Image, SamplerDesc, Material, Mat4, Vec2, Vec3, Vec4, ShaderDesc,
+    ShaderKind, ShaderHandle, FramePixels, Bmp, RawVertex,
+};
+use crate::shaders::Shaders;
+
+/** The window's size. */
+const SIDE_W : i32 = 320;
+const SIDE_H : i32 = 240;
+
+/** Frames drawn; the last is read back. */
+const FRAMES : i32 = 12;
+
+/** The quad's colour, as its draw vector: inverted on screen. */
+const QUAD_R : f64 = 0.2;
+const QUAD_G : f64 = 0.4;
+const QUAD_B : f64 = 0.6;
+
+/** How far a read-back channel may be from the expected one (8-bit rounding twice over). */
+const SLACK : i32 = 3;
+
+fn main() : i32 {
+    try {
+        return run();
+    } catch e : PlatformError {
+        println(e.message);
+        return 1;
+    }
+}
+
+/** The background texture's colour at frame `n`: it changes every frame. */
+fn backColor(n : i32) : i32 {
+    return Image::pack(10 + n * 7, 200 - n * 5, 30 + n * 3, 255);
+}
+
+/** A 2 x 2 image of one colour. */
+fn solid2(argb : i32) : Image {
+    let img = new Image(2, 2, 1);
+    img.fill(argb);
+    return img;
+}
+
+/**
+ * One corner of the quad, carrying the program's bits: the layer word's upper byte 255,
+ * the normal's fourth component 1.
+ */
+fn corner(x : f64, y : f64) : RawVertex {
+    return RawVertex {
+        pos: Vec3::make(x, y, 0.0),
+        normal: Vec4::make(0.0, 0.0, 1.0, 1.0),
+        uv: Vec2::make(x + 0.5, y + 0.5),
+        color: MeshBuilder::rgba(255, 255, 255, 255),
+        word: 0xFF << 8,
+    };
+}
+
+/** The quad in the middle of the frame. */
+fn quad() : MeshBuilder {
+    let b = new MeshBuilder(4, 6);
+    let a = b.vertexRaw(corner(-0.5, -0.5));
+    let c = b.vertexRaw(corner(0.5, -0.5));
+    let d = b.vertexRaw(corner(0.5, 0.5));
+    let e = b.vertexRaw(corner(-0.5, 0.5));
+    b.quad(a, c, d, e);
+    return b;
+}
+
+/** Whether channel `got` is within `SLACK` of `want`. */
+fn close(got : i32, want : i32) : bool {
+    let d : i32 = got - want;
+    return d <= SLACK && d >= 0 - SLACK;
+}
+
+/** The number of the two checked pixels that are not what they must be. */
+fn check(px : FramePixels, back : i32) : i32 {
+    if (px.isEmpty()) {
+        println("gpu_shaders: nothing was read back");
+        return 2;
+    }
+    let f = px.frame();
+    let fails : i32 = 0;
+    let corner : i32 = f.at(4, 4);
+    let br : i32 = (back >> 16) & 0xFF;
+    let bg : i32 = (back >> 8) & 0xFF;
+    let bb : i32 = back & 0xFF;
+    if (!close((corner >> 16) & 0xFF, br) || !close((corner >> 8) & 0xFF, bg) || !close(corner & 0xFF, bb)) {
+        println("gpu_shaders: the corner reads ${corner & 0xFFFFFF}, not the background ${back & 0xFFFFFF}");
+        fails += 1;
+    }
+    let middle : i32 = f.at(SIDE_W / 2, SIDE_H / 2);
+    let mr : i32 = ((1.0 - QUAD_R) * 255.0).round() as i32;
+    let mg : i32 = ((1.0 - QUAD_G) * 255.0).round() as i32;
+    let mb : i32 = ((1.0 - QUAD_B) * 255.0).round() as i32;
+    if (!close((middle >> 16) & 0xFF, mr) || !close((middle >> 8) & 0xFF, mg) || !close(middle & 0xFF, mb)) {
+        println("gpu_shaders: the middle reads ${middle & 0xFFFFFF}, not the inverted quad");
+        fails += 1;
+    }
+    Bmp::write("gpu_shaders.bmp", f);
+    return fails;
+}
+
+fn run() : i32 ! PlatformError {
+    let platform = new Platform()?;
+    defer platform.close();
+    let win = platform.createWindow("smalt — gpu shaders", SIDE_W, SIDE_H, 0)?;
+    defer win.close();
+    let clock = new Clock();
+    defer clock.close();
+    let events = new Events();
+    defer events.close();
+
+    let gfx = new Renderer(win, RendererDesc { backend: Backend::Auto })?;
+    defer gfx.close();
+    println("renderer: ${gfx.backendName()}");
+    if (!gfx.isGpu()) {
+        println("gpu_shaders: no GPU, nothing to check");
+        return 0;
+    }
+
+    let background = gfx.uploadShader(ShaderDesc {
+        kind: ShaderKind::Background,
+        frag: Shaders::background(),
+        fragBytes: Shaders::backgroundBytes(),
+    });
+    let tint = gfx.uploadShader(ShaderDesc {
+        kind: ShaderKind::Mesh,
+        vert: Shaders::tintVert(),
+        vertBytes: Shaders::tintVertBytes(),
+        frag: Shaders::tintFrag(),
+        fragBytes: Shaders::tintFragBytes(),
+    });
+    let invert = gfx.uploadShader(ShaderDesc {
+        kind: ShaderKind::Pass,
+        frag: Shaders::invert(),
+        fragBytes: Shaders::invertBytes(),
+    });
+    let choose = gfx.uploadShader(ShaderDesc {
+        kind: ShaderKind::Pass,
+        frag: Shaders::choose(),
+        fragBytes: Shaders::chooseBytes(),
+    });
+    if (background.isNone() || tint.isNone() || invert.isNone() || choose.isNone()) {
+        println("gpu_shaders: a shader was refused");
+        return 1;
+    }
+
+    let backTex = gfx.uploadTexture(solid2(backColor(0)), SamplerDesc { nearest: true, mipmaps: false });
+    let mesh = gfx.uploadMesh(quad());
+    let flat = Material::baked();
+    flat.cullBackface = false;
+
+    let scene = new Scene(4);
+    scene.setViewProjection(Mat4::identity(), Vec3::zero());
+    scene.setBackground(background, backTex);
+    let fails : i32 = 0;
+    for (n of 0..FRAMES) {
+        events.pump(win, clock);
+        gfx.updateTexture(backTex, solid2(backColor(n)));
+        scene.reset();
+        scene.useShader(tint);
+        scene.setDrawUser(Vec4::make(QUAD_R, QUAD_G, QUAD_B, 1.0));
+        scene.add(mesh, gfx.whiteTexture(), flat, Mat4::identity());
+        scene.useShader(ShaderHandle::none());
+        scene.addPass(invert, gfx.whiteTexture(), false);
+        scene.addPass(choose, gfx.whiteTexture(), false);
+        if (n == FRAMES - 1) {
+            gfx.captureNext();
+        }
+        gfx.render(scene, win);
+        if (n == FRAMES - 1) {
+            fails += check(gfx.captured(), backColor(n));
+        }
+    }
+    if (fails == 0) {
+        println("gpu_shaders: background, mesh shader, passes, texture update and capture all held");
+    }
+    return fails;
+}

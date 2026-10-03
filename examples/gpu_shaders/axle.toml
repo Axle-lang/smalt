@@ -1,0 +1,6 @@
+[package]
+name = "gpu_shaders"
+version = "0.1.0"
+
+[dependencies]
+smalt = { path = "../.." }

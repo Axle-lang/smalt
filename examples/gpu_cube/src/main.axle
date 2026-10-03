@@ -38,7 +38,8 @@
 use smalt::{
     Platform, PlatformError, Window, Clock, FramePacer, Events, EventKind, Scancode, Color, Camera,
     Primitives, Texture, Material, DirectionalLight, Mat4, Vec3, Rect, BitmapFont, Face, Renderer,
-    RendererDesc, Backend, Scene, MeshBuilder, Image, SamplerDesc, PointLight, Fog,
+    RendererDesc, Backend, Scene, MeshBuilder, Image, SamplerDesc, PointLight, Fog, Bmp,
+    FramePixels,
 };
 use std::sys::process::{argc, argAt};
 use std::lang::IndexOutOfBoundsException;
@@ -66,6 +67,10 @@ const C_TEXT : i32 = 0xE6EAEE;
 
 /** Frames `--smoke` draws before it checks the renderer's teardown. */
 const SMOKE_FRAMES : i32 = 120;
+
+/** The frame `--smoke` reads back, and the file it writes it to. */
+const SMOKE_CAPTURE : i32 = 100;
+const SMOKE_BMP : string = "gpu_cube.bmp";
 
 /** What a session ends with: the program was asked to quit. */
 const END_QUIT : i32 = 0;
@@ -231,6 +236,7 @@ fn session(
     let reload = false;
     let spin : f64 = 0.0;
     let frames : i32 = 0;
+    let captureFails : i32 = 0;
     let shownCount : i32 = 0;
 
     while (running) {
@@ -307,12 +313,18 @@ fn session(
         ui.draw(hud, 20, 28, gfx.backendName(), C_TEXT);
         ui.draw(hud, 20, 46, "${pacer.fps().round()} fps", C_TEXT);
 
+        if (smoke && frames == SMOKE_CAPTURE) {
+            gfx.captureNext();
+        }
         if (!win.minimised()) {
             if (gfx.render(scene, win)) {
                 shownCount += 1;
             } else if (gfx.isLost()) {
                 return END_LOST;
             }
+        }
+        if (smoke && frames == SMOKE_CAPTURE) {
+            captureFails = checkCapture(gfx.captured());
         }
         frames += 1;
         if (smoke && frames >= SMOKE_FRAMES) {
@@ -325,7 +337,7 @@ fn session(
 
     // The teardown a program can get wrong: a second close is harmless, and a closed
     // renderer refuses everything instead of touching what it gave back.
-    let fails : i32 = 0;
+    let fails : i32 = captureFails;
     if (shownCount == 0) {
         println("smoke: no frame was shown");
         fails += 1;
@@ -345,6 +357,28 @@ fn session(
     }
     println("smoke: ${shownCount} of ${frames} frames shown on ${gfx.backendName()}; teardown ok");
     return END_QUIT;
+}
+
+/**
+ * The read-back frame: the window's size, the overlay's panel where it was drawn, and a
+ * BMP written from it. The number of things that were not so.
+ */
+fn checkCapture(px : FramePixels) : i32 {
+    if (px.isEmpty()) {
+        println("smoke: the captured frame is empty");
+        return 1;
+    }
+    let fails : i32 = 0;
+    let panel : i32 = px.frame().at(14, 14);
+    if (panel != C_PANEL) {
+        println("smoke: the captured panel reads ${panel}, not ${C_PANEL}");
+        fails += 1;
+    }
+    if (!Bmp::write(SMOKE_BMP, px.frame())) {
+        println("smoke: could not write ${SMOKE_BMP}");
+        fails += 1;
+    }
+    return fails;
 }
 
 /** The crate's transform: turning about Y, nodding about X, held above the floor. */
