@@ -30,7 +30,7 @@ use crate::sys::vk::vk_types::{
     VkDescriptorPoolCreateInfo, VkDescriptorPoolSize, VkDescriptorSetAllocateInfo,
     VkDescriptorSetLayoutBinding, VkDescriptorSetLayoutCreateInfo, VkDeviceCreateInfo,
     VkDeviceQueueCreateInfo, VkFenceCreateInfo, VkFramebufferCreateInfo,
-    VkGraphicsPipelineCreateInfo, VkImageBlit, VkImageCreateInfo, VkImageMemoryBarrier,
+    VkGraphicsPipelineCreateInfo, VkImageBlit, VkImageCreateInfo, VkImageMemoryBarrier, VkMemoryBarrier,
     VkImageViewCreateInfo, VkInstanceCreateInfo, VkMemoryAllocateInfo, VkPhysicalDeviceFeatures,
     VkPipelineColorBlendAttachmentState, VkPipelineColorBlendStateCreateInfo,
     VkPipelineDepthStencilStateCreateInfo, VkPipelineDynamicStateCreateInfo,
@@ -133,6 +133,7 @@ pub class VkTable {
     pCmdCopyBufferToImage : ptr = Raw::nil();
     pCmdPipelineBarrier : ptr = Raw::nil();
     pCmdBlitImage : ptr = Raw::nil();
+    pCmdCopyImageToBuffer : ptr = Raw::nil();
 
     /** A table over the loader's `vkGetInstanceProcAddr`. */
     constructor(getProc : ptr) {
@@ -542,6 +543,10 @@ pub class VkTable {
         self.pCmdBlitImage = self.proc(instance, "vkCmdBlitImage");
         if (Raw::isNil(self.pCmdBlitImage)) {
             return "vkCmdBlitImage";
+        }
+        self.pCmdCopyImageToBuffer = self.proc(instance, "vkCmdCopyImageToBuffer");
+        if (Raw::isNil(self.pCmdCopyImageToBuffer)) {
+            return "vkCmdCopyImageToBuffer";
         }
         return "";
     }
@@ -1542,6 +1547,22 @@ pub class VkTable {
         }
     }
 
+    /** `void vkCmdCopyImageToBuffer(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferImageCopy* pRegions)`. */
+    pub fn cmdCopyImageToBuffer(
+        self,
+        commandBuffer : i64,
+        srcImage : i64,
+        srcImageLayout : i32,
+        dstBuffer : i64,
+        regionCount : i32,
+        pRegions : ptr
+    ) : void {
+        unsafe {
+            let f : extern "C" (i64, i64, i32, i64, i32, ptr) => void = self.pCmdCopyImageToBuffer as extern "C" (i64, i64, i32, i64, i32, ptr) => void;
+            f(commandBuffer, srcImage, srcImageLayout, dstBuffer, regionCount, pRegions);
+        }
+    }
+
     /** `void vkCmdBlitImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout, VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount, const VkImageBlit* pRegions, VkFilter filter)`. */
     pub fn cmdBlitImage(
         self,
@@ -1722,6 +1743,16 @@ pub class VkAddr {
 
     /** The address of `a[0]`, for a `VkImageMemoryBarrier[]` the driver reads. */
     pub static fn imageMemoryBarrier(a : VkImageMemoryBarrier[]) : ptr {
+        if (a.length == 0) {
+            return Raw::nil();
+        }
+        unsafe {
+            return (&a[0]) as ptr;
+        }
+    }
+
+    /** The address of `a[0]`, for a `VkMemoryBarrier[]` the driver reads. */
+    pub static fn memoryBarrier(a : VkMemoryBarrier[]) : ptr {
         if (a.length == 0) {
             return Raw::nil();
         }

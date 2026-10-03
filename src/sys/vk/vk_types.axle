@@ -28,6 +28,7 @@ use crate::sys::vk::vk_const::{
     VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
     VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
     VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+    VK_STRUCTURE_TYPE_MEMORY_BARRIER,
     VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
     VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
@@ -1495,6 +1496,21 @@ pub extern "C" struct VkImageMemoryBarrier {
     pub subresourceRange    : VkImageSubresourceRange;
 }
 
+/** `VkMemoryBarrier` — 24 bytes. */
+pub extern "C" struct VkMemoryBarrier {
+    /** `sType`, at byte 0. */
+    pub sType         : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext         : ptr;
+
+    /** `srcAccessMask`, at byte 16. */
+    pub srcAccessMask : i32;
+
+    /** `dstAccessMask`, at byte 20. */
+    pub dstAccessMask : i32;
+}
+
 /** `VkImageBlit` — 80 bytes. */
 pub extern "C" struct VkImageBlit {
     /** `srcSubresource`, at byte 0. */
@@ -2439,6 +2455,16 @@ pub class VkInit {
             },
         };
         // No ownership transfer: the one value that is right whoever forgets to set it.
+    }
+
+    /** A `VkMemoryBarrier` with its `sType` set. */
+    pub static fn memoryBarrier() : VkMemoryBarrier {
+        return VkMemoryBarrier {
+            sType: VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+            pNext: Raw::nil(),
+            srcAccessMask: 0,
+            dstAccessMask: 0,
+        };
     }
 
     /** A `VkImageBlit`, every field zero. */

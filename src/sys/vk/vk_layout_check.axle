@@ -21,7 +21,7 @@ use crate::sys::vk::vk_types::{
     VkDescriptorPoolCreateInfo, VkDescriptorPoolSize, VkDescriptorSetAllocateInfo,
     VkDescriptorSetLayoutBinding, VkDescriptorSetLayoutCreateInfo, VkDeviceCreateInfo,
     VkDeviceQueueCreateInfo, VkExtent2D, VkExtent3D, VkFenceCreateInfo, VkFramebufferCreateInfo,
-    VkGraphicsPipelineCreateInfo, VkImageBlit, VkImageCreateInfo, VkImageMemoryBarrier,
+    VkGraphicsPipelineCreateInfo, VkImageBlit, VkImageCreateInfo, VkImageMemoryBarrier, VkMemoryBarrier,
     VkImageSubresourceLayers, VkImageSubresourceRange, VkImageViewCreateInfo, VkInstanceCreateInfo,
     VkMemoryAllocateInfo, VkOffset2D, VkOffset3D, VkPhysicalDeviceFeatures,
     VkPipelineColorBlendAttachmentState, VkPipelineColorBlendStateCreateInfo,
@@ -1622,6 +1622,18 @@ pub(crate) class VkLayout {
         }
         if (sizeof<VkClearValue>() != 16) {
             return 537;
+        }
+        if (sizeof<VkMemoryBarrier>() != 24) {
+            return 538;
+        }
+        if (offsetof(VkMemoryBarrier, pNext) != 8) {
+            return 539;
+        }
+        if (offsetof(VkMemoryBarrier, srcAccessMask) != 16) {
+            return 540;
+        }
+        if (offsetof(VkMemoryBarrier, dstAccessMask) != 20) {
+            return 541;
         }
         return 0;
     }
