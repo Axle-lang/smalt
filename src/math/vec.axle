@@ -203,6 +203,11 @@ pub struct Vec4 {
         return Vec4 { x: x, y: y, z: z, w: w };
     }
 
+    /** The zero vector. */
+    pub static fn zero() : Vec4 {
+        return Vec4 { x: 0.0, y: 0.0, z: 0.0, w: 0.0 };
+    }
+
     /** `v` as a position (`w` = 1). */
     pub static fn point(v : Vec3) : Vec4 {
         return Vec4 { x: v.x, y: v.y, z: v.z, w: 1.0 };

@@ -298,4 +298,51 @@ pub struct Mat4 {
             m30: self.m03,  m31: self.m13,  m32: self.m23,  m33: self.m33,
         };
     }
+
+    /**
+     * The inverse, by cofactors; the identity for a matrix with no inverse (or one with
+     * a non-finite entry). A matrix that is merely close to singular is inverted, into
+     * large values.
+     *
+     * General, so a projection inverts as well as a rigid transform does: what a
+     * full-screen pass needs to turn a pixel and its depth back into a point.
+     */
+    pub fn inverse(self) : Mat4 {
+        let s0 : f64 = self.m00 * self.m11 - self.m10 * self.m01;
+        let s1 : f64 = self.m00 * self.m12 - self.m10 * self.m02;
+        let s2 : f64 = self.m00 * self.m13 - self.m10 * self.m03;
+        let s3 : f64 = self.m01 * self.m12 - self.m11 * self.m02;
+        let s4 : f64 = self.m01 * self.m13 - self.m11 * self.m03;
+        let s5 : f64 = self.m02 * self.m13 - self.m12 * self.m03;
+        let c5 : f64 = self.m22 * self.m33 - self.m32 * self.m23;
+        let c4 : f64 = self.m21 * self.m33 - self.m31 * self.m23;
+        let c3 : f64 = self.m21 * self.m32 - self.m31 * self.m22;
+        let c2 : f64 = self.m20 * self.m33 - self.m30 * self.m23;
+        let c1 : f64 = self.m20 * self.m32 - self.m30 * self.m22;
+        let c0 : f64 = self.m20 * self.m31 - self.m30 * self.m21;
+        let det : f64 = s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0;
+        // Written so a NaN determinant fails it too.
+        if (!(det.abs() >= 1.0e-300)) {
+            return Mat4::identity();
+        }
+        let k : f64 = 1.0 / det;
+        return Mat4 {
+            m00: (self.m11 * c5 - self.m12 * c4 + self.m13 * c3) * k,
+            m01: (-self.m01 * c5 + self.m02 * c4 - self.m03 * c3) * k,
+            m02: (self.m31 * s5 - self.m32 * s4 + self.m33 * s3) * k,
+            m03: (-self.m21 * s5 + self.m22 * s4 - self.m23 * s3) * k,
+            m10: (-self.m10 * c5 + self.m12 * c2 - self.m13 * c1) * k,
+            m11: (self.m00 * c5 - self.m02 * c2 + self.m03 * c1) * k,
+            m12: (-self.m30 * s5 + self.m32 * s2 - self.m33 * s1) * k,
+            m13: (self.m20 * s5 - self.m22 * s2 + self.m23 * s1) * k,
+            m20: (self.m10 * c4 - self.m11 * c2 + self.m13 * c0) * k,
+            m21: (-self.m00 * c4 + self.m01 * c2 - self.m03 * c0) * k,
+            m22: (self.m30 * s4 - self.m31 * s2 + self.m33 * s0) * k,
+            m23: (-self.m20 * s4 + self.m21 * s2 - self.m23 * s0) * k,
+            m30: (-self.m10 * c3 + self.m11 * c1 - self.m12 * c0) * k,
+            m31: (self.m00 * c3 - self.m01 * c1 + self.m02 * c0) * k,
+            m32: (-self.m30 * s3 + self.m31 * s1 - self.m32 * s0) * k,
+            m33: (self.m20 * s3 - self.m21 * s1 + self.m22 * s0) * k,
+        };
+    }
 }
