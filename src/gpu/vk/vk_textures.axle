@@ -33,8 +33,9 @@
 //
 // # Format
 //
-// `B8G8R8A8_UNORM`, always: it is the byte order of `Image`'s `0xAARRGGBB` words, so no
-// pixel is ever swizzled, and every Vulkan device can sample, filter and blit it.
+// `B8G8R8A8_UNORM`: it is the byte order of `Image`'s `0xAARRGGBB` words, so no pixel is
+// ever swizzled, and every Vulkan device can sample, filter and blit it. `B8G8R8A8_SRGB`
+// — the same bytes, decoded to linear light by the sampler — for `SamplerDesc::srgb`.
 //
 // # Anisotropy
 //
@@ -61,7 +62,7 @@ use crate::sys::vk::vk_const::{
     VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
     VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
     VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_FILTER_LINEAR, VK_FILTER_NEAREST,
-    VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_USAGE_SAMPLED_BIT,
     VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_VIEW_TYPE_2D_ARRAY, VK_SUCCESS,
     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
@@ -83,6 +84,9 @@ pub(crate) class VkTextures {
     samplers             : i64[];
     sets                 : i64[];
 
+    /** Per slot: the size, the layers and the mip levels it was made with. */
+    dims                 : i32[];
+
     /** Live textures, each holding one descriptor set of the pool. */
     count                : i32 = 0;
 
@@ -102,6 +106,10 @@ pub(crate) class VkTextures {
         self.views = malloc<i64>(n);
         self.samplers = malloc<i64>(n);
         self.sets = malloc<i64>(n);
+        self.dims = malloc<i32>(n * 4);
+        for (i of 0..(n * 4)) {
+            self.dims[i] = 0;
+        }
         for (i of 0..n) {
             self.live[i] = 0;
             self.images[i] = GpuImage::none();
@@ -135,6 +143,18 @@ pub(crate) class VkTextures {
             return 0;
         }
         return self.images[slot as i64].image;
+    }
+
+    /**
+     * Whether texture `slot` is live, `w` x `h` with `layers` layers, and has no mip
+     * chain — what an update in place (`VkUploads`) can rewrite.
+     */
+    pub(crate) fn takesUpdate(self, slot : i32, w : i32, h : i32, layers : i32) : bool {
+        if (slot < 0 || slot >= self.cap || self.live[slot as i64] == 0) {
+            return false;
+        }
+        let at : i64 = (slot as i64) * 4;
+        return self.dims[at] == w && self.dims[at + 1] == h && self.dims[at + 2] == layers && self.dims[at + 3] == 1;
     }
 
     /** The sampler for a description. */
@@ -340,15 +360,20 @@ pub(crate) class VkTextures {
         }
         Mem::copy(staging.mapped(), img.base(), img.byteCount());
         if (tailBytes > 0) {
-            let tail : i32[] = img.mipTail(mips, desc.cutout);
+            let tail : i32[] = img.mipTailOf(mips, desc.cutout, desc.srgb);
             Mem::copy(staging.mapped() + img.byteCount(), Mem::addressOf(tail), tailBytes);
+            free(tail);
         }
 
         let usage : i32 = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        let format : i32 = VK_FORMAT_B8G8R8A8_UNORM;
+        if (desc.srgb) {
+            format = VK_FORMAT_B8G8R8A8_SRGB;
+        }
         let image : GpuImage = VkMem::makeImage(
             ctx,
             heap,
-            VK_FORMAT_B8G8R8A8_UNORM,
+            format,
             w,
             h,
             mips,
@@ -387,7 +412,7 @@ pub(crate) class VkTextures {
         let view : i64 = VkMem::makeView(
             ctx,
             image.image,
-            VK_FORMAT_B8G8R8A8_UNORM,
+            format,
             VK_IMAGE_VIEW_TYPE_2D_ARRAY,
             VK_IMAGE_ASPECT_COLOR_BIT,
             mips,
@@ -415,6 +440,10 @@ pub(crate) class VkTextures {
         self.views[s] = view;
         self.samplers[s] = sampler;
         self.sets[s] = set;
+        self.dims[s * 4] = w;
+        self.dims[s * 4 + 1] = h;
+        self.dims[s * 4 + 2] = layers;
+        self.dims[s * 4 + 3] = mips;
         self.count += 1;
         return slot;
     }

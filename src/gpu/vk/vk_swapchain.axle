@@ -3,8 +3,12 @@
 // A swapchain is a ring of images the presentation engine owns: the program asks for the
 // next free one (`acquire`), draws into it, and hands it back (`present`). Everything that
 // depends on *their size and format* is built here and rebuilt together — the image views,
-// one framebuffer per image, one semaphore per image, and a depth image the same size —
+// one framebuffer per image in the present render pass, one semaphore per image —
 // because a swapchain that is out of date (the window was resized) invalidates all of it.
+// (The scene's own targets, depth included, are `vk_targets`'s, rebuilt beside it.)
+//
+// The images are asked for as transfer sources too when the surface allows it, so a
+// frame can be read back (`Renderer::captureNext`); `readable` says whether they are.
 //
 // # Choosing
 //
@@ -47,8 +51,8 @@
 //
 // # Recreating
 //
-// `recreate` waits for the device to go idle, destroys the views, framebuffers and
-// depth image of the old swapchain, buries its per-image semaphores (a present may still
+// `recreate` waits for the device to go idle, destroys the views and framebuffers of
+// the old swapchain, buries its per-image semaphores (a present may still
 // be waiting on one — device idle does not cover the presentation engine), then calls
 // `build(…, old)`, which passes the old swapchain so the driver can reuse its resources;
 // the old swapchain itself is destroyed after that. `build` refuses to run over a
@@ -58,26 +62,24 @@ use crate::gpu::vk::vk_context::{CTX_SCRATCH_QUERY_COUNT, VkContext};
 use crate::gpu::vk::vk_error::VkErr;
 use crate::gpu::vk::vk_frame::FRAMES_IN_FLIGHT;
 use crate::gpu::vk::vk_graveyard::VkGraveyard;
-use crate::gpu::vk::vk_heap::GpuHeap;
-use crate::gpu::vk::vk_mem::{GpuImage, VkMem};
+use crate::gpu::vk::vk_mem::VkMem;
 use crate::gpu::vk::vk_pipelines::VkPipelines;
 use crate::kernel::mem::Mem;
 use crate::kernel::raw::Raw;
 use crate::sys::vk::vk_const::{
     VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, VK_FORMAT_B8G8R8A8_UNORM,
-    VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_ASPECT_DEPTH_BIT,
-    VK_IMAGE_ASPECT_STENCIL_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_VIEW_TYPE_2D, VK_PRESENT_MODE_FIFO_KHR,
+    VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+    VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_VIEW_TYPE_2D, VK_PRESENT_MODE_FIFO_KHR,
     VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_MAILBOX_KHR, VK_SHARING_MODE_EXCLUSIVE,
     VK_SUCCESS, VK_NOT_READY, VK_ERROR_INITIALIZATION_FAILED, VK_ERROR_OUT_OF_HOST_MEMORY,
-    VK_ERROR_OUT_OF_DEVICE_MEMORY,
 };
 use crate::sys::vk::vk_out::{
     VKO_SURFACE_CAPABILITIES_KHR_BYTES, VKO_SURFACE_CAPABILITIES_KHR_CURRENT_EXTENT,
     VKO_SURFACE_CAPABILITIES_KHR_CURRENT_TRANSFORM, VKO_SURFACE_CAPABILITIES_KHR_MAX_IMAGE_COUNT,
     VKO_SURFACE_CAPABILITIES_KHR_MAX_IMAGE_EXTENT, VKO_SURFACE_CAPABILITIES_KHR_MIN_IMAGE_COUNT,
     VKO_SURFACE_CAPABILITIES_KHR_MIN_IMAGE_EXTENT,
-    VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_COMPOSITE_ALPHA, VKO_SURFACE_FORMAT_KHR_BYTES,
+    VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_COMPOSITE_ALPHA,
+    VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_USAGE_FLAGS, VKO_SURFACE_FORMAT_KHR_BYTES,
     VKO_SURFACE_FORMAT_KHR_COLOR_SPACE, VKO_SURFACE_FORMAT_KHR_FORMAT,
 };
 use crate::sys::vk::vk_table::VkAddr;
@@ -111,11 +113,8 @@ pub(crate) class VkSwapchain {
     /** How many images the driver made. */
     pub(crate) count  : i32 = 0;
 
-    /** The depth image shared by every frame. */
-    depth             : GpuImage;
-
-    /** Its view. */
-    depthView         : i64 = 0;
+    /** Whether the images can be copied out of (a capture). */
+    pub(crate) readable : bool = false;
 
     /** The swapchain's `VkImage`s, as a block of `i64`. */
     images            : i64[];
@@ -125,7 +124,6 @@ pub(crate) class VkSwapchain {
 
     /** An empty swapchain: nothing built yet. */
     constructor() {
-        self.depth = GpuImage::none();
         self.images = malloc<i64>(SWAP_MAX_IMAGES as i64);
         self.views = malloc<i64>(SWAP_MAX_IMAGES as i64);
         self.frames = malloc<i64>(SWAP_MAX_IMAGES as i64);
@@ -149,6 +147,14 @@ pub(crate) class VkSwapchain {
             return 0;
         }
         return self.frames[i as i64];
+    }
+
+    /** Swapchain image `i`'s `VkImage`; 0 out of range. */
+    pub(crate) fn image(self, i : i32) : i64 {
+        if (i < 0 || i >= self.count) {
+            return 0;
+        }
+        return self.images[i as i64];
     }
 
     /** The "rendering finished" semaphore for swapchain image `i`. */
@@ -297,7 +303,6 @@ pub(crate) class VkSwapchain {
     pub(crate) fn build(
         mut self,
         ctx : VkContext,
-        heap : GpuHeap,
         pipes : VkPipelines,
         winW : i32,
         winH : i32,
@@ -342,6 +347,7 @@ pub(crate) class VkSwapchain {
             VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_COMPOSITE_ALPHA
         );
         let transform : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_CURRENT_TRANSFORM);
+        let usageBits : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_USAGE_FLAGS);
         Mem::release(caps);
         if (w <= 0 || h <= 0) {
             return VK_NOT_READY;
@@ -365,7 +371,11 @@ pub(crate) class VkSwapchain {
         info.imageColorSpace = self.colorSpace;
         info.imageExtent = VkExtent2D { width: w, height: h };
         info.imageArrayLayers = 1;
+        let readable : bool = (usageBits & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
         info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        if (readable) {
+            info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        }
         info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         info.preTransform = transform;
         info.compositeAlpha = alpha;
@@ -401,47 +411,9 @@ pub(crate) class VkSwapchain {
             return VkSwapchain::failure(r);
         }
 
-        // The depth image, sized to the swapchain, shared by every frame.
-        let depth : GpuImage = VkMem::makeImage(
-            ctx,
-            heap,
-            pipes.depthFormat,
-            w,
-            h,
-            1,
-            1,
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
-        );
-        let aspect : i32 = VK_IMAGE_ASPECT_DEPTH_BIT;
-        if (pipes.depthFormat != VK_FORMAT_D32_SFLOAT) {
-            aspect = aspect | VK_IMAGE_ASPECT_STENCIL_BIT;
-        }
-        let dview : i64 = 0;
-        if (!depth.isNone()) {
-            dview = VkMem::makeView(
-                ctx,
-                depth.image,
-                pipes.depthFormat,
-                VK_IMAGE_VIEW_TYPE_2D,
-                aspect,
-                1,
-                1
-            );
-        }
-        if (depth.isNone() || dview == 0) {
-            if (dview != 0) {
-                ctx.table.destroyImageView(ctx.device, dview);
-            }
-            VkMem::destroyImage(ctx, heap, depth);
-            Mem::release(imgBlock);
-            ctx.table.destroySwapchainKHR(ctx.device, swap);
-            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-        }
-
         // Nothing of an old swapchain is left here (the guard at the top), so these are
         // the only per-image objects.
-        self.depth = depth;
-        self.depthView = dview;
+        self.readable = readable;
         self.handle = swap;
         self.w = w;
         self.h = h;
@@ -462,12 +434,11 @@ pub(crate) class VkSwapchain {
             self.frames[k] = 0;
             self.done[k] = 0;
             if (self.views[k] != 0) {
-                let at : i64[] = malloc<i64>(2);
+                let at : i64[] = malloc<i64>(1);
                 at[0] = self.views[k];
-                at[1] = dview;
                 let fi : VkFramebufferCreateInfo = VkInit::framebufferCreateInfo();
-                fi.renderPass = pipes.renderPass;
-                fi.attachmentCount = 2;
+                fi.renderPass = pipes.presentPass;
+                fi.attachmentCount = 1;
                 fi.pAttachments = VkAddr::handles(at);
                 fi.width = w;
                 fi.height = h;
@@ -497,7 +468,7 @@ pub(crate) class VkSwapchain {
         }
         Mem::release(imgBlock);
         if (result != VK_SUCCESS) {
-            self.destroyBuilt(ctx, heap);
+            self.destroyBuilt(ctx);
         }
         return result;
     }
@@ -515,8 +486,8 @@ pub(crate) class VkSwapchain {
     }
 
     /**
-     * Rebuild for a changed window: wait for the device, destroy the views, framebuffers
-     * and depth image of the old swapchain, bury its semaphores in `grave` a round of
+     * Rebuild for a changed window: wait for the device, destroy the views and
+     * framebuffers of the old swapchain, bury its semaphores in `grave` a round of
      * frames after `frame`, build the new one *from* the old (so the driver may reuse its
      * images), then destroy the old swapchain; what `build` answered.
      *
@@ -529,7 +500,6 @@ pub(crate) class VkSwapchain {
     pub(crate) fn recreate(
         mut self,
         ctx : VkContext,
-        heap : GpuHeap,
         pipes : VkPipelines,
         grave : VkGraveyard,
         frame : i64,
@@ -543,9 +513,9 @@ pub(crate) class VkSwapchain {
         }
         let old : i64 = self.handle;
         self.buryPresentWaits(grave, frame);
-        self.destroyViews(ctx, heap);
+        self.destroyViews(ctx);
         self.handle = 0;
-        let r : i32 = self.build(ctx, heap, pipes, winW, winH, vsync, old);
+        let r : i32 = self.build(ctx, pipes, winW, winH, vsync, old);
         if (old != 0) {
             ctx.table.destroySwapchainKHR(ctx.device, old);
         }
@@ -569,8 +539,8 @@ pub(crate) class VkSwapchain {
         }
     }
 
-    /** Destroy the per-image objects and the depth image, but not the swapchain. */
-    pub(crate) fn destroyViews(mut self, ctx : VkContext, heap : GpuHeap) : void {
+    /** Destroy the per-image objects, but not the swapchain. */
+    pub(crate) fn destroyViews(mut self, ctx : VkContext) : void {
         for (i of 0..self.count) {
             let k : i64 = i as i64;
             if (self.frames[k] != 0) {
@@ -586,18 +556,12 @@ pub(crate) class VkSwapchain {
             self.views[k] = 0;
             self.done[k] = 0;
         }
-        if (self.depthView != 0) {
-            ctx.table.destroyImageView(ctx.device, self.depthView);
-            self.depthView = 0;
-        }
-        VkMem::destroyImage(ctx, heap, self.depth);
-        self.depth = GpuImage::none();
         self.count = 0;
     }
 
     /** Destroy everything built, swapchain included — a failed `build`'s unwinding, and teardown. */
-    pub(crate) fn destroyBuilt(mut self, ctx : VkContext, heap : GpuHeap) : void {
-        self.destroyViews(ctx, heap);
+    pub(crate) fn destroyBuilt(mut self, ctx : VkContext) : void {
+        self.destroyViews(ctx);
         if (self.handle != 0) {
             ctx.table.destroySwapchainKHR(ctx.device, self.handle);
             self.handle = 0;

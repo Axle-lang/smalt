@@ -50,9 +50,18 @@
 // a `Frame` taken before a resize still writes into memory the renderer owns — what
 // it draws is not shown, but nothing is corrupted. Take the overlay fresh each frame.
 //
+// # A program's own shading, and reading a frame back
+//
+// `uploadShader` takes a program's SPIR-V (`gpu::shader`) and answers a handle the scene
+// draws with (`Scene::useShader`, `setBackground`, `addPass`); on the CPU fallback it
+// answers none, and the scene draws as if it had not been asked. `updateTexture` rewrites
+// a texture's texels for the next frame without waiting for the GPU. `captureNext` has the
+// next frame read back, and `captured` hands its pixels over as a `Frame`'s words — what a
+// screenshot is written from, on either backend.
+//
 // # Ownership
 //
-// The renderer owns every mesh and texture. A program holds handles
+// The renderer owns every mesh, texture and shader. A program holds handles
 // (`gpu::handle`), releases what it is done with, and may forget the rest:
 // `close()` frees whatever is left. A handle names one renderer: each one numbers
 // its handles from a different starting point, so a handle kept from a renderer
@@ -70,11 +79,12 @@
 // is the shape used here rather than a field type nothing else exercises.
 
 use crate::core::error::PlatformError;
-use crate::gpu::backend::{Backend, GpuBackend, OverlayView, RendererDesc};
-use crate::gpu::handle::{HandleTable, MeshHandle, TextureHandle};
+use crate::gpu::backend::{Backend, FramePixels, GpuBackend, OverlayView, RendererDesc};
+use crate::gpu::handle::{HandleTable, MeshHandle, ShaderHandle, TextureHandle};
 use crate::gpu::image::{Image, SamplerDesc};
 use crate::gpu::mesh_builder::MeshBuilder;
-use crate::gpu::scene::{DrawItem, Scene};
+use crate::gpu::scene::{DrawItem, DrawSlots, PassItem, Scene};
+use crate::gpu::shader::ShaderDesc;
 use crate::gpu::soft::backend_soft::SoftBackend;
 use crate::gpu::vk::vk_backend::VkBackend;
 use crate::kernel::mem::Mem;
@@ -86,11 +96,15 @@ use crate::video::window::Window;
 /** Layers a renderer outgrew and keeps until `close()`; one per doubling, so never many. */
 const RENDERER_RETIRED : i32 = 32;
 
+/** Shaders a program may have at once. */
+const RENDERER_SHADERS : i32 = 64;
+
 /** Draws scenes, on a GPU when there is one. */
 pub class Renderer : Closeable {
     backends  : dyn GpuBackend[];
     meshes    : HandleTable;
     textures  : HandleTable;
+    shaders   : HandleTable;
     white     : TextureHandle = TextureHandle::none();
 
     /** The window this renderer draws to, by its native handle. */
@@ -126,6 +140,7 @@ pub class Renderer : Closeable {
         let seed : i32 = Renderer::handleSeed(win);
         self.meshes = new HandleTable(meshSlots, seed);
         self.textures = new HandleTable(textureSlots, seed ^ 0x5A5A5A);
+        self.shaders = new HandleTable(RENDERER_SHADERS, seed ^ 0x3C3C3C);
         self.backends = malloc<dyn GpuBackend>(1);
         self.retired = malloc<i64>(RENDERER_RETIRED as i64);
         self.winId = Raw::addr(win.sys.handle());
@@ -361,6 +376,105 @@ pub class Renderer : Closeable {
     }
 
     /**
+     * Give a texture new texels from the next frame on, without waiting for the GPU;
+     * whether it will. `image` must be the texture's size and layer count, and the
+     * texture must have been uploaded with `SamplerDesc.mipmaps` off — a chain would
+     * have to be rebuilt too, which is what a new upload is for. The white texel the
+     * renderer draws untextured surfaces with is not the program's to rewrite.
+     */
+    pub fn updateTexture(mut self, handle : TextureHandle, image : Image) : bool {
+        if (self.closed || !self.textures.holds(handle.index, handle.gen)
+            || (handle.index == self.white.index && handle.gen == self.white.gen)) {
+            return false;
+        }
+        let slot : i32 = self.textures.resolve(handle.index, handle.gen);
+        if (slot < 0) {
+            return false;
+        }
+        let b : dyn GpuBackend = self.backends[0];
+        return b.updateTexture(slot, image);
+    }
+
+    /**
+     * Make a shader of the program's (`gpu::shader`); a handle, or `ShaderHandle::none()`
+     * when it could not be — always on the CPU fallback, which runs no SPIR-V. A scene that
+     * draws with a none shader draws with the built-in one, and skips a none background
+     * or pass, so a program needs no second path for the fallback.
+     */
+    pub fn uploadShader(mut self, desc : ShaderDesc) : ShaderHandle {
+        if (self.closed) {
+            return ShaderHandle::none();
+        }
+        let b : dyn GpuBackend = self.backends[0];
+        let slot : i32 = b.createShader(desc);
+        if (slot < 0) {
+            return ShaderHandle::none();
+        }
+        let index : i32 = self.shaders.acquire(slot);
+        if (index < 0) {
+            b.destroyShader(slot);
+            return ShaderHandle::none();
+        }
+        return ShaderHandle { index: index, gen: self.shaders.generation(index) };
+    }
+
+    /** Release a shader; it waits for the GPU to finish with it. A stale or none handle is ignored. */
+    pub fn releaseShader(mut self, handle : ShaderHandle) : void {
+        if (self.closed) {
+            return;
+        }
+        let slot : i32 = self.shaders.release(handle.index, handle.gen);
+        if (slot >= 0) {
+            let b : dyn GpuBackend = self.backends[0];
+            b.destroyShader(slot);
+        }
+    }
+
+    /**
+     * Read back the pixels of the next frame `render` shows; `captured` then has them.
+     * On the GPU that frame waits for the device once.
+     */
+    pub fn captureNext(mut self) : void {
+        if (self.closed) {
+            return;
+        }
+        let b : dyn GpuBackend = self.backends[0];
+        b.captureNext();
+    }
+
+    /**
+     * The pixels last read back — `0x00RRGGBB` words, row 0 at the top, valid until the
+     * next read — or an empty view. `captured().frame()` is them as a `Frame`.
+     */
+    pub fn captured(self) : FramePixels {
+        if (self.closed) {
+            return FramePixels { base: 0 };
+        }
+        let b : dyn GpuBackend = self.backends[0];
+        return b.captured();
+    }
+
+    /** The backend slot `handle` names, or -1 for none or a stale one. */
+    pub(file) fn shaderSlot(self, handle : ShaderHandle) : i32 {
+        if (handle.isNone() || !self.shaders.holds(handle.index, handle.gen)) {
+            return -1;
+        }
+        return self.shaders.resolve(handle.index, handle.gen);
+    }
+
+    /** The backend slots of a full-screen draw: its shader's, and its texture's or the white texel's. */
+    pub(file) fn passSlots(self, item : PassItem, whiteSlot : i32) : DrawSlots {
+        let tex : i32 = whiteSlot;
+        if (!item.tex.isNone()) {
+            tex = self.textures.resolve(item.tex.index, item.tex.gen);
+            if (tex < 0) {
+                tex = whiteSlot;
+            }
+        }
+        return DrawSlots { tex: tex, shader: self.shaderSlot(item.shader) };
+    }
+
+    /**
      * Resize the 2-D layer to `w` x `h`.
      *
      * The program drew this frame's HUD into the layer before `render` saw the new
@@ -477,7 +591,20 @@ pub class Renderer : Closeable {
             if (it.tex.isNone() || !it.material.textured) {
                 texSlot = whiteSlot;
             }
-            scene.bind(i, meshSlot, texSlot);
+            scene.bind(
+                i,
+                DrawSlots {
+                    mesh: meshSlot,
+                    tex: texSlot,
+                    shader: self.shaderSlot(it.shader),
+                }
+            );
+        }
+        if (scene.hasBackground()) {
+            scene.bindBackground(self.passSlots(scene.background(), whiteSlot));
+        }
+        for (i of 0..scene.passCount()) {
+            scene.bindPass(i, self.passSlots(scene.passAt(i), whiteSlot));
         }
 
         let view : OverlayView = OverlayView {

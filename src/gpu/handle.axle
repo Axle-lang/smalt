@@ -61,6 +61,25 @@ pub struct TextureHandle {
     }
 }
 
+/** A shader uploaded to a renderer (`Renderer::uploadShader`). */
+pub struct ShaderHandle {
+    /** Index into the renderer's shader table; -1 for none — the built-in shading. */
+    pub index : i32 = -1;
+
+    /** The generation `index` was handed out at. */
+    pub gen   : i32 = 0;
+
+    /** The handle that names no shader: a draw made with it uses smalt's own. */
+    pub static fn none() : ShaderHandle {
+        return ShaderHandle { index: -1, gen: 0 };
+    }
+
+    /** Whether this names no shader at all. */
+    pub fn isNone(self) : bool {
+        return self.index < 0;
+    }
+}
+
 /**
  * A bounded table from handles to the backend's own slot numbers.
  *

@@ -23,6 +23,9 @@
 //     `cutoff` are ignored, and a texture array shows layer 0.
 //   * **Mip chains, anisotropy and sampler choices are ignored;** the CPU samples
 //     nearest.
+//   * **No program shaders.** SPIR-V does not run here: `createShader` answers -1, so a
+//     program's mesh shader is a none handle and its draws take the built-in shading,
+//     and a background or a pass is not drawn.
 //
 // Everything else — camera, sun, ambient, clear colour, the overlay — is honoured,
 // except that the ambient's hue is lost: the CPU has one white ambient, so only the
@@ -34,10 +37,11 @@
 // a path whose purpose is "it still works" is the right trade for not having a
 // second free list to get wrong.
 
-use crate::gpu::backend::{GpuBackend, OverlayView};
+use crate::gpu::backend::{FramePixels, GpuBackend, OverlayView};
 use crate::gpu::image::{Image, SamplerDesc};
 use crate::gpu::mesh_builder::MeshBuilder;
 use crate::gpu::scene::{DrawItem, Scene};
+use crate::gpu::shader::ShaderDesc;
 use crate::kernel::mem::Mem;
 use crate::render::color::Color;
 use crate::render::mesh::Mesh;
@@ -53,9 +57,19 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
     textures : Texture[];
     meshLive : i32[];
     texLive  : i32[];
+
+    /** Per texture slot: width, height, layers and mip levels, as it was uploaded. */
+    texDims  : i32[];
     meshCap  : i32;
     texCap   : i32;
     released : bool = false;
+
+    /** Whether the next frame is read back, and the pixels it was read into. */
+    wantRead : bool = false;
+    readBase : i64 = 0;
+    readCap  : i64 = 0;
+    readW    : i32 = 0;
+    readH    : i32 = 0;
 
     /** A software backend drawing at `w` by `h`, with room for the given resource counts. */
     constructor(w : i32, h : i32, maxMeshes : i32, maxTextures : i32) {
@@ -66,6 +80,7 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
         self.textures = malloc<Texture>(self.texCap as i64);
         self.meshLive = malloc<i32>(self.meshCap as i64);
         self.texLive = malloc<i32>(self.texCap as i64);
+        self.texDims = malloc<i32>((self.texCap as i64) * 4);
         for (i of 0..self.meshCap) {
             self.meshLive[i as i64] = 0;
         }
@@ -166,6 +181,14 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
         }
         self.textures[slot as i64] = image.toTexture(0);
         self.texLive[slot as i64] = 1;
+        let at : i64 = (slot as i64) * 4;
+        self.texDims[at] = image.width();
+        self.texDims[at + 1] = image.height();
+        self.texDims[at + 2] = image.layerCount();
+        self.texDims[at + 3] = 1;
+        if (sampler.mipmaps) {
+            self.texDims[at + 3] = Image::mipLevels(image.width(), image.height());
+        }
         return slot;
     }
 
@@ -175,6 +198,71 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
             self.textures[slot as i64] = new Texture(1, 1);
             self.texLive[slot as i64] = 0;
         }
+    }
+
+    /**
+     * Replace texture `slot` with layer 0 of `image` — refused, as on the GPU, unless the
+     * texture is of `image`'s size and layers and has no mip chain.
+     */
+    pub(crate) fn updateTexture(mut self, slot : i32, image : Image) : bool {
+        if (slot < 0 || slot >= self.texCap || self.texLive[slot as i64] == 0) {
+            return false;
+        }
+        let at : i64 = (slot as i64) * 4;
+        if (self.texDims[at] != image.width() || self.texDims[at + 1] != image.height()
+            || self.texDims[at + 2] != image.layerCount() || self.texDims[at + 3] != 1) {
+            return false;
+        }
+        self.textures[slot as i64] = image.toTexture(0);
+        return true;
+    }
+
+    /** No SPIR-V runs on the CPU: -1, and the draws keep the built-in shading. */
+    pub(crate) fn createShader(mut self, desc : ShaderDesc) : i32 {
+        return -1;
+    }
+
+    /** Nothing was made, so nothing is released. */
+    pub(crate) fn destroyShader(mut self, slot : i32) : void {
+    }
+
+    /** Read back the pixels of the next frame. */
+    pub(crate) fn captureNext(mut self) : void {
+        self.wantRead = true;
+    }
+
+    /** The pixels last read back. */
+    pub(crate) fn captured(self) : FramePixels {
+        return FramePixels {
+            base: self.readBase,
+            w: self.readW,
+            h: self.readH,
+        };
+    }
+
+    /** Copy the finished framebuffer out, when a read was asked for. */
+    pub(file) fn readBack(mut self) : void {
+        if (!self.wantRead) {
+            return;
+        }
+        self.wantRead = false;
+        let w : i32 = self.device.width();
+        let h : i32 = self.device.height();
+        let bytes : i64 = (w as i64) * (h as i64) * 4;
+        if (self.readCap < bytes) {
+            if (self.readBase != 0) {
+                Mem::release(self.readBase);
+            }
+            self.readBase = Mem::take(bytes);
+            self.readCap = bytes;
+            if (self.readBase == 0) {
+                self.readCap = 0;
+                return;
+            }
+        }
+        Mem::copy(self.readBase, Mem::addressOf(self.device.pixels()), bytes);
+        self.readW = w;
+        self.readH = h;
     }
 
     /**
@@ -227,6 +315,7 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
         if (overlay.used) {
             self.composite(overlay);
         }
+        self.readBack();
         self.device.endFrame(win);
         return true;
     }
@@ -257,6 +346,10 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
         }
         self.released = true;
         self.device.close();
+        if (self.readBase != 0) {
+            Mem::release(self.readBase);
+            self.readBase = 0;
+        }
     }
 
     /**

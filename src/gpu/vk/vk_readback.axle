@@ -1,0 +1,252 @@
+// vk_readback — the frame the window was shown, copied back to the CPU.
+//
+// `Renderer::captureNext` asks for the next frame's pixels: a screenshot, a test that
+// compares two renderers, a capture a program writes to a file. The frame's commands
+// then end with a copy of the window's image into a host-visible buffer — after the
+// present pass, before the present — and once that frame's fence has been waited on,
+// the pixels are converted into a block of `0x00RRGGBB` words, row 0 at the top: the
+// layout of a `Frame`, so `Bmp::write` takes them as they are.
+//
+// It costs a wait for the GPU, once, on the frame asked for; every other frame records
+// nothing. A swapchain the surface would not make readable (`VkSwapchain::readable`), or
+// one whose format is not one of the four 8-bit RGBA / BGRA ones, captures nothing, and
+// says so by an empty view.
+//
+//     image   PRESENT_SRC   -> TRANSFER_SRC   (after the present pass hands it to transfer)
+//     copy into the buffer
+//     image   TRANSFER_SRC  -> PRESENT_SRC    (before the presentation engine reads it)
+//     buffer  transfer write -> host read      (a fence's wait makes nothing visible to
+//                                              the host by itself)
+
+use crate::gpu::backend::FramePixels;
+use crate::gpu::vk::vk_cmd::VkCmd;
+use crate::gpu::vk::vk_context::VkContext;
+use crate::gpu::vk::vk_heap::GpuHeap;
+use crate::gpu::vk::vk_mem::{GpuBuffer, MemUse, VkMem};
+use crate::kernel::mem::Mem;
+use crate::sys::vk::vk_const::{
+    VK_ACCESS_HOST_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+    VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM,
+    VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT,
+    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+    VK_PIPELINE_STAGE_TRANSFER_BIT,
+};
+use crate::sys::vk::vk_table::VkAddr;
+use crate::sys::vk::vk_types::{
+    VkBufferImageCopy, VkExtent3D, VkImageSubresourceLayers, VkOffset3D,
+};
+
+/** The image a frame was drawn into, its size and its format. */
+pub(crate) struct ReadSource {
+    pub(crate) image  : i64,
+    pub(crate) w      : i32,
+    pub(crate) h      : i32,
+    pub(crate) format : i32,
+}
+
+/** How the bytes of a texel the copy can take are ordered: nothing else is read back. */
+enum TexelOrder : i8 {
+    Unreadable = 0,
+    Bgra = 1,
+    Rgba = 2,
+}
+
+/** A frame's pixels, read back. */
+pub(crate) class VkReadback {
+    /** Whether the next frame is to be read. */
+    pub(crate) wanted : bool = false;
+
+    /** Whether the frame being recorded copies itself out. */
+    pending           : bool = false;
+
+    buffer            : GpuBuffer;
+    bufferBytes       : i64 = 0;
+
+    /** The pixels last read, `0x00RRGGBB`, and their size; 0 until a frame was. */
+    pixels            : i64 = 0;
+    pixelBytes        : i64 = 0;
+    w                 : i32 = 0;
+    h                 : i32 = 0;
+
+    /** The byte order of the texels being copied. */
+    bgra              : bool = true;
+
+    copyArr           : VkBufferImageCopy[];
+
+    /** Nothing asked for, nothing read. */
+    constructor() {
+        self.buffer = GpuBuffer::none();
+        self.copyArr = malloc<VkBufferImageCopy>(1);
+    }
+
+    /**
+     * Record, at the end of a frame (its image just out of the present pass), the image's
+     * copy into the buffer — when one was asked for and the buffer can be had.
+     */
+    pub(crate) fn record(mut self, ctx : VkContext, heap : GpuHeap, cmd : VkCmd, cb : i64, src : ReadSource) : void {
+        self.pending = false;
+        let image : i64 = src.image;
+        let w : i32 = src.w;
+        let h : i32 = src.h;
+        let order : TexelOrder = VkReadback::orderOf(src.format);
+        if (!self.wanted || image == 0 || w <= 0 || h <= 0 || order == TexelOrder::Unreadable) {
+            return;
+        }
+        let bytes : i64 = (w as i64) * (h as i64) * 4;
+        if (self.bufferBytes < bytes) {
+            VkMem::destroyBuffer(ctx, heap, self.buffer);
+            self.buffer = VkMem::makeBuffer(
+                ctx,
+                heap,
+                bytes,
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                MemUse::Staging
+            );
+            self.bufferBytes = 0;
+            if (self.buffer.isNone() || self.buffer.mapped() == 0) {
+                VkMem::destroyBuffer(ctx, heap, self.buffer);
+                self.buffer = GpuBuffer::none();
+                return;
+            }
+            self.bufferBytes = bytes;
+        }
+        let color : i32 = VK_IMAGE_ASPECT_COLOR_BIT;
+        cmd.imageBarrier(
+            ctx,
+            cb,
+            image,
+            color,
+            0,
+            1,
+            1,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            0,
+            VK_ACCESS_TRANSFER_READ_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT
+        );
+        self.copyArr[0] = VkBufferImageCopy {
+            bufferOffset: 0,
+            bufferRowLength: 0,
+            bufferImageHeight: 0,
+            imageSubresource: VkImageSubresourceLayers {
+                aspectMask: color,
+                mipLevel: 0,
+                baseArrayLayer: 0,
+                layerCount: 1,
+            },
+            imageOffset: VkOffset3D { x: 0, y: 0, z: 0 },
+            imageExtent: VkExtent3D { width: w, height: h, depth: 1 },
+        };
+        ctx.table.cmdCopyImageToBuffer(
+            cb,
+            image,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            self.buffer.buffer,
+            1,
+            VkAddr::bufferImageCopy(self.copyArr)
+        );
+        cmd.imageBarrier(
+            ctx,
+            cb,
+            image,
+            color,
+            0,
+            1,
+            1,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            VK_ACCESS_TRANSFER_READ_BIT,
+            0,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
+        );
+        cmd.memoryBarrier(
+            ctx,
+            cb,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_HOST_READ_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_HOST_BIT
+        );
+        self.bgra = order == TexelOrder::Bgra;
+        self.pending = true;
+        self.w = w;
+        self.h = h;
+    }
+
+    /** Whether the frame just submitted copies itself out, and so has to be waited for. */
+    pub(crate) fn isPending(self) : bool {
+        return self.pending;
+    }
+
+    /** How the texels of a swapchain of `format` are ordered, if a capture can read them. */
+    pub(file) static fn orderOf(format : i32) : TexelOrder {
+        if (format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB) {
+            return TexelOrder::Bgra;
+        }
+        if (format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB) {
+            return TexelOrder::Rgba;
+        }
+        return TexelOrder::Unreadable;
+    }
+
+    /**
+     * After the recorded frame's fence was waited on: turn the buffer's texels into
+     * `0x00RRGGBB` words, and stop asking. A frame that recorded no copy leaves the last
+     * pixels as they were.
+     */
+    pub(crate) fn finish(mut self) : void {
+        if (!self.pending) {
+            return;
+        }
+        self.pending = false;
+        self.wanted = false;
+        let n : i64 = (self.w as i64) * (self.h as i64);
+        if (self.pixelBytes < n * 4) {
+            if (self.pixels != 0) {
+                Mem::release(self.pixels);
+            }
+            self.pixels = Mem::take(n * 4);
+            self.pixelBytes = n * 4;
+            if (self.pixels == 0) {
+                self.pixelBytes = 0;
+                return;
+            }
+        }
+        let src : i64 = self.buffer.mapped();
+        for (i of 0..n) {
+            let word : i32 = Mem::wordOf(src, i);
+            if (self.bgra) {
+                word = word & 0xFFFFFF;
+            } else {
+                // R8G8B8A8: red is the low byte; move it to where a `Frame` keeps it.
+                word = ((word & 0xFF) << 16) | (word & 0xFF00) | ((word >> 16) & 0xFF);
+            }
+            Mem::putWordOf(self.pixels, i, word);
+        }
+    }
+
+    /** The pixels last read, as a `Frame`'s words; empty when none were. */
+    pub(crate) fn view(self) : FramePixels {
+        return FramePixels {
+            base: self.pixels,
+            w: self.w,
+            h: self.h,
+        };
+    }
+
+    /** Destroy the buffer and the pixels — teardown, after the device is idle. */
+    pub(crate) fn release(mut self, ctx : VkContext, heap : GpuHeap) : void {
+        VkMem::destroyBuffer(ctx, heap, self.buffer);
+        self.buffer = GpuBuffer::none();
+        self.bufferBytes = 0;
+        if (self.pixels != 0) {
+            Mem::release(self.pixels);
+            self.pixels = 0;
+        }
+        self.pixelBytes = 0;
+    }
+}

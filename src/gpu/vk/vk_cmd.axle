@@ -35,7 +35,7 @@ use crate::sys::vk::vk_const::{
 use crate::sys::vk::vk_table::VkAddr;
 use crate::sys::vk::vk_types::{
     VkCommandBufferAllocateInfo, VkCommandBufferBeginInfo, VkCommandPoolCreateInfo,
-    VkImageMemoryBarrier, VkImageSubresourceRange, VkInit, VkSubmitInfo,
+    VkImageMemoryBarrier, VkImageSubresourceRange, VkInit, VkMemoryBarrier, VkSubmitInfo,
 };
 
 /** The command pool and the helpers that record into it. */
@@ -43,8 +43,9 @@ pub(crate) class VkCmd {
     /** `VkCommandPool`. */
     pub(crate) pool    : i64 = 0;
 
-    /** The reusable one-element barrier array. */
+    /** The reusable one-element barrier arrays. */
     barrier            : VkImageMemoryBarrier[];
+    memBarrier         : VkMemoryBarrier[];
 
     /** The reusable one-element submit array. */
     submit             : VkSubmitInfo[];
@@ -58,6 +59,7 @@ pub(crate) class VkCmd {
     /** Make the pool for `ctx`'s queue family; 0 in `pool` when the driver refused. */
     constructor(ctx : VkContext) {
         self.barrier = malloc<VkImageMemoryBarrier>(1);
+        self.memBarrier = malloc<VkMemoryBarrier>(1);
         self.submit = malloc<VkSubmitInfo>(1);
         let info : VkCommandPoolCreateInfo = VkInit::commandPoolCreateInfo();
         info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -200,6 +202,34 @@ pub(crate) class VkCmd {
             Raw::nil(),
             1,
             VkAddr::imageMemoryBarrier(self.barrier)
+        );
+    }
+
+    /** Record a memory dependency over everything: `srcAccess` at `srcStage` before `dstAccess` at `dstStage`. */
+    pub(crate) fn memoryBarrier(
+        mut self,
+        ctx : VkContext,
+        cb : i64,
+        srcAccess : i32,
+        dstAccess : i32,
+        srcStage : i32,
+        dstStage : i32
+    ) : void {
+        let b : VkMemoryBarrier = VkInit::memoryBarrier();
+        b.srcAccessMask = srcAccess;
+        b.dstAccessMask = dstAccess;
+        self.memBarrier[0] = b;
+        ctx.table.cmdPipelineBarrier(
+            cb,
+            srcStage,
+            dstStage,
+            0,
+            1,
+            VkAddr::memoryBarrier(self.memBarrier),
+            0,
+            Raw::nil(),
+            0,
+            Raw::nil()
         );
     }
 

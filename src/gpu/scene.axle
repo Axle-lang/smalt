@@ -23,6 +23,16 @@
 //     sprite-sized objects;
 //   * a draw whose mesh or texture handle is stale is skipped.
 //
+// # A program's own shading
+//
+// A draw is shaded by smalt's built-in stages unless a shader of the program's was
+// chosen with `useShader` before it was added (`gpu::shader`). Such a shader reads
+// what the scene says through `frame.glsl` — the camera and lights, plus
+// `USER_VECTORS` `user` vectors per frame (`setUser`) and one per draw (`setDrawUser`) whose meaning
+// is the program's alone. Two more kinds of shader run over the whole frame: a
+// background behind every draw (`setBackground`), and passes after them, each reading
+// what the one before drew (`addPass`).
+//
 // # Reuse
 //
 // `reset()` empties the lists and keeps the storage. A frame loop builds the same
@@ -34,11 +44,11 @@
 // renderer writes the resolved slots and the order during `render` and nothing
 // else does; backends only read. The three never overlap.
 
-use crate::gpu::handle::{MeshHandle, TextureHandle};
+use crate::gpu::handle::{MeshHandle, ShaderHandle, TextureHandle};
 use crate::gpu::light::{Fog, PointLight};
 use crate::math::geom::{Aabb, Frustum};
 use crate::math::mat::Mat4;
-use crate::math::vec::Vec3;
+use crate::math::vec::{Vec3, Vec4};
 use crate::render::camera::Camera;
 use crate::render::color::Color;
 use crate::render::vertex::{DirectionalLight, Material};
@@ -68,6 +78,43 @@ pub struct DrawItem {
 
     /** Squared distance from the camera to `centre`, written by `prepare`. */
     pub depth    : f64 = 0.0;
+
+    /** The program's shader it is drawn with; none for the built-in shading. */
+    pub shader   : ShaderHandle = ShaderHandle { index: -1, gen: 0 };
+
+    /** The backend's shader slot, written by the renderer in `render`; -1 for built-in. */
+    pub shaderSlot : i32 = -1;
+
+    /** The program's per-draw vector, read by its shader as `dr.user`. */
+    pub user     : Vec4 = Vec4 { x: 0.0, y: 0.0, z: 0.0, w: 0.0 };
+}
+
+/** The backend slots the renderer resolves a draw's handles to; -1 for none. */
+pub(crate) struct DrawSlots {
+    pub(crate) mesh   : i32 = -1;
+    pub(crate) tex    : i32 = -1;
+    pub(crate) shader : i32 = -1;
+}
+
+/** A full-screen draw: a background behind the scene, or a pass over it. */
+pub struct PassItem {
+    /** The `Background` or `Pass` shader. */
+    pub shader     : ShaderHandle = ShaderHandle { index: -1, gen: 0 };
+
+    /** The texture it samples as set 1; none for the white texel. */
+    pub tex        : TextureHandle = TextureHandle { index: -1, gen: 0 };
+
+    /** For a pass: whether what it draws becomes `baseColor` for the passes after it. */
+    pub keep       : bool = false;
+
+    /** The backend's shader slot, written by the renderer in `render`; -1 until then. */
+    pub shaderSlot : i32 = -1;
+
+    /** The backend's texture slot, written by the renderer in `render`; -1 until then. */
+    pub texSlot    : i32 = -1;
+
+    /** The program's per-pass vector, read by its shader as `dr.user`. */
+    pub user       : Vec4 = Vec4 { x: 0.0, y: 0.0, z: 0.0, w: 0.0 };
 }
 
 /** The description of one frame. */
@@ -77,6 +124,12 @@ pub class Scene {
 
     /** Draws a scene will hold; one more is refused rather than grown into. */
     pub static MAX_DRAWS        : i32 = 65536;
+
+    /** Vectors of four a frame hands its shaders as `fr.user`. */
+    pub static USER_VECTORS     : i32 = 32;
+
+    /** Full-screen passes a frame may run after its draws. */
+    pub static MAX_PASSES       : i32 = 12;
 
     items       : DrawItem[];
     order       : i32[];
@@ -101,6 +154,21 @@ pub class Scene {
     fogState    : Fog = Fog::none();
     clearCol    : Color = Color::rgb(0.05, 0.06, 0.1);
 
+    /** `USER_VECTORS` x 4 values, the frame's `fr.user`. */
+    userVals    : f64[];
+
+    /** The shader and per-draw vector the next draws are added with. */
+    curShader   : ShaderHandle = ShaderHandle::none();
+    curUser     : Vec4 = Vec4::zero();
+
+    /** The full-screen draw behind every other, when `hasBack`. */
+    back        : PassItem = PassItem { keep: false };
+    hasBack     : bool = false;
+
+    /** The passes after the draws, in order. */
+    passes      : PassItem[];
+    passN       : i32 = 0;
+
     /** An empty scene with room for `draws` draws to start with. */
     constructor(draws : i32) {
         self.cap = draws.max(16).min(Scene::MAX_DRAWS);
@@ -109,11 +177,17 @@ pub class Scene {
         self.spare = malloc<i32>(self.cap as i64);
         self.lamps = malloc<PointLight>(Scene::MAX_POINT_LIGHTS as i64);
         self.frustum = Frustum::ofMatrix(Mat4::identity());
+        self.userVals = malloc<f64>((Scene::USER_VECTORS * 4) as i64);
+        for (i of 0..(Scene::USER_VECTORS * 4)) {
+            self.userVals[i as i64] = 0.0;
+        }
+        self.passes = malloc<PassItem>(Scene::MAX_PASSES as i64);
     }
 
     /**
-     * Start a new frame: no draws, no lamps. The camera, sun, ambient, fog and
-     * clear colour are kept — they usually do not change between frames, and a
+     * Start a new frame: no draws, no lamps, no passes, the built-in shading and a zero
+     * per-draw vector. The camera, sun, ambient, fog, clear colour, background and
+     * `user` vectors are kept — they usually do not change between frames, and a
      * program that changes one calls its setter.
      */
     pub fn reset(mut self) : void {
@@ -121,6 +195,125 @@ pub class Scene {
         self.opaqueCount = 0;
         self.culled = 0;
         self.lampCount = 0;
+        self.passN = 0;
+        self.curShader = ShaderHandle::none();
+        self.curUser = Vec4::zero();
+    }
+
+    /**
+     * Set the frame's `user` vector `i` (0 .. `USER_VECTORS`), read by every shader of
+     * the program's as `fr.user[i]`; out of range is ignored.
+     */
+    pub fn setUser(mut self, i : i32, v : Vec4) : void {
+        if (i < 0 || i >= Scene::USER_VECTORS) {
+            return;
+        }
+        let at : i64 = (i * 4) as i64;
+        self.userVals[at] = v.x;
+        self.userVals[at + 1] = v.y;
+        self.userVals[at + 2] = v.z;
+        self.userVals[at + 3] = v.w;
+    }
+
+    /** The frame's `user` vector `i`; zero out of range. */
+    pub fn userAt(self, i : i32) : Vec4 {
+        if (i < 0 || i >= Scene::USER_VECTORS) {
+            return Vec4::zero();
+        }
+        let at : i64 = (i * 4) as i64;
+        return Vec4 {
+            x: self.userVals[at],
+            y: self.userVals[at + 1],
+            z: self.userVals[at + 2],
+            w: self.userVals[at + 3],
+        };
+    }
+
+    /**
+     * Shade the draws added from now on with `shader` (a `ShaderKind::Mesh` one), or
+     * with the built-in stages for `ShaderHandle::none()`. `reset` returns to built-in.
+     */
+    pub fn useShader(mut self, shader : ShaderHandle) : void {
+        self.curShader = shader;
+    }
+
+    /** The vector the draws added from now on carry, read by their shader as `dr.user`. */
+    pub fn setDrawUser(mut self, v : Vec4) : void {
+        self.curUser = v;
+    }
+
+    /**
+     * Draw `shader` (a `ShaderKind::Background` one) over the whole frame before any
+     * draw, sampling `tex`; kept from frame to frame like the camera, with the draw
+     * vector (`setDrawUser`) as it was when this was called.
+     */
+    pub fn setBackground(mut self, shader : ShaderHandle, tex : TextureHandle) : void {
+        self.back = PassItem { shader: shader, tex: tex, user: self.curUser };
+        self.hasBack = !shader.isNone();
+    }
+
+    /** No background: the frame starts from the clear colour. */
+    pub fn clearBackground(mut self) : void {
+        self.hasBack = false;
+    }
+
+    /**
+     * Run `shader` (a `ShaderKind::Pass` one) over the frame after the draws and the
+     * passes added before it, sampling `tex`; with `keep`, what it draws is the
+     * `baseColor` of the passes after it; the pass takes the draw vector as it is now
+     * (`setDrawUser`). False at `MAX_PASSES`, or for no shader.
+     */
+    pub fn addPass(mut self, shader : ShaderHandle, tex : TextureHandle, keep : bool) : bool {
+        if (self.passN >= Scene::MAX_PASSES || shader.isNone()) {
+            return false;
+        }
+        self.passes[self.passN as i64] = PassItem {
+            shader: shader,
+            tex: tex,
+            keep: keep,
+            user: self.curUser,
+        };
+        self.passN += 1;
+        return true;
+    }
+
+    /** Whether a background is set. */
+    pub fn hasBackground(self) : bool {
+        return self.hasBack;
+    }
+
+    /** The background. */
+    pub(crate) fn background(self) : PassItem {
+        return self.back;
+    }
+
+    /** Record the backend slots the renderer resolved for the background. */
+    pub(crate) fn bindBackground(mut self, slots : DrawSlots) : void {
+        let b : PassItem = self.back;
+        b.shaderSlot = slots.shader;
+        b.texSlot = slots.tex;
+        self.back = b;
+    }
+
+    /** Passes added since `reset`. */
+    pub fn passCount(self) : i32 {
+        return self.passN;
+    }
+
+    /** Pass `i`, in the order added. */
+    pub(crate) fn passAt(self, i : i32) : PassItem {
+        return self.passes[i as i64];
+    }
+
+    /** Record the backend slots the renderer resolved for pass `i`. */
+    pub(crate) fn bindPass(mut self, i : i32, slots : DrawSlots) : void {
+        if (i < 0 || i >= self.passN) {
+            return;
+        }
+        let p : PassItem = self.passes[i as i64];
+        p.shaderSlot = slots.shader;
+        p.texSlot = slots.tex;
+        self.passes[i as i64] = p;
     }
 
     /**
@@ -242,6 +435,8 @@ pub class Scene {
             material: material,
             model: model,
             centre: centre,
+            shader: self.curShader,
+            user: self.curUser,
         };
         self.count += 1;
         return true;
@@ -346,13 +541,14 @@ pub class Scene {
     }
 
     /** Record the backend slots the renderer resolved for draw `i`. */
-    pub(crate) fn bind(mut self, i : i32, meshSlot : i32, texSlot : i32) : void {
+    pub(crate) fn bind(mut self, i : i32, slots : DrawSlots) : void {
         if (i < 0 || i >= self.count) {
             return;
         }
         let it : DrawItem = self.items[i as i64];
-        it.meshSlot = meshSlot;
-        it.texSlot = texSlot;
+        it.meshSlot = slots.mesh;
+        it.texSlot = slots.tex;
+        it.shaderSlot = slots.shader;
         self.items[i as i64] = it;
     }
 

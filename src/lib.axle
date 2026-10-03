@@ -65,9 +65,10 @@ use crate::io::{file, fmt, bmp};
 
 use crate::sys::vk::{vk_const, vk_types, vk_out, vk_table, vk_layout_check};
 
-use crate::gpu::{handle, light, image, mesh_builder, scene, backend, renderer};
+use crate::gpu::{handle, light, image, mesh_builder, scene, shader, backend, renderer};
 use crate::gpu::soft::backend_soft;
 use crate::gpu::vk::{spirv, vk_error, vk_frame, vk_context, vk_heap, vk_mem, vk_graveyard};
 use crate::gpu::vk::{vk_cmd, vk_pipelines, vk_textures, vk_meshes, vk_swapchain, vk_overlay};
+use crate::gpu::vk::{vk_targets, vk_shaders, vk_uploads, vk_readback};
 use crate::gpu::vk::{vk_backend, vk_check};
 use std::numeric::math;

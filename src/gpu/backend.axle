@@ -19,6 +19,8 @@
 use crate::gpu::image::{Image, SamplerDesc};
 use crate::gpu::mesh_builder::MeshBuilder;
 use crate::gpu::scene::Scene;
+use crate::gpu::shader::ShaderDesc;
+use crate::render::frame::Frame;
 use crate::video::window::Window;
 
 /** Which way of drawing a `Renderer` should use. */
@@ -89,6 +91,34 @@ pub struct OverlayView {
     pub used : bool = false;
 }
 
+/** A frame's pixels, read back: `0x00RRGGBB` words, row 0 at the top — a `Frame`'s layout. */
+pub struct FramePixels {
+    /** Address of the first word; 0 when nothing was read. */
+    pub base : i64 = 0;
+
+    /** Width in pixels. */
+    pub w    : i32 = 0;
+
+    /** Height in pixels. */
+    pub h    : i32 = 0;
+
+    /** Whether there are pixels to read. */
+    pub fn isEmpty(self) : bool {
+        return self.base == 0 || self.w <= 0 || self.h <= 0;
+    }
+
+    /**
+     * The pixels as a `Frame` — what `Bmp::write` takes. Valid while the pixels are; an
+     * empty capture is a frame of no pixels, which draws nothing and writes no file.
+     */
+    pub fn frame(self) : Frame {
+        if (self.isEmpty()) {
+            return Frame::over(0, 0, 0);
+        }
+        return Frame::over(self.base, self.w, self.h);
+    }
+}
+
 /** One way of drawing a scene. */
 trait GpuBackend {
     /** A short description of what is drawing — "vulkan: <device kind>" or "software". */
@@ -126,6 +156,25 @@ trait GpuBackend {
 
     /** Release the texture in `slot`. Safe while frames that read it are in flight. */
     fn destroyTexture(mut self, slot : i32) : void;
+
+    /**
+     * Give texture `slot` the texels of `image` from the next frame on, without waiting
+     * for the queue; whether it will. False when the texture is not of `image`'s size and
+     * layers, or has a mip chain.
+     */
+    fn updateTexture(mut self, slot : i32, image : Image) : bool;
+
+    /** Make a shader of the program's; the backend's slot, or -1 when it could not be. */
+    fn createShader(mut self, desc : ShaderDesc) : i32;
+
+    /** Release the shader in `slot`. */
+    fn destroyShader(mut self, slot : i32) : void;
+
+    /** Read back the pixels of the next frame `render` shows. */
+    fn captureNext(mut self) : void;
+
+    /** The pixels last read back; empty when none were. */
+    fn captured(self) : FramePixels;
 
     /**
      * Draw `scene` and present it to `win`; whether a frame was presented.

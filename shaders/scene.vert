@@ -3,7 +3,7 @@
 //
 // The vertex is smalt's GPU vertex, 32 bytes (see `gpu/mesh_builder.axle`):
 //   0 position  float x3     12 uv  float x2     20 normal  snorm8 x4
-//  24 colour    unorm8 x4    28 layer  uint (0 .. 255, MeshBuilder::MAX_LAYER)
+//  24 colour    unorm8 x4    28 layer  uint (bits 0 .. 7; the rest are the program's)
 #extension GL_GOOGLE_include_directive : require
 #include "frame.glsl"
 
@@ -27,6 +27,7 @@ void main() {
     vNormal = mat3(dr.model) * inNormal.xyz;
     vUv = inUv;
     vColor = inColor;
-    vLayer = inLayer & 0xFFFFu;
+    // Bits 8 .. 31 of the layer word are the program's (`MeshBuilder::vertexRaw`).
+    vLayer = inLayer & 0xFFu;
     gl_Position = fr.viewProj * world;
 }

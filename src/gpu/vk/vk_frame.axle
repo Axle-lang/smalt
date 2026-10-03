@@ -1,7 +1,7 @@
 // vk_frame — the two blocks the scene shaders read, and who writes them.
 //
-// `shaders/frame.glsl` declares a 432-byte `Frame` uniform block (std140) and a
-// 112-byte `Draw` push-constant block. This file is the other side: the byte offset
+// `shaders/frame.glsl` declares a 1024-byte `Frame` uniform block (std140) and a
+// 128-byte `Draw` push-constant block. This file is the other side: the byte offset
 // of every member, and the code that fills them from a `Scene` and a `DrawItem`.
 //
 // The offsets are not trusted to be right because someone counted. `GpuCheck` asserts
@@ -34,9 +34,10 @@
 // `Mat4` is row-major; GLSL's `mat4` is column-major. A matrix is written column by
 // column, so what the shader's `M * v` reads is the library's `M * v`.
 
-use crate::gpu::scene::{DrawItem, Scene};
+use crate::gpu::scene::{DrawItem, PassItem, Scene};
 use crate::kernel::mem::Mem;
 use crate::math::mat::Mat4;
+use crate::math::vec::Vec4;
 use crate::render::color::Color;
 
 /**
@@ -76,8 +77,17 @@ pub(crate) const FRAME_LIGHT_COL : i64 = 288;
 /** `Frame.counts` — x: point lights in use; yzw: the sky light's colour. */
 pub(crate) const FRAME_COUNTS : i64 = 416;
 
+/** `Frame.invViewProj` — Vulkan clip space back to world space. */
+pub(crate) const FRAME_INV_VIEW_PROJ : i64 = 432;
+
+/** `Frame.target` — x, y: the target's size in pixels; z, w: one over each. */
+pub(crate) const FRAME_TARGET : i64 = 496;
+
+/** `Frame.user` — `Scene::USER_VECTORS` `vec4`, the program's own. */
+pub(crate) const FRAME_USER : i64 = 512;
+
 /** Bytes in the `Frame` block. */
-pub(crate) const FRAME_BYTES : i64 = 432;
+pub(crate) const FRAME_BYTES : i64 = 1024;
 
 /** `Draw.model`. */
 pub(crate) const DRAW_MODEL : i64 = 0;
@@ -94,8 +104,11 @@ pub(crate) const DRAW_PARAMS : i64 = 80;
  */
 pub(crate) const DRAW_EXTRA : i64 = 96;
 
-/** Bytes in the `Draw` push block — under the 128 every Vulkan device guarantees. */
-pub(crate) const DRAW_BYTES : i64 = 112;
+/** `Draw.user` — the program's own vector, per draw. */
+pub(crate) const DRAW_USER : i64 = 112;
+
+/** Bytes in the `Draw` push block — the 128 every Vulkan device guarantees, exactly. */
+pub(crate) const DRAW_BYTES : i64 = 128;
 
 /** Writers for the shaders' blocks. */
 pub(crate) class VkFrame {
@@ -126,10 +139,26 @@ pub(crate) class VkFrame {
         VkFrame::putVec4(base, off + 48, m.m03, m.m13, m.m23, m.m33);
     }
 
-    /** Fill the `Frame` block at `base` (at least `FRAME_BYTES` long) from `scene`. */
-    pub(crate) static fn writeFrame(base : i64, scene : Scene) : void {
+    /** A `vec4` at byte offset `off`. */
+    pub(crate) static fn putVec(base : i64, off : i64, v : Vec4) : void {
+        VkFrame::putVec4(base, off, v.x, v.y, v.z, v.w);
+    }
+
+    /**
+     * Fill the `Frame` block at `base` (at least `FRAME_BYTES` long) from `scene`, for
+     * a target of `w` x `h` pixels.
+     */
+    pub(crate) static fn writeFrame(base : i64, scene : Scene, w : i32, h : i32) : void {
         Mem::clear(base, FRAME_BYTES);
-        VkFrame::putMat4(base, FRAME_VIEW_PROJ, VkFrame::clipFix().mul(scene.viewProjection()));
+        let clip : Mat4 = VkFrame::clipFix().mul(scene.viewProjection());
+        VkFrame::putMat4(base, FRAME_VIEW_PROJ, clip);
+        VkFrame::putMat4(base, FRAME_INV_VIEW_PROJ, clip.inverse());
+        let fw : f64 = (w.max(1)) as f64;
+        let fh : f64 = (h.max(1)) as f64;
+        VkFrame::putVec4(base, FRAME_TARGET, fw, fh, 1.0 / fw, 1.0 / fh);
+        for (i of 0..Scene::USER_VECTORS) {
+            VkFrame::putVec(base, FRAME_USER + (i as i64) * 16, scene.userAt(i));
+        }
         let eye = scene.eye();
         VkFrame::putVec4(base, FRAME_EYE, eye.x, eye.y, eye.z, 0.0);
         let sun = scene.sunLight();
@@ -179,5 +208,17 @@ pub(crate) class VkFrame {
             sky = 1.0;
         }
         VkFrame::putVec4(base, DRAW_EXTRA, m.directLight, sky, m.lampLight, 0.0);
+        VkFrame::putVec(base, DRAW_USER, item.user);
+    }
+
+    /**
+     * Fill the `Draw` push block for a full-screen draw: an identity model, a white
+     * opaque albedo and the pass's own vector.
+     */
+    pub(crate) static fn writePass(base : i64, pass : PassItem) : void {
+        Mem::clear(base, DRAW_BYTES);
+        VkFrame::putMat4(base, DRAW_MODEL, Mat4::identity());
+        VkFrame::putVec4(base, DRAW_ALBEDO, 1.0, 1.0, 1.0, 1.0);
+        VkFrame::putVec(base, DRAW_USER, pass.user);
     }
 }

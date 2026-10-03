@@ -1,0 +1,214 @@
+// vk_shaders — a program's own shaders on the GPU: their modules and their pipelines.
+//
+// A shader (`gpu::shader`) is one or two SPIR-V stages and a kind. Uploading one makes
+// its modules and every pipeline a draw of that kind can ask for, so recording a frame
+// only picks among pipelines that already exist:
+//
+//   Mesh        four, in the scene pass: opaque or blended, one face or both — the
+//               same choice the built-in scene pipelines offer
+//   Background  one, in the scene pass, with no depth test and no depth write
+//   Pass        two: into a colour target (the pass render pass), and into the window
+//               (the present render pass), for the frame's last pass
+//
+// A shader is released rarely — a program uploads its few at start-up — so releasing
+// one waits for the device to go idle and destroys it on the spot, rather than teaching
+// the graveyard two more kinds of object.
+
+use crate::gpu::shader::{ShaderDesc, ShaderKind};
+use crate::gpu::vk::vk_context::VkContext;
+use crate::gpu::vk::vk_pipelines::{MeshStages, PipeSpec, VkPipelines};
+
+/** Pipelines a shader holds at most: a mesh shader's four. */
+const SHADER_PIPES : i32 = 4;
+
+/** The program's shaders. */
+pub(crate) class VkShaders {
+    cap       : i32;
+    live      : i32[];
+    kinds     : i32[];
+    vertMods  : i64[];
+    fragMods  : i64[];
+    pipes     : i64[];
+
+    /** A table of `capacity` shader slots. */
+    constructor(capacity : i32) {
+        self.cap = capacity.max(1);
+        let n : i64 = self.cap as i64;
+        self.live = malloc<i32>(n);
+        self.kinds = malloc<i32>(n);
+        self.vertMods = malloc<i64>(n);
+        self.fragMods = malloc<i64>(n);
+        self.pipes = malloc<i64>(n * (SHADER_PIPES as i64));
+        for (i of 0..n) {
+            self.live[i] = 0;
+            self.kinds[i] = 0;
+            self.vertMods[i] = 0;
+            self.fragMods[i] = 0;
+        }
+        for (i of 0..(n * (SHADER_PIPES as i64))) {
+            self.pipes[i] = 0;
+        }
+    }
+
+    /** The first free slot, or -1. */
+    pub(file) fn freeSlot(self) : i32 {
+        for (i of 0..self.cap) {
+            if (self.live[i as i64] == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Whether `slot` holds a shader of `kind`. */
+    pub(crate) fn holds(self, slot : i32, kind : ShaderKind) : bool {
+        if (slot < 0 || slot >= self.cap || self.live[slot as i64] == 0) {
+            return false;
+        }
+        return self.kinds[slot as i64] == (kind as i32);
+    }
+
+    /** Pipeline `k` of `slot`; 0 when there is none. */
+    pub(file) fn pipe(self, slot : i32, k : i32) : i64 {
+        if (slot < 0 || slot >= self.cap || self.live[slot as i64] == 0) {
+            return 0;
+        }
+        return self.pipes[(slot * SHADER_PIPES + k) as i64];
+    }
+
+    /** A mesh shader's pipeline for a draw: blended or not, one face or both. */
+    pub(crate) fn meshPipeline(self, slot : i32, blend : bool, cullNone : bool) : i64 {
+        let k : i32 = 0;
+        if (blend) {
+            k += 2;
+        }
+        if (cullNone) {
+            k += 1;
+        }
+        return self.pipe(slot, k);
+    }
+
+    /** A background shader's pipeline. */
+    pub(crate) fn backgroundPipeline(self, slot : i32) : i64 {
+        return self.pipe(slot, 0);
+    }
+
+    /** A pass shader's pipeline: into a colour target, or into the window. */
+    pub(crate) fn passPipeline(self, slot : i32, toWindow : bool) : i64 {
+        if (toWindow) {
+            return self.pipe(slot, 1);
+        }
+        return self.pipe(slot, 0);
+    }
+
+    /**
+     * Make `desc`'s modules and pipelines; the slot, or -1 when the table is full, a
+     * stage is missing, or the driver refused a module or a pipeline (nothing is left made).
+     */
+    pub(crate) fn create(mut self, ctx : VkContext, pipes : VkPipelines, desc : ShaderDesc) : i32 {
+        let slot : i32 = self.freeSlot();
+        if (slot < 0) {
+            return -1;
+        }
+        let s : i64 = slot as i64;
+        let base : i64 = s * (SHADER_PIPES as i64);
+        let vs : i64 = pipes.fullscreenVert();
+        let ownVert : i64 = 0;
+        if (desc.kind == ShaderKind::Mesh) {
+            ownVert = pipes.makeModule(ctx, desc.vert, desc.vertBytes);
+            vs = ownVert;
+        }
+        let fs : i64 = pipes.makeModule(ctx, desc.frag, desc.fragBytes);
+        self.vertMods[s] = ownVert;
+        self.fragMods[s] = fs;
+        self.live[s] = 1;
+        self.kinds[s] = desc.kind as i32;
+        if (vs == 0 || fs == 0) {
+            self.destroy(ctx, slot);
+            return -1;
+        }
+
+        let made : i32 = 0;
+        let wanted : i32 = 0;
+        if (desc.kind == ShaderKind::Mesh) {
+            wanted = 4;
+            let stages : MeshStages = MeshStages { vs: vs, fs: fs };
+            self.pipes[base] = pipes.meshPipeline(ctx, stages, false, false);
+            self.pipes[base + 1] = pipes.meshPipeline(ctx, stages, false, true);
+            self.pipes[base + 2] = pipes.meshPipeline(ctx, stages, true, false);
+            self.pipes[base + 3] = pipes.meshPipeline(ctx, stages, true, true);
+        } else if (desc.kind == ShaderKind::Background) {
+            wanted = 1;
+            self.pipes[base] = pipes.makePipeline(
+                ctx,
+                PipeSpec {
+                    vs: vs,
+                    fs: fs,
+                    renderPass: pipes.scenePass,
+                    layout: pipes.layout,
+                }
+            );
+        } else {
+            wanted = 2;
+            self.pipes[base] = pipes.makePipeline(
+                ctx,
+                PipeSpec {
+                    vs: vs,
+                    fs: fs,
+                    renderPass: pipes.postPass,
+                    layout: pipes.passLayout,
+                }
+            );
+            self.pipes[base + 1] = pipes.makePipeline(
+                ctx,
+                PipeSpec {
+                    vs: vs,
+                    fs: fs,
+                    renderPass: pipes.presentPass,
+                    layout: pipes.passLayout,
+                }
+            );
+        }
+        for (k of 0..wanted) {
+            if (self.pipes[base + (k as i64)] != 0) {
+                made += 1;
+            }
+        }
+        if (made != wanted) {
+            self.destroy(ctx, slot);
+            return -1;
+        }
+        return slot;
+    }
+
+    /** Destroy `slot`'s pipelines and modules at once — the caller has waited for the device. */
+    pub(crate) fn destroy(mut self, ctx : VkContext, slot : i32) : void {
+        if (slot < 0 || slot >= self.cap || self.live[slot as i64] == 0) {
+            return;
+        }
+        let s : i64 = slot as i64;
+        for (k of 0..SHADER_PIPES) {
+            let at : i64 = s * (SHADER_PIPES as i64) + (k as i64);
+            if (self.pipes[at] != 0) {
+                ctx.table.destroyPipeline(ctx.device, self.pipes[at]);
+                self.pipes[at] = 0;
+            }
+        }
+        if (self.vertMods[s] != 0) {
+            ctx.table.destroyShaderModule(ctx.device, self.vertMods[s]);
+            self.vertMods[s] = 0;
+        }
+        if (self.fragMods[s] != 0) {
+            ctx.table.destroyShaderModule(ctx.device, self.fragMods[s]);
+            self.fragMods[s] = 0;
+        }
+        self.live[s] = 0;
+    }
+
+    /** Destroy every shader — teardown, after the device is idle. */
+    pub(crate) fn destroyAll(mut self, ctx : VkContext) : void {
+        for (i of 0..self.cap) {
+            self.destroy(ctx, i);
+        }
+    }
+}

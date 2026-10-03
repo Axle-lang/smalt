@@ -1,0 +1,285 @@
+// vk_uploads — textures rewritten while frames are drawn, without stopping the queue.
+//
+// `Renderer::updateTexture` gives a texture new texels — a cloud field that drifts, a
+// table a program recomputes every frame. Making a new texture each time would be a
+// one-shot upload that waits for the queue to go idle; this records the copy into the
+// next frame's own command buffer instead, ahead of its render pass, so the frame that
+// draws with the texture is the first to see the new texels and no frame waits.
+//
+// The texels are copied twice: into a block of the CPU's when the update is asked for —
+// the frame slot whose staging buffer will carry them may still be on the GPU then —
+// and into that slot's staging buffer once its fence has been waited on. Copied in
+// place, the texture keeps its handle, its descriptor set and its sampler.
+//
+// Only a texture made with no mip chain is updated this way (`VkTextures::takesUpdate`):
+// a chain would have to be rebuilt as well, which is the CPU's work the first upload did.
+// An update to a texture that is updated again before the next frame replaces it.
+
+use crate::gpu::image::Image;
+use crate::gpu::vk::vk_cmd::VkCmd;
+use crate::gpu::vk::vk_context::VkContext;
+use crate::gpu::vk::vk_frame::FRAMES_IN_FLIGHT;
+use crate::gpu::vk::vk_heap::GpuHeap;
+use crate::gpu::vk::vk_mem::{GpuBuffer, MemUse, VkMem};
+use crate::gpu::vk::vk_textures::VkTextures;
+use crate::kernel::mem::Mem;
+use crate::sys::vk::vk_const::{
+    VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+    VK_PIPELINE_STAGE_TRANSFER_BIT,
+};
+use crate::sys::vk::vk_table::VkAddr;
+use crate::sys::vk::vk_types::{
+    VkBufferImageCopy, VkExtent3D, VkImageSubresourceLayers, VkOffset3D,
+};
+
+/** Textures that may wait for the next frame at once. */
+pub(crate) const UPLOAD_MAX : i32 = 16;
+
+/** Texture updates waiting for a frame. */
+pub(crate) class VkUploads {
+    /** Waiting updates: texture slot, size, layers, and where their texels are in `cpu`. */
+    slots    : i32[];
+    widths   : i32[];
+    heights  : i32[];
+    layers   : i32[];
+    offsets  : i64[];
+    count    : i32 = 0;
+
+    /** The texels, one update after another. */
+    cpu      : i64 = 0;
+    cpuCap   : i64 = 0;
+    cpuUsed  : i64 = 0;
+
+    /** Per frame in flight: the staging buffer and its size in bytes. */
+    staging  : GpuBuffer[];
+    stageCap : i64[];
+
+    /** Whether frame slot `f`'s staging buffer holds what its frame is to copy. */
+    staged   : bool = false;
+
+    copyArr  : VkBufferImageCopy[];
+
+    /** Nothing waiting. */
+    constructor() {
+        let m : i64 = UPLOAD_MAX as i64;
+        self.slots = malloc<i32>(m);
+        self.widths = malloc<i32>(m);
+        self.heights = malloc<i32>(m);
+        self.layers = malloc<i32>(m);
+        self.offsets = malloc<i64>(m);
+        let n : i64 = FRAMES_IN_FLIGHT as i64;
+        self.staging = malloc<GpuBuffer>(n);
+        self.stageCap = malloc<i64>(n);
+        for (i of 0..n) {
+            self.staging[i] = GpuBuffer::none();
+            self.stageCap[i] = 0;
+        }
+        self.copyArr = malloc<VkBufferImageCopy>(1);
+    }
+
+    /** Updates waiting. */
+    pub(crate) fn waiting(self) : i32 {
+        return self.count;
+    }
+
+    /**
+     * Hold `image` as texture `slot`'s next texels; whether it is held. An update of a
+     * slot already waiting replaces that one's texels in place — a texture only takes
+     * images of its own size, so they fit; false when `UPLOAD_MAX` slots are waiting, or
+     * there is no memory for the texels.
+     */
+    pub(crate) fn queue(mut self, slot : i32, image : Image) : bool {
+        let bytes : i64 = image.byteCount();
+        for (i of 0..self.count) {
+            let k : i64 = i as i64;
+            if (self.slots[k] == slot) {
+                Mem::copy(self.cpu + self.offsets[k], image.base(), bytes);
+                return true;
+            }
+        }
+        if (self.count >= UPLOAD_MAX) {
+            return false;
+        }
+        let at : i32 = self.count;
+        if (self.cpuUsed + bytes > self.cpuCap) {
+            let cap : i64 = (self.cpuUsed + bytes).max(self.cpuCap * 2);
+            let fresh : i64 = Mem::take(cap);
+            if (fresh == 0) {
+                return false;
+            }
+            if (self.cpu != 0) {
+                Mem::copy(fresh, self.cpu, self.cpuUsed);
+                Mem::release(self.cpu);
+            }
+            self.cpu = fresh;
+            self.cpuCap = cap;
+        }
+        let k : i64 = at as i64;
+        self.slots[k] = slot;
+        self.widths[k] = image.width();
+        self.heights[k] = image.height();
+        self.layers[k] = image.layerCount();
+        self.offsets[k] = self.cpuUsed;
+        Mem::copy(self.cpu + self.cpuUsed, image.base(), bytes);
+        self.cpuUsed += bytes;
+        self.count += 1;
+        return true;
+    }
+
+    /**
+     * Copy every waiting update into frame slot `f`'s staging buffer, growing it if it
+     * is too small; whether they are all there. Slot `f`'s fence has been waited on.
+     */
+    pub(crate) fn stage(mut self, ctx : VkContext, heap : GpuHeap, f : i32) : bool {
+        self.staged = false;
+        if (self.count == 0) {
+            return false;
+        }
+        let k : i64 = f as i64;
+        if (self.stageCap[k] < self.cpuUsed) {
+            if (!self.staging[k].isNone()) {
+                VkMem::destroyBuffer(ctx, heap, self.staging[k]);
+                self.staging[k] = GpuBuffer::none();
+                self.stageCap[k] = 0;
+            }
+            let b : GpuBuffer = VkMem::makeBuffer(
+                ctx,
+                heap,
+                self.cpuUsed,
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                MemUse::Staging
+            );
+            if (b.isNone() || b.mapped() == 0) {
+                VkMem::destroyBuffer(ctx, heap, b);
+                return false;
+            }
+            self.staging[k] = b;
+            self.stageCap[k] = self.cpuUsed;
+        }
+        Mem::copy(self.staging[k].mapped(), self.cpu, self.cpuUsed);
+        self.staged = true;
+        return true;
+    }
+
+    /**
+     * Record the copies staged for frame slot `f`, each bracketed by the barriers that
+     * make it safe — the first from the fragment shaders of the frame before, which may
+     * still be sampling the texture — then forget them.
+     */
+    pub(crate) fn record(
+        mut self,
+        ctx : VkContext,
+        cmd : VkCmd,
+        textures : VkTextures,
+        cb : i64,
+        f : i32
+    ) : void {
+        if (!self.staged) {
+            return;
+        }
+        let color : i32 = VK_IMAGE_ASPECT_COLOR_BIT;
+        for (i of 0..self.count) {
+            let k : i64 = i as i64;
+            let image : i64 = textures.imageOf(self.slots[k]);
+            if (image != 0) {
+                cmd.imageBarrier(
+                    ctx,
+                    cb,
+                    image,
+                    color,
+                    0,
+                    1,
+                    self.layers[k],
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    0,
+                    VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT
+                );
+                self.copyArr[0] = VkBufferImageCopy {
+                    bufferOffset: self.offsets[k],
+                    bufferRowLength: 0,
+                    bufferImageHeight: 0,
+                    imageSubresource: VkImageSubresourceLayers {
+                        aspectMask: color,
+                        mipLevel: 0,
+                        baseArrayLayer: 0,
+                        layerCount: self.layers[k],
+                    },
+                    imageOffset: VkOffset3D { x: 0, y: 0, z: 0 },
+                    imageExtent: VkExtent3D {
+                        width: self.widths[k],
+                        height: self.heights[k],
+                        depth: 1,
+                    },
+                };
+                ctx.table.cmdCopyBufferToImage(
+                    cb,
+                    self.staging[f as i64].buffer,
+                    image,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    1,
+                    VkAddr::bufferImageCopy(self.copyArr)
+                );
+                cmd.imageBarrier(
+                    ctx,
+                    cb,
+                    image,
+                    color,
+                    0,
+                    1,
+                    self.layers[k],
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_ACCESS_SHADER_READ_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+                );
+            }
+        }
+        self.count = 0;
+        self.cpuUsed = 0;
+        self.staged = false;
+    }
+
+    /** Forget every waiting update of texture `slot` — it is being released. */
+    pub(crate) fn forget(mut self, slot : i32) : void {
+        let k : i32 = 0;
+        while (k < self.count) {
+            if (self.slots[k as i64] == slot) {
+                let last : i64 = (self.count - 1) as i64;
+                self.slots[k as i64] = self.slots[last];
+                self.widths[k as i64] = self.widths[last];
+                self.heights[k as i64] = self.heights[last];
+                self.layers[k as i64] = self.layers[last];
+                self.offsets[k as i64] = self.offsets[last];
+                self.count -= 1;
+            } else {
+                k += 1;
+            }
+        }
+    }
+
+    /** Destroy the staging buffers and the CPU block — teardown, after the device is idle. */
+    pub(crate) fn release(mut self, ctx : VkContext, heap : GpuHeap) : void {
+        for (i of 0..FRAMES_IN_FLIGHT) {
+            let k : i64 = i as i64;
+            if (!self.staging[k].isNone()) {
+                VkMem::destroyBuffer(ctx, heap, self.staging[k]);
+                self.staging[k] = GpuBuffer::none();
+                self.stageCap[k] = 0;
+            }
+        }
+        if (self.cpu != 0) {
+            Mem::release(self.cpu);
+            self.cpu = 0;
+        }
+        self.cpuCap = 0;
+        self.cpuUsed = 0;
+        self.count = 0;
+    }
+}

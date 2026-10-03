@@ -1,10 +1,11 @@
 // vk_backend — the Vulkan renderer: a frame loop over everything the other files make.
 //
 // `VkBackend` is what `Renderer` talks to when there is a GPU. It owns the context, the
-// memory heap, the swapchain, the pipelines, the tables of meshes and textures and the 2-D
-// overlay, and its own part is the *frame*: acquire an image, record the commands that draw
-// the scene, submit, present — with two frames in flight, so the CPU records frame N + 1
-// while the GPU runs frame N.
+// memory heap, the swapchain and the targets sized with it, the pipelines, the tables of
+// meshes, textures and shaders, the texture updates, the 2-D overlay and the readback,
+// and its own part is the *frame*: acquire an image, record the commands that draw the
+// scene, submit, present — with two frames in flight, so the CPU records frame N + 1 while
+// the GPU runs frame N.
 //
 // # One frame
 //
@@ -12,18 +13,23 @@
 //      two frames ago), then sweep the graveyard of what no frame still running can name;
 //   2. acquire the next swapchain image — a swapchain that went out of date is rebuilt and
 //      the frame is skipped, which is how a window resize is absorbed;
-//   3. write the frame's uniform block and, if the program drew a 2-D overlay, copy it into
-//      this slot's staging buffer (`vk_overlay`);
-//   4. record: copy the overlay into its texture, begin the render pass, draw the opaque
-//      then the blended draws, draw the overlay, end the pass;
+//   3. write the frame's uniform block and stage what the frame uploads: the 2-D overlay,
+//      if the program drew one (`vk_overlay`), and the texture updates (`vk_uploads`);
+//   4. record: the uploads; the scene pass — the background, then the opaque and the
+//      blended draws, into colour target 0 and the depth (`vk_targets`); each of the
+//      program's passes but the last, target to target; the present pass — the last pass,
+//      or a copy of the scene when there is none, then the overlay; a readback, if one was
+//      asked for (`vk_readback`);
 //   5. submit — waiting on the acquire semaphore at the colour-output stage, signalling
-//      the image's own "finished" semaphore and this slot's fence — and present.
+//      the image's own "finished" semaphore and this slot's fence — and present; a frame
+//      that was read back waits for its fence and converts its pixels.
 //
 // A steady frame allocates nothing in steps 2 to 5: every array a Vulkan call reads by
 // pointer is a block or an array made at construction and rewritten in place. The
-// exceptions are a swapchain rebuild and an overlay that outgrew its texture or this slot's
-// staging buffer: those remake what is too small (the texture with a one-shot upload that
-// waits for the queue to go idle).
+// exceptions remake what is too small: a swapchain rebuild (and the targets with it), an
+// overlay that outgrew its texture or this slot's staging buffer (the texture with a
+// one-shot upload that waits for the queue to go idle), texture updates that outgrew
+// their staging, and the first capture at a size.
 //
 // # Failure
 //
@@ -44,10 +50,11 @@
 // Everything here belongs to the thread that made the window.
 
 use crate::core::error::PlatformError;
-use crate::gpu::backend::{GpuBackend, OverlayView, RendererDesc};
+use crate::gpu::backend::{FramePixels, GpuBackend, OverlayView, RendererDesc};
 use crate::gpu::image::{Image, SamplerDesc};
 use crate::gpu::mesh_builder::MeshBuilder;
-use crate::gpu::scene::{DrawItem, Scene};
+use crate::gpu::scene::{DrawItem, PassItem, Scene};
+use crate::gpu::shader::{ShaderDesc, ShaderKind};
 use crate::gpu::vk::vk_cmd::VkCmd;
 use crate::gpu::vk::vk_context::VkContext;
 use crate::gpu::vk::vk_error::VkErr;
@@ -58,14 +65,18 @@ use crate::gpu::vk::vk_mem::{GpuBuffer, MemUse, VkMem};
 use crate::gpu::vk::vk_meshes::VkMeshes;
 use crate::gpu::vk::vk_overlay::VkOverlay;
 use crate::gpu::vk::vk_pipelines::VkPipelines;
+use crate::gpu::vk::vk_readback::{ReadSource, VkReadback};
+use crate::gpu::vk::vk_shaders::VkShaders;
 use crate::gpu::vk::vk_swapchain::VkSwapchain;
+use crate::gpu::vk::vk_targets::VkTargets;
 use crate::gpu::vk::vk_textures::VkTextures;
+use crate::gpu::vk::vk_uploads::VkUploads;
 use crate::kernel::mem::Mem;
 use crate::kernel::raw::Raw;
 use crate::render::color::Color;
 use crate::sys::vk::vk_const::{
     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_ERROR_OUT_OF_DATE_KHR,
-    VK_FENCE_CREATE_SIGNALED_BIT, VK_INDEX_TYPE_UINT32, VK_NOT_READY,
+    VK_FENCE_CREATE_SIGNALED_BIT, VK_NOT_READY,
     VK_PIPELINE_BIND_POINT_GRAPHICS, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
     VK_SHADER_STAGE_FRAGMENT_BIT, VK_SHADER_STAGE_VERTEX_BIT, VK_SUBOPTIMAL_KHR,
     VK_SUBPASS_CONTENTS_INLINE, VK_SUCCESS, VK_TIMEOUT,
@@ -128,6 +139,38 @@ const BLK_CLEAR : i64 = 80;
 /** Bytes in `block`. */
 const BLK_BYTES : i64 = 128;
 
+/** Shaders a program may have at once. */
+const VKB_SHADERS : i32 = 64;
+
+/** The frame being recorded: its command buffer, and its frame-in-flight slot. */
+struct FrameRec {
+    cb : i64,
+    f  : i32,
+}
+
+/** A render pass to begin: the pass, the framebuffer it draws into, the colour it clears to. */
+struct PassBegin {
+    pass        : i64,
+    framebuffer : i64,
+    clear       : Color,
+}
+
+/** The colour targets a full-screen pass reads: the pass before's, and the one last kept. */
+struct PassInputs {
+    prev : i32,
+    kept : i32,
+}
+
+/**
+ * Where the program's passes left the frame: the targets the last one reads, and that
+ * last pass — it draws into the window, so it is recorded with the present pass.
+ */
+struct PassChain {
+    inputs  : PassInputs,
+    last    : PassItem,
+    hasLast : bool,
+}
+
 /** The Vulkan renderer. */
 pub(crate) class VkBackend : GpuBackend {
     ctx       : VkContext;
@@ -139,6 +182,10 @@ pub(crate) class VkBackend : GpuBackend {
     textures  : VkTextures;
     meshes    : VkMeshes;
     overlay   : VkOverlay;
+    targets   : VkTargets;
+    shaders   : VkShaders;
+    uploads   : VkUploads;
+    readback  : VkReadback;
 
     /** Per-frame-in-flight objects. */
     cbs       : i64 = 0;
@@ -154,8 +201,9 @@ pub(crate) class VkBackend : GpuBackend {
     sc        : VkRect2D[];
     submitArr : VkSubmitInfo[];
 
-    /** The pipeline and texture set bound so far in the frame being recorded; 0 = none. */
+    /** The pipeline, layout and texture set bound so far in the pass being recorded; 0 = none. */
     curPipe   : i64 = 0;
+    curLayout : i64 = 0;
     curSet    : i64 = 0;
 
     frameNo  : i64 = 0;
@@ -192,6 +240,10 @@ pub(crate) class VkBackend : GpuBackend {
         self.textures = new VkTextures(textureSlots + 1);
         self.meshes = new VkMeshes(meshSlots);
         self.overlay = new VkOverlay();
+        self.targets = new VkTargets();
+        self.shaders = new VkShaders(VKB_SHADERS);
+        self.uploads = new VkUploads();
+        self.readback = new VkReadback();
         self.vsync = desc.vsync;
         self.reqW = win.width();
         self.reqH = win.height();
@@ -244,20 +296,23 @@ pub(crate) class VkBackend : GpuBackend {
             }
         }
         // The swapchain comes last: a window that has carried a swapchain may not show a
-        // GDI or X11 blit any more, so nothing that can still fail is left after it — a
-        // failure before it hands the CPU a window it can draw to. A build that cannot be
+        // GDI or X11 blit any more, so nothing that can still fail is left after it but the
+        // targets, which need its size — a failure before it hands the CPU a window it can
+        // draw to. A build that cannot be
         // done *yet* (a window not mapped, with no extent) is left to the first frame;
         // giving up now would send `Auto` to the CPU for good.
         if (reason.byteLength == 0 && self.reqW > 0 && self.reqH > 0) {
             let r : i32 = self.swap.build(
                 self.ctx,
-                self.heap,
                 self.pipes,
                 self.reqW,
                 self.reqH,
                 self.vsync,
                 0
             );
+            if (r == VK_SUCCESS) {
+                r = self.targets.build(self.ctx, self.heap, self.pipes, self.swap.w, self.swap.h);
+            }
             if (r == VK_SUCCESS) {
                 self.dirty = false;
             } else if (VkErr::isFatal(r)) {
@@ -513,10 +568,49 @@ pub(crate) class VkBackend : GpuBackend {
         if (self.released) {
             return;
         }
+        self.uploads.forget(slot);
         if (!self.textures.destroy(self.grave, slot, self.burialFrame())) {
             self.drain();
             self.textures.destroy(self.grave, slot, self.burialFrame());
         }
+    }
+
+    /** Rewrite a texture's texels from the next frame on; whether it will be. */
+    pub(crate) fn updateTexture(mut self, slot : i32, image : Image) : bool {
+        if (self.finished()) {
+            return false;
+        }
+        if (!self.textures.takesUpdate(slot, image.width(), image.height(), image.layerCount())) {
+            return false;
+        }
+        return self.uploads.queue(slot, image);
+    }
+
+    /** Make a shader of the program's; the slot or -1. */
+    pub(crate) fn createShader(mut self, desc : ShaderDesc) : i32 {
+        if (self.finished()) {
+            return -1;
+        }
+        return self.shaders.create(self.ctx, self.pipes, desc);
+    }
+
+    /** Release a shader: wait for the device, then destroy it (see `vk_shaders`). */
+    pub(crate) fn destroyShader(mut self, slot : i32) : void {
+        if (self.released) {
+            return;
+        }
+        self.note(self.ctx.waitIdle());
+        self.shaders.destroy(self.ctx, slot);
+    }
+
+    /** Read back the next frame shown. */
+    pub(crate) fn captureNext(mut self) : void {
+        self.readback.wanted = true;
+    }
+
+    /** The pixels last read back. */
+    pub(crate) fn captured(self) : FramePixels {
+        return self.readback.view();
     }
 
     /** Rebuild the swapchain for the requested size; whether one now exists. */
@@ -526,7 +620,6 @@ pub(crate) class VkBackend : GpuBackend {
         }
         let r : i32 = self.swap.recreate(
             self.ctx,
-            self.heap,
             self.pipes,
             self.grave,
             self.burialFrame(),
@@ -534,6 +627,11 @@ pub(crate) class VkBackend : GpuBackend {
             self.reqH,
             self.vsync
         );
+        if (r == VK_SUCCESS) {
+            // The device is idle (`recreate` waited): the targets can be remade on the spot.
+            self.targets.destroy(self.ctx, self.heap, self.pipes);
+            r = self.targets.build(self.ctx, self.heap, self.pipes, self.swap.w, self.swap.h);
+        }
         if (r == VK_SUCCESS) {
             self.dirty = false;
             return true;
@@ -576,8 +674,59 @@ pub(crate) class VkBackend : GpuBackend {
         return self.overlay.stage(self.ctx, self.heap, f, ov);
     }
 
-    /** Draw item `it` into `cb`, rebinding pipeline and texture only when they change. */
-    pub(file) fn recordDraw(mut self, cb : i64, it : DrawItem) : void {
+    /**
+     * Bind `pipe`, and the frame block as set 0 of `layout`, each only when it changed. A
+     * new layout forgets the texture bound under the old one.
+     */
+    pub(file) fn bindPipe(mut self, rec : FrameRec, pipe : i64, layout : i64) : void {
+        if (pipe != self.curPipe) {
+            self.ctx.table.cmdBindPipeline(rec.cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
+            self.curPipe = pipe;
+        }
+        if (layout != self.curLayout) {
+            self.bindSet(rec, layout, 0, self.frameSets[rec.f as i64]);
+            self.curLayout = layout;
+            self.curSet = 0;
+        }
+    }
+
+    /** Bind descriptor `set` as set `index` of `layout`. */
+    pub(file) fn bindSet(mut self, rec : FrameRec, layout : i64, index : i32, set : i64) : void {
+        Mem::putQword(self.block, BLK_SET, set);
+        self.ctx.table.cmdBindDescriptorSets(
+            rec.cb,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            layout,
+            index,
+            1,
+            Raw::at(self.block + BLK_SET),
+            0,
+            Raw::nil()
+        );
+    }
+
+    /** Bind texture `set` as set 1 of `layout`, when it changed. */
+    pub(file) fn bindTexture(mut self, rec : FrameRec, layout : i64, set : i64) : void {
+        if (set != self.curSet) {
+            self.bindSet(rec, layout, 1, set);
+            self.curSet = set;
+        }
+    }
+
+    /** Push the `Draw` block written into `push`. */
+    pub(file) fn pushDraw(mut self, rec : FrameRec, layout : i64) : void {
+        self.ctx.table.cmdPushConstants(
+            rec.cb,
+            layout,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            0,
+            DRAW_BYTES as i32,
+            Raw::at(self.push)
+        );
+    }
+
+    /** One draw of the scene, with the built-in stages or the program's mesh shader. */
+    pub(file) fn recordDraw(mut self, rec : FrameRec, it : DrawItem) : void {
         let vb : i64 = self.meshes.vertexBuffer(it.meshSlot);
         let ib : i64 = self.meshes.indexBuffer(it.meshSlot);
         let count : i32 = self.meshes.indexCount(it.meshSlot);
@@ -586,82 +735,96 @@ pub(crate) class VkBackend : GpuBackend {
             return;
         }
         let blend : bool = it.material.opacity < 1.0;
-        let pipe : i64 = self.pipes.scenePipeline(blend, !it.material.cullBackface);
-        if (pipe != self.curPipe) {
-            self.ctx.table.cmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
-            self.curPipe = pipe;
+        let cullNone : bool = !it.material.cullBackface;
+        let pipe : i64 = self.pipes.scenePipeline(blend, cullNone);
+        if (self.shaders.holds(it.shaderSlot, ShaderKind::Mesh)) {
+            pipe = self.shaders.meshPipeline(it.shaderSlot, blend, cullNone);
         }
-        if (set != self.curSet) {
-            Mem::putQword(self.block, BLK_SET, set);
-            self.ctx.table.cmdBindDescriptorSets(
-                cb,
-                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                self.pipes.layout,
-                1,
-                1,
-                Raw::at(self.block + BLK_SET),
-                0,
-                Raw::nil()
-            );
-            self.curSet = set;
+        if (pipe == 0) {
+            return;
         }
+        let layout : i64 = self.pipes.layout;
+        self.bindPipe(rec, pipe, layout);
+        self.bindTexture(rec, layout, set);
         VkFrame::writeDraw(self.push, it);
-        self.ctx.table.cmdPushConstants(
-            cb,
-            self.pipes.layout,
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            0,
-            DRAW_BYTES as i32,
-            Raw::at(self.push)
-        );
+        self.pushDraw(rec, layout);
         Mem::putQword(self.block, BLK_VERTEX, vb);
         self.ctx.table.cmdBindVertexBuffers(
-            cb,
+            rec.cb,
             0,
             1,
             Raw::at(self.block + BLK_VERTEX),
             Raw::at(self.block + BLK_OFFSET)
         );
-        self.ctx.table.cmdBindIndexBuffer(cb, ib, 0, VK_INDEX_TYPE_UINT32);
-        self.ctx.table.cmdDrawIndexed(cb, count, 1, 0, 0, 0);
+        self.ctx.table.cmdBindIndexBuffer(rec.cb, ib, 0, self.meshes.indexType(it.meshSlot));
+        self.ctx.table.cmdDrawIndexed(rec.cb, count, 1, 0, 0, 0);
     }
 
-    /** Record the whole frame into `cb` against swapchain image `index`. */
-    pub(file) fn record(
-        mut self,
-        cb : i64,
-        f : i32,
-        index : i32,
-        scene : Scene,
-        drawOverlay : bool
-    ) : bool {
-        if (!self.cmd.begin(self.ctx, cb)) {
-            return false;
-        }
-        if (drawOverlay) {
-            self.overlay.recordUpload(self.ctx, self.cmd, self.textures, cb, f);
-        }
+    /** The full-screen triangle, with `item`'s vector pushed. */
+    pub(file) fn drawFullscreen(mut self, rec : FrameRec, item : PassItem, layout : i64) : void {
+        VkFrame::writePass(self.push, item);
+        self.pushDraw(rec, layout);
+        self.ctx.table.cmdDraw(rec.cb, 3, 1, 0, 0);
+    }
 
-        let clear : Color = scene.clearColor();
-        Mem::putFloatOf(self.block, BLK_CLEAR / 4, clear.r);
-        Mem::putFloatOf(self.block, BLK_CLEAR / 4 + 1, clear.g);
-        Mem::putFloatOf(self.block, BLK_CLEAR / 4 + 2, clear.b);
+    /** The background, behind every draw of the scene pass. */
+    pub(file) fn recordBackground(mut self, rec : FrameRec, back : PassItem) : void {
+        let set : i64 = self.textures.setOf(back.texSlot);
+        if (!self.shaders.holds(back.shaderSlot, ShaderKind::Background) || set == 0) {
+            return;
+        }
+        let layout : i64 = self.pipes.layout;
+        self.bindPipe(rec, self.shaders.backgroundPipeline(back.shaderSlot), layout);
+        self.bindTexture(rec, layout, set);
+        self.drawFullscreen(rec, back, layout);
+    }
+
+    /** A program's pass, reading `inputs`, into a colour target or into the window. */
+    pub(file) fn recordPass(mut self, rec : FrameRec, pass : PassItem, toWindow : bool, inputs : PassInputs) : void {
+        let pipe : i64 = self.shaders.passPipeline(pass.shaderSlot, toWindow);
+        let set : i64 = self.textures.setOf(pass.texSlot);
+        if (pipe == 0 || set == 0) {
+            return;
+        }
+        let layout : i64 = self.pipes.passLayout;
+        self.bindPipe(rec, pipe, layout);
+        self.bindTexture(rec, layout, set);
+        self.bindSet(rec, layout, 2, self.targets.passSet(inputs.prev, inputs.kept));
+        self.drawFullscreen(rec, pass, layout);
+    }
+
+    /** The scene's colour into the window, when the program has no pass to put it there. */
+    pub(file) fn recordCopy(mut self, rec : FrameRec, inputs : PassInputs) : void {
+        let layout : i64 = self.pipes.passLayout;
+        self.bindPipe(rec, self.pipes.copyPipeline(), layout);
+        self.bindSet(rec, layout, 2, self.targets.passSet(inputs.prev, inputs.kept));
+        self.drawFullscreen(rec, PassItem { keep: false }, layout);
+    }
+
+    /**
+     * Begin a render pass over the whole swapchain-sized area, the viewport and scissor
+     * with it. The clear values are the colour's, then a depth of 1 for a pass that has one.
+     */
+    pub(file) fn beginPass(mut self, rec : FrameRec, begin : PassBegin) : void {
+        let w : i32 = self.swap.w;
+        let h : i32 = self.swap.h;
+        Mem::putFloatOf(self.block, BLK_CLEAR / 4, begin.clear.r);
+        Mem::putFloatOf(self.block, BLK_CLEAR / 4 + 1, begin.clear.g);
+        Mem::putFloatOf(self.block, BLK_CLEAR / 4 + 2, begin.clear.b);
         Mem::putFloatOf(self.block, BLK_CLEAR / 4 + 3, 1.0);
         Mem::putFloatOf(self.block, BLK_CLEAR / 4 + 4, 1.0);
         Mem::putDword(self.block, BLK_CLEAR + 20, 0);
 
-        let w : i32 = self.swap.w;
-        let h : i32 = self.swap.h;
-        let begin : VkRenderPassBeginInfo = VkInit::renderPassBeginInfo();
-        begin.renderPass = self.pipes.renderPass;
-        begin.framebuffer = self.swap.framebuffer(index);
-        begin.renderArea = VkRect2D {
+        let info : VkRenderPassBeginInfo = VkInit::renderPassBeginInfo();
+        info.renderPass = begin.pass;
+        info.framebuffer = begin.framebuffer;
+        info.renderArea = VkRect2D {
             offset: VkOffset2D { x: 0, y: 0 },
             extent: VkExtent2D { width: w, height: h },
         };
-        begin.clearValueCount = 2;
-        begin.pClearValues = Raw::at(self.block + BLK_CLEAR);
-        self.ctx.table.cmdBeginRenderPass(cb, begin, VK_SUBPASS_CONTENTS_INLINE);
+        info.clearValueCount = 2;
+        info.pClearValues = Raw::at(self.block + BLK_CLEAR);
+        self.ctx.table.cmdBeginRenderPass(rec.cb, info, VK_SUBPASS_CONTENTS_INLINE);
 
         self.vp[0] = VkViewport {
             x: (0.0 as f32),
@@ -675,41 +838,134 @@ pub(crate) class VkBackend : GpuBackend {
             offset: VkOffset2D { x: 0, y: 0 },
             extent: VkExtent2D { width: w, height: h },
         };
-        self.ctx.table.cmdSetViewport(cb, 0, 1, VkAddr::viewport(self.vp));
-        self.ctx.table.cmdSetScissor(cb, 0, 1, VkAddr::rect2D(self.sc));
-
-        Mem::putQword(self.block, BLK_SET, self.frameSets[f as i64]);
-        self.ctx.table.cmdBindDescriptorSets(
-            cb,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            self.pipes.layout,
-            0,
-            1,
-            Raw::at(self.block + BLK_SET),
-            0,
-            Raw::nil()
-        );
-
+        self.ctx.table.cmdSetViewport(rec.cb, 0, 1, VkAddr::viewport(self.vp));
+        self.ctx.table.cmdSetScissor(rec.cb, 0, 1, VkAddr::rect2D(self.sc));
         self.curPipe = 0;
+        self.curLayout = 0;
         self.curSet = 0;
-        let n : i32 = scene.drawCount();
-        for (k of 0..n) {
-            self.recordDraw(cb, scene.item(scene.orderAt(k)));
-        }
+    }
 
+    /** The scene pass: the background, then every draw, into colour target 0 and the depth. */
+    pub(file) fn recordScene(mut self, rec : FrameRec, scene : Scene) : void {
+        self.beginPass(
+            rec,
+            PassBegin {
+                pass: self.pipes.scenePass,
+                framebuffer: self.targets.sceneFrame,
+                clear: scene.clearColor(),
+            }
+        );
+        if (scene.hasBackground()) {
+            self.recordBackground(rec, scene.background());
+        }
+        for (k of 0..scene.drawCount()) {
+            self.recordDraw(rec, scene.item(scene.orderAt(k)));
+        }
+        self.ctx.table.cmdEndRenderPass(rec.cb);
+    }
+
+    /**
+     * Every pass of the program's but the last, each into the target its inputs leave
+     * free (`VkTargets::other`). A pass whose shader is gone is skipped.
+     */
+    pub(file) fn recordPasses(mut self, rec : FrameRec, scene : Scene) : PassChain {
+        let runnable : i32 = 0;
+        for (i of 0..scene.passCount()) {
+            if (self.shaders.holds(scene.passAt(i).shaderSlot, ShaderKind::Pass)) {
+                runnable += 1;
+            }
+        }
+        let chain : PassChain = PassChain {
+            inputs: PassInputs { prev: 0, kept: 0 },
+            last: PassItem { keep: false },
+            hasLast: runnable > 0,
+        };
+        let seen : i32 = 0;
+        for (i of 0..scene.passCount()) {
+            let p : PassItem = scene.passAt(i);
+            if (self.shaders.holds(p.shaderSlot, ShaderKind::Pass)) {
+                seen += 1;
+                if (seen == runnable) {
+                    chain.last = p;
+                } else {
+                    let t : i32 = VkTargets::other(chain.inputs.prev, chain.inputs.kept);
+                    self.beginPass(
+                        rec,
+                        PassBegin {
+                            pass: self.pipes.postPass,
+                            framebuffer: self.targets.postFrame(t),
+                            clear: Color::black(),
+                        }
+                    );
+                    self.recordPass(rec, p, false, chain.inputs);
+                    self.ctx.table.cmdEndRenderPass(rec.cb);
+                    let kept : i32 = chain.inputs.kept;
+                    if (p.keep) {
+                        kept = t;
+                    }
+                    chain.inputs = PassInputs { prev: t, kept: kept };
+                }
+            }
+        }
+        return chain;
+    }
+
+    /** The present pass into swapchain image `index`: the last pass or the copy, then the overlay. */
+    pub(file) fn recordPresent(mut self, rec : FrameRec, index : i32, chain : PassChain, drawOverlay : bool) : void {
+        self.beginPass(
+            rec,
+            PassBegin {
+                pass: self.pipes.presentPass,
+                framebuffer: self.swap.framebuffer(index),
+                clear: Color::black(),
+            }
+        );
+        if (chain.hasLast) {
+            self.recordPass(rec, chain.last, true, chain.inputs);
+        } else {
+            self.recordCopy(rec, chain.inputs);
+        }
         if (drawOverlay) {
             self.overlay.recordDraw(
                 self.ctx,
                 self.pipes,
                 self.textures,
-                cb,
+                rec.cb,
                 self.block + BLK_SET,
-                w,
-                h
+                self.swap.w,
+                self.swap.h
             );
         }
-        self.ctx.table.cmdEndRenderPass(cb);
-        return VkErr::ok(self.ctx.table.endCommandBuffer(cb));
+        self.ctx.table.cmdEndRenderPass(rec.cb);
+    }
+
+    /** Record the whole frame into `rec` against swapchain image `index`. */
+    pub(file) fn record(mut self, rec : FrameRec, index : i32, scene : Scene, drawOverlay : bool) : bool {
+        if (!self.cmd.begin(self.ctx, rec.cb)) {
+            return false;
+        }
+        if (drawOverlay) {
+            self.overlay.recordUpload(self.ctx, self.cmd, self.textures, rec.cb, rec.f);
+        }
+        self.uploads.record(self.ctx, self.cmd, self.textures, rec.cb, rec.f);
+        self.recordScene(rec, scene);
+        let chain : PassChain = self.recordPasses(rec, scene);
+        self.recordPresent(rec, index, chain, drawOverlay);
+        if (self.swap.readable) {
+            self.readback.record(
+                self.ctx,
+                self.heap,
+                self.cmd,
+                rec.cb,
+                ReadSource {
+                    image: self.swap.image(index),
+                    w: self.swap.w,
+                    h: self.swap.h,
+                    format: self.swap.format,
+                }
+            );
+        }
+        return VkErr::ok(self.ctx.table.endCommandBuffer(rec.cb));
     }
 
     /** Submit `cb` for image `index`; whether it was submitted (false leaves the backend lost). */
@@ -850,8 +1106,9 @@ pub(crate) class VkBackend : GpuBackend {
             return self.abandon(f);
         }
 
-        VkFrame::writeFrame(self.ubos[k].mapped(), scene);
+        VkFrame::writeFrame(self.ubos[k].mapped(), scene, self.swap.w, self.swap.h);
         let drawOverlay : bool = overlay.used && self.stageOverlay(f, overlay);
+        self.uploads.stage(self.ctx, self.heap, f);
         if (self.lost) {
             // Making the overlay's texture met a lost device.
             return self.abandon(f);
@@ -861,7 +1118,7 @@ pub(crate) class VkBackend : GpuBackend {
         if (!VkErr::ok(self.ctx.table.resetCommandBuffer(cb, 0))) {
             return self.abandon(f);
         }
-        if (!self.record(cb, f, index, scene, drawOverlay)) {
+        if (!self.record(FrameRec { cb: cb, f: f }, index, scene, drawOverlay)) {
             // Nothing was recorded, so nothing would ever signal this slot's fence and the
             // acquire semaphore would be left signalled.
             return self.abandon(f);
@@ -874,7 +1131,32 @@ pub(crate) class VkBackend : GpuBackend {
         if (ar == VK_SUBOPTIMAL_KHR && self.sizeMoved()) {
             self.dirty = true;
         }
-        return self.present();
+        let shown : bool = self.present();
+        self.finishReadback(f);
+        return shown;
+    }
+
+    /**
+     * If frame slot `f`'s frame copied itself out, wait for it and convert its pixels: the
+     * one wait for the GPU a frame can ask for (`Renderer::captureNext`).
+     */
+    pub(file) fn finishReadback(mut self, f : i32) : void {
+        if (!self.readback.isPending()) {
+            return;
+        }
+        Mem::putQword(self.block, BLK_FENCE, self.fences[f as i64]);
+        let wr : i32 = self.ctx.table.waitForFences(
+            self.ctx.device,
+            1,
+            Raw::at(self.block + BLK_FENCE),
+            1,
+            VKB_FOREVER
+        );
+        if (!VkErr::ok(wr)) {
+            self.lost = true;
+            return;
+        }
+        self.readback.finish();
     }
 
     /**
@@ -926,10 +1208,14 @@ pub(crate) class VkBackend : GpuBackend {
             }
         }
         self.overlay.release(self.ctx, self.heap);
+        self.uploads.release(self.ctx, self.heap);
+        self.readback.release(self.ctx, self.heap);
+        self.shaders.destroyAll(self.ctx);
+        self.targets.release(self.ctx, self.heap, self.pipes);
         self.meshes.destroyAll(self.ctx, self.heap);
         self.textures.destroyAll(self.ctx, self.heap, self.pipes);
         self.grave.flush(self.ctx, self.heap, self.pipes.pool);
-        self.swap.destroyBuilt(self.ctx, self.heap);
+        self.swap.destroyBuilt(self.ctx);
         self.pipes.destroy(self.ctx);
         self.cmd.destroy(self.ctx);
         self.heap.destroy(self.ctx);

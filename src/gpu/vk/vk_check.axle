@@ -27,6 +27,7 @@ use crate::gpu::vk::vk_frame::{
     DRAW_ALBEDO, DRAW_BYTES, DRAW_EXTRA, DRAW_MODEL, DRAW_PARAMS, FRAME_AMBIENT, FRAME_BYTES,
     FRAME_COUNTS, FRAME_EYE, FRAME_FOG_COLOR, FRAME_FOG_RANGE, FRAME_LIGHT_COL, FRAME_LIGHT_POS,
     FRAME_SUN_COLOR, FRAME_SUN_DIR, FRAME_VIEW_PROJ, FRAMES_IN_FLIGHT, VkFrame,
+    FRAME_INV_VIEW_PROJ, FRAME_TARGET, FRAME_USER, DRAW_USER,
 };
 use crate::gpu::vk::vk_overlay::VkOverlay;
 use crate::kernel::mem::Mem;
@@ -76,8 +77,8 @@ pub class GpuCheck {
 
     /**
      * 0 when each embedded shader module has the SPIR-V header (magic, version 1.0) and the
-     * size its `*Bytes()` declares, else `10 * module + reason` — module 1..4 in the order
-     * scene vertex, scene fragment, overlay vertex, overlay fragment.
+     * size its `*Bytes()` declares, else `10 * module + reason` — module 1..5 in the order
+     * scene vertex, scene fragment, overlay vertex, overlay fragment, copy.
      */
     pub static fn shaders() : i32 {
         let r : i32 = GpuCheck::module(Spirv::sceneVert(), Spirv::sceneVertBytes());
@@ -96,6 +97,10 @@ pub class GpuCheck {
         if (r != 0) {
             return 40 + r;
         }
+        r = GpuCheck::module(Spirv::copyFrag(), Spirv::copyFragBytes());
+        if (r != 0) {
+            return 50 + r;
+        }
         return 0;
     }
 
@@ -106,7 +111,7 @@ pub class GpuCheck {
      *   1  the `Frame` block's members follow one another with no gap or overlap — so a
      *      point-light array resized on one side only (`Scene::MAX_POINT_LIGHTS` against
      *      the offsets) is caught;
-     *   2  the `Draw` block's likewise;
+     *   2  the `Draw` block's likewise, and within the 128 bytes every device gives;
      *   3  the vertex: offsets increasing, the stride the end of the last field, and a
      *      word count that is the stride;
      *   4  a vertex's layer and an image's layers agree;
@@ -114,11 +119,11 @@ pub class GpuCheck {
      */
     pub static fn constants() : i32 {
         let lamps : i64 = (Scene::MAX_POINT_LIGHTS as i64) * 16;
-        let frameOk : bool = FRAME_VIEW_PROJ == 0 && FRAME_EYE == FRAME_VIEW_PROJ + 64 && FRAME_SUN_DIR == FRAME_EYE + 16 && FRAME_SUN_COLOR == FRAME_SUN_DIR + 16 && FRAME_AMBIENT == FRAME_SUN_COLOR + 16 && FRAME_FOG_COLOR == FRAME_AMBIENT + 16 && FRAME_FOG_RANGE == FRAME_FOG_COLOR + 16 && FRAME_LIGHT_POS == FRAME_FOG_RANGE + 16 && FRAME_LIGHT_COL == FRAME_LIGHT_POS + lamps && FRAME_COUNTS == FRAME_LIGHT_COL + lamps && FRAME_BYTES == FRAME_COUNTS + 16;
+        let frameOk : bool = FRAME_VIEW_PROJ == 0 && FRAME_EYE == FRAME_VIEW_PROJ + 64 && FRAME_SUN_DIR == FRAME_EYE + 16 && FRAME_SUN_COLOR == FRAME_SUN_DIR + 16 && FRAME_AMBIENT == FRAME_SUN_COLOR + 16 && FRAME_FOG_COLOR == FRAME_AMBIENT + 16 && FRAME_FOG_RANGE == FRAME_FOG_COLOR + 16 && FRAME_LIGHT_POS == FRAME_FOG_RANGE + 16 && FRAME_LIGHT_COL == FRAME_LIGHT_POS + lamps && FRAME_COUNTS == FRAME_LIGHT_COL + lamps && FRAME_INV_VIEW_PROJ == FRAME_COUNTS + 16 && FRAME_TARGET == FRAME_INV_VIEW_PROJ + 64 && FRAME_USER == FRAME_TARGET + 16 && FRAME_BYTES == FRAME_USER + (Scene::USER_VECTORS as i64) * 16;
         if (!frameOk) {
             return 1;
         }
-        let drawOk : bool = DRAW_MODEL == 0 && DRAW_ALBEDO == DRAW_MODEL + 64 && DRAW_PARAMS == DRAW_ALBEDO + 16 && DRAW_EXTRA == DRAW_PARAMS + 16 && DRAW_BYTES == DRAW_EXTRA + 16;
+        let drawOk : bool = DRAW_MODEL == 0 && DRAW_ALBEDO == DRAW_MODEL + 64 && DRAW_PARAMS == DRAW_ALBEDO + 16 && DRAW_EXTRA == DRAW_PARAMS + 16 && DRAW_USER == DRAW_EXTRA + 16 && DRAW_BYTES == DRAW_USER + 16 && DRAW_BYTES <= 128;
         if (!drawOk) {
             return 2;
         }
@@ -141,16 +146,17 @@ pub class GpuCheck {
     }
 
     /**
-     * The `Frame` uniform block for `scene`, as the backend writes it each frame: its
-     * 432 bytes as 32-bit words, read back with `Mem::floatOf(Mem::addressOf(words), i)`.
+     * The `Frame` uniform block for `scene` drawn at `w` x `h`, as the backend writes it
+     * each frame: its 1024 bytes as 32-bit words, read back with
+     * `Mem::floatOf(Mem::addressOf(words), i)`.
      */
-    pub static fn frameBlock(scene : Scene) : i32[] {
+    pub static fn frameBlock(scene : Scene, w : i32, h : i32) : i32[] {
         let words : i32[] = malloc<i32>(FRAME_BYTES / 4);
-        VkFrame::writeFrame(Mem::addressOf(words), scene);
+        VkFrame::writeFrame(Mem::addressOf(words), scene, w, h);
         return words;
     }
 
-    /** The `Draw` push block for `item`, as the backend writes it per draw: 112 bytes as words. */
+    /** The `Draw` push block for `item`, as the backend writes it per draw: 128 bytes as words. */
     pub static fn drawBlock(item : DrawItem) : i32[] {
         let words : i32[] = malloc<i32>(DRAW_BYTES / 4);
         for (i of 0..(DRAW_BYTES / 4)) {

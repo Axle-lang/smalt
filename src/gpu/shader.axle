@@ -1,0 +1,61 @@
+// shader — a program's own GPU shading, given to the renderer as SPIR-V.
+//
+// smalt's built-in shading covers what most programs want: a textured mesh lit by a
+// sun, eight lamps and an ambient, fogged. A program whose look is its own — a voxel
+// world lit the way its software renderer lights it, a sky painted from an
+// atmosphere model, a bloom — brings its own stages instead, compiled to SPIR-V
+// (`tools/spirv_tables.py` turns GLSL into the Axle table a program embeds).
+//
+// What smalt still owns is everything around the stages: the vertex format, the
+// blocks they read (`shaders/frame.glsl`: the camera, the lights, thirty-two `user`
+// vectors of the program's own per frame and one per draw), the pipelines, the
+// targets, the order. A shader is one of three kinds, by where it runs:
+//
+//   Mesh        a vertex and a fragment stage for `Scene::add` draws, over smalt's
+//               32-byte vertex; set 1 binding 0 is the draw's texture
+//   Background  a fragment stage drawn over the whole frame before any draw, behind
+//               everything (`Scene::setBackground`) — a sky; set 1 is its texture
+//   Pass        a fragment stage drawn over the whole frame after the draws, reading
+//               what came before it (`Scene::addPass`, `shaders/post.glsl`) — bloom,
+//               a tone curve, an underwater haze
+//
+// A Background or Pass shader has no vertex stage of its own: smalt's full-screen
+// triangle (`shaders/overlay.vert`) feeds it `vUv` at location 0.
+//
+// The CPU fallback (`gpu::soft`) cannot run SPIR-V: there a Mesh shader's draws use the
+// built-in shading and a Background or Pass is not drawn.
+
+/** Where a shader runs. */
+pub enum ShaderKind : i8 {
+    /** The stages of `Scene::add` draws. */
+    Mesh = 0,
+
+    /** A full-screen fragment stage behind every draw. */
+    Background = 1,
+
+    /** A full-screen fragment stage after the draws, reading their result. */
+    Pass = 2,
+}
+
+/**
+ * A shader, as SPIR-V words and their size in bytes.
+ *
+ * `vert` is read for a `Mesh` shader only; a full-screen kind leaves it out. A stage
+ * whose byte count is 0 is no stage, and the shader is refused.
+ */
+pub struct ShaderDesc {
+    /** Where it runs. */
+    pub kind      : ShaderKind = ShaderKind::Mesh;
+
+    /** The vertex stage's SPIR-V, for a `Mesh` shader; unread for the full-screen kinds. */
+    pub vert      : i32[] = [0];
+
+    /** Its size in bytes. */
+    pub vertBytes : i64 = 0;
+
+    /** The fragment stage's SPIR-V. */
+    pub frag      : i32[] = [0];
+
+    /** Its size in bytes. */
+    pub fragBytes : i64 = 0;
+}

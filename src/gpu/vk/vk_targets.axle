@@ -1,0 +1,357 @@
+// vk_targets — the images the 3-D frame is drawn into before it reaches the window.
+//
+// Three colour targets and a depth image, all the size of the window, made and remade
+// with the swapchain. The scene draws into colour target 0 and the depth; a
+// full-screen pass reads one target (the previous pass's) and another (the one kept
+// last), and writes the third; the window gets the result last. Three are always
+// enough: a pass never writes what it reads, and it reads at most two.
+//
+// A pass reads its inputs through set 2 (`shaders/post.glsl`): the previous colour,
+// the kept colour, the scene's depth. Every (previous, kept) pair of the three targets
+// has its set made here, nine of them, so recording a pass binds one and writes none.
+//
+// The colour is sampled with a linear filter, clamped at the edges; the depth with the
+// nearest one — a depth format need not filter. A depth format with a stencil part is
+// sampled through a view of its depth aspect alone.
+//
+// Everything here is used by frames in flight, so it is destroyed only after the device
+// has gone idle — which is when the swapchain is rebuilt, the one time these are.
+
+use crate::gpu::vk::vk_context::VkContext;
+use crate::gpu::vk::vk_error::VkErr;
+use crate::gpu::vk::vk_heap::GpuHeap;
+use crate::gpu::vk::vk_mem::{GpuImage, VkMem};
+use crate::gpu::vk::vk_pipelines::VkPipelines;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::sys::vk::vk_const::{
+    VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+    VK_FILTER_LINEAR, VK_FILTER_NEAREST, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT,
+    VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT,
+    VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+    VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_VIEW_TYPE_2D, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SUCCESS, VK_ERROR_OUT_OF_DEVICE_MEMORY,
+};
+use crate::sys::vk::vk_table::VkAddr;
+use crate::sys::vk::vk_types::{
+    VkDescriptorImageInfo, VkDescriptorSetAllocateInfo, VkFramebufferCreateInfo, VkInit,
+    VkWriteDescriptorSet,
+};
+
+/** Colour targets. */
+pub(crate) const TARGET_COUNT : i32 = 3;
+
+/** The colour targets, the depth, their framebuffers and the sets a pass reads them through. */
+pub(crate) class VkTargets {
+    /** Width of every target. */
+    pub(crate) w  : i32 = 0;
+
+    /** Height of every target. */
+    pub(crate) h  : i32 = 0;
+
+    colors        : GpuImage[];
+    colorViews    : i64[];
+
+    /** One framebuffer per colour target, in the pass render pass. */
+    postFrames    : i64[];
+
+    depth         : GpuImage;
+    depthView     : i64 = 0;
+    depthSample   : i64 = 0;
+
+    /** Colour target 0 and the depth, in the scene render pass. */
+    pub(crate) sceneFrame : i64 = 0;
+
+    linear        : i64 = 0;
+    nearest       : i64 = 0;
+
+    /** `sets[prev * TARGET_COUNT + kept]`. */
+    sets          : i64[];
+
+    /** Nothing made yet. */
+    constructor() {
+        let n : i64 = TARGET_COUNT as i64;
+        self.colors = malloc<GpuImage>(n);
+        self.colorViews = malloc<i64>(n);
+        self.postFrames = malloc<i64>(n);
+        for (i of 0..n) {
+            self.colors[i] = GpuImage::none();
+            self.colorViews[i] = 0;
+            self.postFrames[i] = 0;
+        }
+        self.depth = GpuImage::none();
+        self.sets = malloc<i64>(n * n);
+        for (i of 0..(n * n)) {
+            self.sets[i] = 0;
+        }
+    }
+
+    /** Whether the targets are made. */
+    pub(crate) fn isBuilt(self) : bool {
+        return self.sceneFrame != 0;
+    }
+
+    /** The framebuffer of colour target `i` in the pass render pass. */
+    pub(crate) fn postFrame(self, i : i32) : i64 {
+        return self.postFrames[i as i64];
+    }
+
+    /** The set a pass reads target `prev` as its previous colour and `kept` as its kept one through. */
+    pub(crate) fn passSet(self, prev : i32, kept : i32) : i64 {
+        return self.sets[(prev * TARGET_COUNT + kept) as i64];
+    }
+
+    /** A target that is neither `a` nor `b`. */
+    pub(crate) static fn other(a : i32, b : i32) : i32 {
+        for (i of 0..TARGET_COUNT) {
+            if (i != a && i != b) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    /** A clamped sampler with `filter`; 0 on failure. */
+    pub(file) fn makeSampler(self, ctx : VkContext, filter : i32) : i64 {
+        let info = VkInit::samplerCreateInfo();
+        info.magFilter = filter;
+        info.minFilter = filter;
+        info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        info.maxLod = (0.0 as f32);
+        info.maxAnisotropy = (1.0 as f32);
+        info.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+        let r : i32 = ctx.table.createSampler(ctx.device, info, Raw::at(ctx.scratch));
+        if (!VkErr::ok(r)) {
+            return 0;
+        }
+        return Mem::qwordAt(ctx.scratch, 0);
+    }
+
+    /** A framebuffer of `views` (one or two) at the targets' size; 0 on failure. */
+    pub(file) fn makeFrame(self, ctx : VkContext, pass : i64, a : i64, b : i64) : i64 {
+        let at : i64[] = malloc<i64>(2);
+        at[0] = a;
+        at[1] = b;
+        let fi : VkFramebufferCreateInfo = VkInit::framebufferCreateInfo();
+        fi.renderPass = pass;
+        fi.attachmentCount = 1;
+        if (b != 0) {
+            fi.attachmentCount = 2;
+        }
+        fi.pAttachments = VkAddr::handles(at);
+        fi.width = self.w;
+        fi.height = self.h;
+        fi.layers = 1;
+        let r : i32 = ctx.table.createFramebuffer(ctx.device, fi, Raw::at(ctx.scratch));
+        free(at);
+        if (!VkErr::ok(r)) {
+            return 0;
+        }
+        return Mem::qwordAt(ctx.scratch, 0);
+    }
+
+    /** The set that reads `prev`, `kept` and the depth; 0 on failure. */
+    pub(file) fn makeSet(self, ctx : VkContext, pipes : VkPipelines, prev : i32, kept : i32) : i64 {
+        let layouts : i64[] = malloc<i64>(1);
+        layouts[0] = pipes.passSetLayout;
+        let ai : VkDescriptorSetAllocateInfo = VkInit::descriptorSetAllocateInfo();
+        ai.descriptorPool = pipes.pool;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = VkAddr::handles(layouts);
+        let r : i32 = ctx.table.allocateDescriptorSets(ctx.device, ai, Raw::at(ctx.scratch));
+        free(layouts);
+        if (!VkErr::ok(r)) {
+            return 0;
+        }
+        let set : i64 = Mem::qwordAt(ctx.scratch, 0);
+        let ii : VkDescriptorImageInfo[] = malloc<VkDescriptorImageInfo>(3);
+        ii[0] = VkDescriptorImageInfo {
+            sampler: self.linear,
+            imageView: self.colorViews[prev as i64],
+            imageLayout: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+        ii[1] = VkDescriptorImageInfo {
+            sampler: self.linear,
+            imageView: self.colorViews[kept as i64],
+            imageLayout: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+        ii[2] = VkDescriptorImageInfo {
+            sampler: self.nearest,
+            imageView: self.depthSample,
+            imageLayout: VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+        };
+        let write : VkWriteDescriptorSet = VkInit::writeDescriptorSet();
+        write.dstSet = set;
+        write.dstBinding = 0;
+        write.descriptorCount = 3;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = VkAddr::descriptorImageInfo(ii);
+        let w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
+        w[0] = write;
+        ctx.table.updateDescriptorSets(ctx.device, 1, VkAddr::writeDescriptorSet(w), 0, Raw::nil());
+        free(w);
+        free(ii);
+        return set;
+    }
+
+    /**
+     * Make every target at `w` x `h`; `VK_SUCCESS`, or the error with nothing left
+     * made. Only over targets that are not built (`destroy` first).
+     */
+    pub(crate) fn build(
+        mut self,
+        ctx : VkContext,
+        heap : GpuHeap,
+        pipes : VkPipelines,
+        w : i32,
+        h : i32
+    ) : i32 {
+        self.w = w;
+        self.h = h;
+        if (self.linear == 0) {
+            self.linear = self.makeSampler(ctx, VK_FILTER_LINEAR);
+        }
+        if (self.nearest == 0) {
+            self.nearest = self.makeSampler(ctx, VK_FILTER_NEAREST);
+        }
+        let ok : bool = self.linear != 0 && self.nearest != 0;
+
+        let colorUse : i32 = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        for (i of 0..TARGET_COUNT) {
+            let k : i64 = i as i64;
+            if (ok) {
+                self.colors[k] = VkMem::makeImage(ctx, heap, pipes.targetFormat, w, h, 1, 1, colorUse);
+                ok = !self.colors[k].isNone();
+            }
+            if (ok) {
+                self.colorViews[k] = VkMem::makeView(
+                    ctx,
+                    self.colors[k].image,
+                    pipes.targetFormat,
+                    VK_IMAGE_VIEW_TYPE_2D,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    1,
+                    1
+                );
+                ok = self.colorViews[k] != 0;
+            }
+        }
+
+        let depthUse : i32 = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        if (ok) {
+            self.depth = VkMem::makeImage(ctx, heap, pipes.depthFormat, w, h, 1, 1, depthUse);
+            ok = !self.depth.isNone();
+        }
+        if (ok) {
+            let aspect : i32 = VK_IMAGE_ASPECT_DEPTH_BIT;
+            if (pipes.depthFormat != VK_FORMAT_D32_SFLOAT) {
+                aspect = aspect | VK_IMAGE_ASPECT_STENCIL_BIT;
+            }
+            self.depthView = VkMem::makeView(
+                ctx,
+                self.depth.image,
+                pipes.depthFormat,
+                VK_IMAGE_VIEW_TYPE_2D,
+                aspect,
+                1,
+                1
+            );
+            self.depthSample = VkMem::makeView(
+                ctx,
+                self.depth.image,
+                pipes.depthFormat,
+                VK_IMAGE_VIEW_TYPE_2D,
+                VK_IMAGE_ASPECT_DEPTH_BIT,
+                1,
+                1
+            );
+            ok = self.depthView != 0 && self.depthSample != 0;
+        }
+
+        if (ok) {
+            self.sceneFrame = self.makeFrame(ctx, pipes.scenePass, self.colorViews[0], self.depthView);
+            ok = self.sceneFrame != 0;
+        }
+        for (i of 0..TARGET_COUNT) {
+            let k : i64 = i as i64;
+            if (ok) {
+                self.postFrames[k] = self.makeFrame(ctx, pipes.postPass, self.colorViews[k], 0);
+                ok = self.postFrames[k] != 0;
+            }
+        }
+        for (p of 0..TARGET_COUNT) {
+            for (q of 0..TARGET_COUNT) {
+                if (ok) {
+                    let set : i64 = self.makeSet(ctx, pipes, p, q);
+                    self.sets[(p * TARGET_COUNT + q) as i64] = set;
+                    ok = set != 0;
+                }
+            }
+        }
+        if (!ok) {
+            self.destroy(ctx, heap, pipes);
+            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        }
+        return VK_SUCCESS;
+    }
+
+    /**
+     * Destroy what is built, keeping the two samplers. Only once the device is idle:
+     * the frames in flight draw into these and read them.
+     */
+    pub(crate) fn destroy(mut self, ctx : VkContext, heap : GpuHeap, pipes : VkPipelines) : void {
+        let n : i32 = TARGET_COUNT * TARGET_COUNT;
+        for (i of 0..n) {
+            let k : i64 = i as i64;
+            if (self.sets[k] != 0) {
+                Mem::putQword(ctx.scratch, 0, self.sets[k]);
+                ctx.table.freeDescriptorSets(ctx.device, pipes.pool, 1, Raw::at(ctx.scratch));
+                self.sets[k] = 0;
+            }
+        }
+        for (i of 0..TARGET_COUNT) {
+            let k : i64 = i as i64;
+            if (self.postFrames[k] != 0) {
+                ctx.table.destroyFramebuffer(ctx.device, self.postFrames[k]);
+                self.postFrames[k] = 0;
+            }
+            if (self.colorViews[k] != 0) {
+                ctx.table.destroyImageView(ctx.device, self.colorViews[k]);
+                self.colorViews[k] = 0;
+            }
+            VkMem::destroyImage(ctx, heap, self.colors[k]);
+            self.colors[k] = GpuImage::none();
+        }
+        if (self.sceneFrame != 0) {
+            ctx.table.destroyFramebuffer(ctx.device, self.sceneFrame);
+            self.sceneFrame = 0;
+        }
+        if (self.depthSample != 0) {
+            ctx.table.destroyImageView(ctx.device, self.depthSample);
+            self.depthSample = 0;
+        }
+        if (self.depthView != 0) {
+            ctx.table.destroyImageView(ctx.device, self.depthView);
+            self.depthView = 0;
+        }
+        VkMem::destroyImage(ctx, heap, self.depth);
+        self.depth = GpuImage::none();
+    }
+
+    /** Destroy everything, the samplers too — teardown, after the device is idle. */
+    pub(crate) fn release(mut self, ctx : VkContext, heap : GpuHeap, pipes : VkPipelines) : void {
+        self.destroy(ctx, heap, pipes);
+        if (self.linear != 0) {
+            ctx.table.destroySampler(ctx.device, self.linear);
+            self.linear = 0;
+        }
+        if (self.nearest != 0) {
+            ctx.table.destroySampler(ctx.device, self.nearest);
+            self.nearest = 0;
+        }
+    }
+}

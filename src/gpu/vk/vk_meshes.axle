@@ -17,6 +17,12 @@
 // and buries the old pair for the graveyard to free once no frame can name it. The cost is
 // one allocation per update, which the heap makes cheap, and the price of correctness.
 //
+// # Index width
+//
+// A `MeshBuilder` holds 32-bit indices. A mesh of at most 65 536 vertices — every index
+// then fits in 16 bits — gets a 16-bit index buffer instead, half the size; the width is
+// decided per upload, from the vertex count, and the draw binds the buffer with it.
+//
 // # Slots
 //
 // Slot numbers are the backend's; `Renderer` hides them behind generation-checked handles.
@@ -27,7 +33,13 @@ use crate::gpu::vk::vk_graveyard::VkGraveyard;
 use crate::gpu::vk::vk_heap::GpuHeap;
 use crate::gpu::vk::vk_mem::{GpuBuffer, MemUse, VkMem};
 use crate::kernel::mem::Mem;
-use crate::sys::vk::vk_const::{VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT};
+use crate::sys::vk::vk_const::{
+    VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_INDEX_TYPE_UINT16,
+    VK_INDEX_TYPE_UINT32,
+};
+
+/** The most vertices a mesh may have and still be indexed in 16 bits. */
+const NARROW_VERTICES : i32 = 65536;
 
 /** Meshes uploaded to the GPU. */
 pub(crate) class VkMeshes {
@@ -36,6 +48,7 @@ pub(crate) class VkMeshes {
     vbufs   : GpuBuffer[];
     ibufs   : GpuBuffer[];
     indices : i32[];
+    narrow  : i32[];
 
     /** A table of `capacity` mesh slots. */
     constructor(capacity : i32) {
@@ -45,11 +58,13 @@ pub(crate) class VkMeshes {
         self.vbufs = malloc<GpuBuffer>(n);
         self.ibufs = malloc<GpuBuffer>(n);
         self.indices = malloc<i32>(n);
+        self.narrow = malloc<i32>(n);
         for (i of 0..n) {
             self.live[i] = 0;
             self.vbufs[i] = GpuBuffer::none();
             self.ibufs[i] = GpuBuffer::none();
             self.indices[i] = 0;
+            self.narrow[i] = 0;
         }
     }
 
@@ -87,6 +102,19 @@ pub(crate) class VkMeshes {
         return self.indices[slot as i64];
     }
 
+    /** The `VkIndexType` mesh `slot`'s index buffer is bound with. */
+    pub(crate) fn indexType(self, slot : i32) : i32 {
+        if (slot >= 0 && slot < self.cap && self.narrow[slot as i64] != 0) {
+            return VK_INDEX_TYPE_UINT16;
+        }
+        return VK_INDEX_TYPE_UINT32;
+    }
+
+    /** Whether `mesh` can be indexed in 16 bits. */
+    pub(file) static fn isNarrow(mesh : MeshBuilder) : bool {
+        return mesh.vertices() <= NARROW_VERTICES;
+    }
+
     /**
      * Make the two buffers for `mesh` and copy its data in.
      *
@@ -109,10 +137,15 @@ pub(crate) class VkMeshes {
             VkMem::destroyBuffer(ctx, heap, vb);
             return (GpuBuffer::none(), GpuBuffer::none());
         }
+        let narrow : bool = VkMeshes::isNarrow(mesh);
+        let indexBytes : i64 = mesh.indexBytes();
+        if (narrow) {
+            indexBytes = (mesh.indexSlots() as i64) * 2;
+        }
         let ib : GpuBuffer = VkMem::makeBuffer(
             ctx,
             heap,
-            mesh.indexBytes(),
+            indexBytes,
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
             MemUse::Stream
         );
@@ -122,7 +155,13 @@ pub(crate) class VkMeshes {
             return (GpuBuffer::none(), GpuBuffer::none());
         }
         Mem::copy(vb.mapped(), mesh.vertexBase(), mesh.vertexBytes());
-        Mem::copy(ib.mapped(), mesh.indexBase(), mesh.indexBytes());
+        if (narrow) {
+            for (i of 0..(mesh.indexSlots() as i64)) {
+                Mem::putWord(ib.mapped(), i * 2, Mem::wordOf(mesh.indexBase(), i));
+            }
+        } else {
+            Mem::copy(ib.mapped(), mesh.indexBase(), mesh.indexBytes());
+        }
         return (vb, ib);
     }
 
@@ -138,6 +177,7 @@ pub(crate) class VkMeshes {
         self.vbufs[s] = vb;
         self.ibufs[s] = ib;
         self.indices[s] = mesh.indexSlots();
+        self.narrow[s] = VkMeshes::isNarrow(mesh) ? 1 : 0;
         self.live[s] = 1;
     }
 

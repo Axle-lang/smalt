@@ -48,6 +48,35 @@ pub struct SamplerDesc {
 
     /** Repeat past the edge (a tiled floor); false clamps to the edge texel. */
     pub repeat     : bool = true;
+
+    /**
+     * The texels are sRGB-encoded colours, to be read as linear light: the GPU decodes
+     * each texel before it filters (an `_SRGB` format), and the mip chain is averaged in
+     * linear light, so a distant surface keeps the brightness it has close up instead of
+     * darkening as its texels are averaged as bytes. Off by default: the bytes are read
+     * as they are, which is what the built-in shading expects.
+     */
+    pub srgb       : bool = false;
+}
+
+/** One mip level of one layer: `w` x `h` texels of `words`, from `at`. */
+struct MipPlane {
+    words : i32[],
+    at    : i64,
+    w     : i32,
+    h     : i32,
+
+    /** The texel at (`x`, `y`), clamped to the plane's last row and column. */
+    fn texel(self, x : i32, y : i32) : i32 {
+        let cx : i32 = x.min(self.w - 1);
+        let cy : i32 = y.min(self.h - 1);
+        return self.words[self.at + (cy as i64) * (self.w as i64) + (cx as i64)];
+    }
+}
+
+/** Write the texel at (`x`, `y`) of `p`. */
+fn putTexel(p : MipPlane, x : i32, y : i32, word : i32) : void {
+    p.words[p.at + (y as i64) * (p.w as i64) + (x as i64)] = word;
 }
 
 /** An RGBA image of one or more layers. */
@@ -283,7 +312,16 @@ pub class Image {
      * header for how a level is made; `cutout` is `SamplerDesc::cutout`.
      */
     pub fn mipTail(self, levels : i32, cutout : f64) : i32[] {
+        return self.mipTailOf(levels, cutout, false);
+    }
+
+    /**
+     * `mipTail`, averaging the colour in linear light when `srgb` — the chain of a
+     * texture sampled with `SamplerDesc::srgb`.
+     */
+    pub fn mipTailOf(self, levels : i32, cutout : f64, srgb : bool) : i32[] {
         let tail : i32[] = malloc<i32>(self.mipTailWords(levels).max(1));
+        let lin : f64[] = Image::decodeTable(srgb);
         let cut : i32 = (cutout.max(0.0).min(1.0) * 255.0 + 0.5).floorToInt() as i32;
         let at : i64 = 0;
         // Level by level, each layer read from the level above: level 0 is `words`,
@@ -300,11 +338,11 @@ pub class Image {
             for (l of 0..self.layers) {
                 let src : i64 = srcAt + (l as i64) * srcPlane;
                 let dst : i64 = levelAt + (l as i64) * dstPlane;
+                let from : MipPlane = MipPlane { words: tail, at: src, w: sw, h: sh };
                 if (m == 1) {
-                    Image::downsample(self.words, src, sw, sh, tail, dst, dw, dh);
-                } else {
-                    Image::downsample(tail, src, sw, sh, tail, dst, dw, dh);
+                    from = MipPlane { words: self.words, at: src, w: sw, h: sh };
                 }
+                Image::downsample(from, MipPlane { words: tail, at: dst, w: dw, h: dh }, lin);
                 if (cut > 0) {
                     let want : f64 = Image::coverage(
                         self.words,
@@ -320,26 +358,52 @@ pub class Image {
             sw = dw;
             sh = dh;
         }
+        free(lin);
         return tail;
     }
 
     /**
-     * Write the `dw` x `dh` level below the `sw` x `sh` plane at `src[srcAt]` into
-     * `dst[dstAt]`: each texel the 2 x 2 box above it (clamped at an odd edge), its
-     * colour weighted by alpha and its alpha the plain mean.
+     * The sRGB decode table, one linear value per byte — or, for `srgb` false, a table of
+     * one entry that says "average the bytes as they are".
      */
-    pub(file) static fn downsample(
-        src : i32[],
-        srcAt : i64,
-        sw : i32,
-        sh : i32,
-        dst : i32[],
-        dstAt : i64,
-        dw : i32,
-        dh : i32
-    ) : void {
-        for (y of 0..dh) {
-            for (x of 0..dw) {
+    pub(file) static fn decodeTable(srgb : bool) : f64[] {
+        if (!srgb) {
+            return [0.0];
+        }
+        let t : f64[] = malloc<f64>(256);
+        for (i of 0..256) {
+            let s : f64 = (i as f64) / 255.0;
+            if (s <= 0.04045) {
+                t[i as i64] = s / 12.92;
+            } else {
+                t[i as i64] = ((s + 0.055) / 1.055).pow(2.4);
+            }
+        }
+        return t;
+    }
+
+    /** Linear light back to an sRGB byte. */
+    pub(file) static fn encodeByte(x : f64) : i32 {
+        let c : f64 = x.max(0.0).min(1.0);
+        let s : f64 = c * 12.92;
+        if (c > 0.0031308) {
+            s = 1.055 * c.pow(1.0 / 2.4) - 0.055;
+        }
+        return ((s * 255.0) + 0.5).floorToInt() as i32;
+    }
+
+    /**
+     * Fill `dst`, the level below `src`: each texel the 2 x 2 box above it (clamped at an
+     * odd edge), its colour weighted by alpha and its alpha the plain mean. With a
+     * 256-entry `lin` table the colour is averaged in linear light and encoded back.
+     */
+    pub(file) static fn downsample(src : MipPlane, dst : MipPlane, lin : f64[]) : void {
+        if (lin.length == 256) {
+            Image::downsampleLinear(src, dst, lin);
+            return;
+        }
+        for (y of 0..dst.h) {
+            for (x of 0..dst.w) {
                 let r : i64 = 0;
                 let g : i64 = 0;
                 let b : i64 = 0;
@@ -348,9 +412,7 @@ pub class Image {
                 let pg : i64 = 0;
                 let pb : i64 = 0;
                 for (k of 0..4) {
-                    let sx : i32 = (x * 2 + (k & 1)).min(sw - 1);
-                    let sy : i32 = (y * 2 + (k >> 1)).min(sh - 1);
-                    let t : i32 = src[srcAt + (sy as i64) * (sw as i64) + (sx as i64)];
+                    let t : i32 = src.texel(x * 2 + (k & 1), y * 2 + (k >> 1));
                     let ta : i64 = ((t >>> 24) & 0xFF) as i64;
                     let tr : i64 = ((t >>> 16) & 0xFF) as i64;
                     let tg : i64 = ((t >>> 8) & 0xFF) as i64;
@@ -375,12 +437,53 @@ pub class Image {
                     b = (b + 2) / 4;
                 }
                 let alpha : i64 = (a + 2) / 4;
-                dst[dstAt + (y as i64) * (dw as i64) + (x as i64)] = Image::pack(
-                    r as i32,
-                    g as i32,
-                    b as i32,
+                putTexel(dst, x, y, Image::pack(r as i32, g as i32, b as i32, alpha as i32));
+            }
+        }
+    }
+
+    /** `downsample`, the colour averaged in linear light (`lin` is the sRGB decode table). */
+    pub(file) static fn downsampleLinear(src : MipPlane, dst : MipPlane, lin : f64[]) : void {
+        for (y of 0..dst.h) {
+            for (x of 0..dst.w) {
+                let r : f64 = 0.0;
+                let g : f64 = 0.0;
+                let b : f64 = 0.0;
+                let pr : f64 = 0.0;
+                let pg : f64 = 0.0;
+                let pb : f64 = 0.0;
+                let a : i64 = 0;
+                for (k of 0..4) {
+                    let t : i32 = src.texel(x * 2 + (k & 1), y * 2 + (k >> 1));
+                    let ta : i64 = ((t >>> 24) & 0xFF) as i64;
+                    let tr : f64 = lin[((t >>> 16) & 0xFF) as i64];
+                    let tg : f64 = lin[((t >>> 8) & 0xFF) as i64];
+                    let tb : f64 = lin[(t & 0xFF) as i64];
+                    r += tr;
+                    g += tg;
+                    b += tb;
+                    a += ta;
+                    pr += tr * (ta as f64);
+                    pg += tg * (ta as f64);
+                    pb += tb * (ta as f64);
+                }
+                if (a > 0) {
+                    r = pr / (a as f64);
+                    g = pg / (a as f64);
+                    b = pb / (a as f64);
+                } else {
+                    r = r * 0.25;
+                    g = g * 0.25;
+                    b = b * 0.25;
+                }
+                let alpha : i64 = (a + 2) / 4;
+                let word : i32 = Image::pack(
+                    Image::encodeByte(r),
+                    Image::encodeByte(g),
+                    Image::encodeByte(b),
                     alpha as i32
                 );
+                putTexel(dst, x, y, word);
             }
         }
     }
