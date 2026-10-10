@@ -138,7 +138,7 @@ pub(crate) class VkMeshes {
             return (GpuBuffer::none(), GpuBuffer::none());
         }
         let narrow : bool = VkMeshes::isNarrow(mesh);
-        let indexBytes : i64 = mesh.indexBytes();
+        let mut indexBytes : i64 = mesh.indexBytes();
         if (narrow) {
             indexBytes = (mesh.indexSlots() as i64) * 2;
         }

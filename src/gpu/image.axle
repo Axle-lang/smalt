@@ -245,8 +245,8 @@ pub class Image {
 
     /** Mip levels a `w` x `h` image has: floor(log2(max)) + 1. */
     pub static fn mipLevels(w : i32, h : i32) : i32 {
-        let m : i32 = w.max(h).max(1);
-        let levels : i32 = 1;
+        let mut m : i32 = w.max(h).max(1);
+        let mut levels : i32 = 1;
         while (m > 1) {
             m = m / 2;
             levels += 1;
@@ -256,7 +256,7 @@ pub class Image {
 
     /** A side of `side` texels at mip level `m`: halved `m` times, at least 1. */
     pub static fn levelSide(side : i32, m : i32) : i32 {
-        let s : i32 = side.max(1);
+        let mut s : i32 = side.max(1);
         for (i of 0..m) {
             s = (s / 2).max(1);
         }
@@ -265,10 +265,10 @@ pub class Image {
 
     /** Words in mip levels 1 .. `levels - 1`, every layer. */
     pub fn mipTailWords(self, levels : i32) : i64 {
-        let total : i64 = 0;
+        let mut total : i64 = 0;
         for (m of 1..levels) {
             let lw : i64 = Image::levelSide(self.w, m) as i64;
-            let lh : i64 = Image::levelSide(self.h, m) as i64;
+            let mut lh : i64 = Image::levelSide(self.h, m) as i64;
             total += lw * lh * (self.layers as i64);
         }
         return total;
@@ -279,7 +279,7 @@ pub class Image {
         if (count <= 0) {
             return 0.0;
         }
-        let pass : i64 = 0;
+        let mut pass : i64 = 0;
         for (i of 0..count) {
             if (((words[start + i] >>> 24) & 0xFF) >= cut) {
                 pass += 1;
@@ -296,7 +296,7 @@ pub class Image {
         cut : i32,
         s : f64
     ) : f64 {
-        let pass : i64 = 0;
+        let mut pass : i64 = 0;
         for (i of 0..count) {
             let a : f64 = (((words[start + i] >>> 24) & 0xFF) as f64) * s;
             if (a.min(255.0) >= (cut as f64)) {
@@ -323,12 +323,12 @@ pub class Image {
         let tail : i32[] = malloc<i32>(self.mipTailWords(levels).max(1));
         let lin : f64[] = Image::decodeTable(srgb);
         let cut : i32 = (cutout.max(0.0).min(1.0) * 255.0 + 0.5).floorToInt() as i32;
-        let at : i64 = 0;
+        let mut at : i64 = 0;
         // Level by level, each layer read from the level above: level 0 is `words`,
         // every later one is the part of `tail` written the step before.
-        let srcAt : i64 = 0;
-        let sw : i32 = self.w;
-        let sh : i32 = self.h;
+        let mut srcAt : i64 = 0;
+        let mut sw : i32 = self.w;
+        let mut sh : i32 = self.h;
         for (m of 1..levels) {
             let dw : i32 = Image::levelSide(self.w, m);
             let dh : i32 = Image::levelSide(self.h, m);
@@ -338,7 +338,7 @@ pub class Image {
             for (l of 0..self.layers) {
                 let src : i64 = srcAt + (l as i64) * srcPlane;
                 let dst : i64 = levelAt + (l as i64) * dstPlane;
-                let from : MipPlane = MipPlane { words: tail, at: src, w: sw, h: sh };
+                let mut from : MipPlane = MipPlane { words: tail, at: src, w: sw, h: sh };
                 if (m == 1) {
                     from = MipPlane { words: self.words, at: src, w: sw, h: sh };
                 }
@@ -370,7 +370,7 @@ pub class Image {
         if (!srgb) {
             return [0.0];
         }
-        let t : f64[] = malloc<f64>(256);
+        let mut t : f64[] = malloc<f64>(256);
         for (i of 0..256) {
             let s : f64 = (i as f64) / 255.0;
             if (s <= 0.04045) {
@@ -384,8 +384,8 @@ pub class Image {
 
     /** Linear light back to an sRGB byte. */
     pub(file) static fn encodeByte(x : f64) : i32 {
-        let c : f64 = x.max(0.0).min(1.0);
-        let s : f64 = c * 12.92;
+        let mut c : f64 = x.max(0.0).min(1.0);
+        let mut s : f64 = c * 12.92;
         if (c > 0.0031308) {
             s = 1.055 * c.pow(1.0 / 2.4) - 0.055;
         }
@@ -404,16 +404,16 @@ pub class Image {
         }
         for (y of 0..dst.h) {
             for (x of 0..dst.w) {
-                let r : i64 = 0;
-                let g : i64 = 0;
-                let b : i64 = 0;
-                let a : i64 = 0;
-                let pr : i64 = 0;
-                let pg : i64 = 0;
-                let pb : i64 = 0;
+                let mut r : i64 = 0;
+                let mut g : i64 = 0;
+                let mut b : i64 = 0;
+                let mut a : i64 = 0;
+                let mut pr : i64 = 0;
+                let mut pg : i64 = 0;
+                let mut pb : i64 = 0;
                 for (k of 0..4) {
                     let t : i32 = src.texel(x * 2 + (k & 1), y * 2 + (k >> 1));
-                    let ta : i64 = ((t >>> 24) & 0xFF) as i64;
+                    let mut ta : i64 = ((t >>> 24) & 0xFF) as i64;
                     let tr : i64 = ((t >>> 16) & 0xFF) as i64;
                     let tg : i64 = ((t >>> 8) & 0xFF) as i64;
                     let tb : i64 = (t & 0xFF) as i64;
@@ -446,16 +446,16 @@ pub class Image {
     pub(file) static fn downsampleLinear(src : MipPlane, dst : MipPlane, lin : f64[]) : void {
         for (y of 0..dst.h) {
             for (x of 0..dst.w) {
-                let r : f64 = 0.0;
-                let g : f64 = 0.0;
-                let b : f64 = 0.0;
-                let pr : f64 = 0.0;
-                let pg : f64 = 0.0;
-                let pb : f64 = 0.0;
-                let a : i64 = 0;
+                let mut r : f64 = 0.0;
+                let mut g : f64 = 0.0;
+                let mut b : f64 = 0.0;
+                let mut pr : f64 = 0.0;
+                let mut pg : f64 = 0.0;
+                let mut pb : f64 = 0.0;
+                let mut a : i64 = 0;
                 for (k of 0..4) {
                     let t : i32 = src.texel(x * 2 + (k & 1), y * 2 + (k >> 1));
-                    let ta : i64 = ((t >>> 24) & 0xFF) as i64;
+                    let mut ta : i64 = ((t >>> 24) & 0xFF) as i64;
                     let tr : f64 = lin[((t >>> 16) & 0xFF) as i64];
                     let tg : f64 = lin[((t >>> 8) & 0xFF) as i64];
                     let tb : f64 = lin[(t & 0xFF) as i64];
@@ -500,8 +500,8 @@ pub class Image {
         cut : i32,
         want : f64
     ) : void {
-        let lo : f64 = 0.0;
-        let hi : f64 = 4.0;
+        let mut lo : f64 = 0.0;
+        let mut hi : f64 = 4.0;
         for (step of 0..12) {
             let mid : f64 = (lo + hi) * 0.5;
             if (Image::scaledCoverage(words, start, count, cut, mid) < want) {

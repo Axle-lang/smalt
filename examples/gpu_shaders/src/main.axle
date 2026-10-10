@@ -99,7 +99,7 @@ fn check(px : FramePixels, back : i32) : i32 {
         return 2;
     }
     let f = px.frame();
-    let fails : i32 = 0;
+    let mut fails : i32 = 0;
     let corner : i32 = f.at(4, 4);
     let br : i32 = (back >> 16) & 0xFF;
     let bg : i32 = (back >> 8) & 0xFF;
@@ -167,13 +167,13 @@ fn run() : i32 ! PlatformError {
 
     let backTex = gfx.uploadTexture(solid2(backColor(0)), SamplerDesc { nearest: true, mipmaps: false });
     let mesh = gfx.uploadMesh(quad());
-    let flat = Material::baked();
+    let mut flat = Material::baked();
     flat.cullBackface = false;
 
     let scene = new Scene(4);
     scene.setViewProjection(Mat4::identity(), Vec3::zero());
     scene.setBackground(background, backTex);
-    let fails : i32 = 0;
+    let mut fails : i32 = 0;
     for (n of 0..FRAMES) {
         events.pump(win, clock);
         gfx.updateTexture(backTex, solid2(backColor(n)));

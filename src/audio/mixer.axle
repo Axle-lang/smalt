@@ -273,7 +273,7 @@ pub class Mixer : Closeable {
     pub(file) fn mixVoice(mut self, v : i32, dst : ptr, frames : i32) : void {
         let gain : f64 = self.voiceGain(v);
         let total : i32 = self.voices[v].frames;
-        let cursor : i32 = self.voices[v].cursor;
+        let mut cursor : i32 = self.voices[v].cursor;
         // Resolved once, not per sample: the address is fixed for the
         // whole run, and re-deriving it inside the loop is a cast per
         // sample per voice — a thousand of them per block, per voice.
@@ -284,7 +284,7 @@ pub class Mixer : Closeable {
         // when the sound ends rather than when they walk back. So the
         // silent case skips the mixing, not the loop.
         if (gain <= 0.0) {
-            let skipped : i32 = total - cursor;
+            let mut skipped : i32 = total - cursor;
             if (skipped > frames) {
                 skipped = frames;
             }
@@ -304,7 +304,7 @@ pub class Mixer : Closeable {
             let frame : i64 = (i as i64) * (AUDIO_CHANNELS as i64) * Mixer::SAMPLE_BYTES;
             for (c of 0..AUDIO_CHANNELS) {
                 let off : i64 = frame + (c as i64) * Mixer::SAMPLE_BYTES;
-                let sum : i32 = Raw::i16At(dst, off) + add;
+                let mut sum : i32 = Raw::i16At(dst, off) + add;
                 // Clamp rather than wrap: a wrapped sum is a loud click,
                 // which is worse than the distortion clamping costs when
                 // many voices land on the same frame.

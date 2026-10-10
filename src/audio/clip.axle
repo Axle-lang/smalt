@@ -139,15 +139,15 @@ pub class Clip : Closeable {
             return;
         }
 
-        let channels : i32 = 0;
-        let rate : i32 = 0;
-        let dataOff : i64 = 0;
-        let dataLen : i64 = 0;
+        let mut channels : i32 = 0;
+        let mut rate : i32 = 0;
+        let mut dataOff : i64 = 0;
+        let mut dataLen : i64 = 0;
 
-        let at : i64 = WAV_FIRST_CHUNK;
+        let mut at : i64 = WAV_FIRST_CHUNK;
         while (at + WAV_CHUNK_HEADER <= n) {
             let id : i32 = fourCC(base, at);
-            let size : i64 = (Raw::i32At(base, at + 4) as i64) & 4294967295;
+            let mut size : i64 = (Raw::i32At(base, at + 4) as i64) & 4294967295;
             let body : i64 = at + WAV_CHUNK_HEADER;
             if (body + size > n) {
                 // A chunk that claims more than the file holds: stop
@@ -190,12 +190,12 @@ pub class Clip : Closeable {
         self.samples = new Blob((outFrames as i64) * Clip::SAMPLE_BYTES);
         let dst : ptr = self.samples.at();
         for (i of 0..outFrames) {
-            let src : i32 = (((i as i64) * (rate as i64)) / (AUDIO_RATE as i64)) as i32;
+            let mut src : i32 = (((i as i64) * (rate as i64)) / (AUDIO_RATE as i64)) as i32;
             if (src >= srcFrames) {
                 src = srcFrames - 1;
             }
             let off : i64 = dataOff + (src as i64) * Clip::SAMPLE_BYTES * (channels as i64);
-            let v : i32 = Raw::i16At(base, off);
+            let mut v : i32 = Raw::i16At(base, off);
             if (channels > 1) {
                 v = (v + Raw::i16At(base, off + Clip::SAMPLE_BYTES)) / 2;
             }

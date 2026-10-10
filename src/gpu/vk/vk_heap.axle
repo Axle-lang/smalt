@@ -204,7 +204,7 @@ pub(crate) class GpuHeap {
 
     /** Move ranges `from..n` of block `b` up by one slot, making a hole at `from`. */
     pub(file) fn rOpen(mut self, b : i32, fromIdx : i32) : void {
-        let i : i32 = self.rangeN[b as i64];
+        let mut i : i32 = self.rangeN[b as i64];
         while (i > fromIdx) {
             self.rPut(b, i, self.rOff(b, i - 1), self.rSize(b, i - 1));
             i -= 1;
@@ -214,7 +214,7 @@ pub(crate) class GpuHeap {
 
     /** Remove range `at` of block `b`, closing the gap. */
     pub(file) fn rClose(mut self, b : i32, at : i32) : void {
-        let i : i32 = at;
+        let mut i : i32 = at;
         let last : i32 = self.rangeN[b as i64] - 1;
         while (i < last) {
             self.rPut(b, i, self.rOff(b, i + 1), self.rSize(b, i + 1));
@@ -280,7 +280,7 @@ pub(crate) class GpuHeap {
         size : i64,
         dedicated : i32
     ) : i32 {
-        let slot : i32 = -1;
+        let mut slot : i32 = -1;
         for (i of 0..GpuHeap::MAX_BLOCKS) {
             if (slot < 0 && self.live[i as i64] == 0) {
                 slot = i;
@@ -293,17 +293,17 @@ pub(crate) class GpuHeap {
         if (ranges == 0) {
             return -1;
         }
-        let info = VkInit::memoryAllocateInfo();
+        let mut info = VkInit::memoryAllocateInfo();
         info.allocationSize = size;
         info.memoryTypeIndex = memType;
-        let r : i32 = ctx.table.allocateMemory(ctx.device, info, Raw::at(ctx.scratch));
+        let mut r : i32 = ctx.table.allocateMemory(ctx.device, info, Raw::at(ctx.scratch));
         if (r < 0) {
             Mem::release(ranges);
             self.full[memType as i64] = 1;
             return -1;
         }
         let mem : i64 = Mem::qwordAt(ctx.scratch, 0);
-        let map : i64 = 0;
+        let mut map : i64 = 0;
         if ((self.typeFlags[memType as i64] & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
             r = ctx.table.mapMemory(ctx.device, mem, 0, size, 0, Raw::at(ctx.scratch));
             if (r < 0) {
@@ -333,7 +333,7 @@ pub(crate) class GpuHeap {
 
     /** The piece of block `b` at `at` for `size`, as an allocation. */
     pub(file) fn made(self, b : i32, at : i64, size : i64) : HeapAlloc {
-        let map : i64 = self.mapped[b as i64];
+        let mut map : i64 = self.mapped[b as i64];
         if (map != 0) {
             map += at;
         }
@@ -408,7 +408,7 @@ pub(crate) class GpuHeap {
      * `BLOCK_BYTES`, and never less than twice the request that asks for it.
      */
     pub(file) fn nextBlockBytes(self, memType : i32, linear : i32, size : i64) : i64 {
-        let held : i64 = 0;
+        let mut held : i64 = 0;
         for (b of 0..self.high) {
             let bi : i64 = b as i64;
             if (self.live[bi] != 0 && self.dedicated[bi] == 0 && self.types[bi] == memType && self.linear[bi] == linear) {
@@ -446,7 +446,7 @@ pub(crate) class GpuHeap {
         let b : i32 = a.block;
         let bi : i64 = b as i64;
         let n : i32 = self.rangeN[bi];
-        let i : i32 = 0;
+        let mut i : i32 = 0;
         while (i < n && self.rOff(b, i) < a.offset) {
             i += 1;
         }
@@ -472,7 +472,7 @@ pub(crate) class GpuHeap {
         }
         self.freeBytes[bi] += a.size;
         if (self.freeBytes[bi] == self.sizes[bi]) {
-            let others : i32 = 0;
+            let mut others : i32 = 0;
             for (k of 0..self.high) {
                 let ki : i64 = k as i64;
                 if (k != b && self.live[ki] != 0 && self.dedicated[ki] == 0 && self.types[ki] == self.types[bi] && self.linear[ki] == self.linear[bi]) {

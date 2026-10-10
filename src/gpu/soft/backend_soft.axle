@@ -270,7 +270,7 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
      * colour folded into its ambient factor (the CPU has one white ambient).
      */
     pub(file) static fn shaded(m : Material, ambient : Color) : Material {
-        let out : Material = m;
+        let mut out : Material = m;
         out.ambient = m.ambient * ((ambient.r + ambient.g + ambient.b) / 3.0);
         return out;
     }
@@ -282,7 +282,7 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
         }
         let sun : DirectionalLight = scene.sunLight();
         let dark : DirectionalLight = DirectionalLight::make(sun.direction, Color::black());
-        let lit : bool = true;
+        let mut lit : bool = true;
         self.device.setViewProjection(scene.viewProjection(), scene.eye());
         self.device.setLight(sun);
         self.device.beginFrame(scene.clearColor());
@@ -290,7 +290,7 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
         let n : i32 = scene.drawCount();
         for (k of 0..n) {
             let it : DrawItem = scene.item(scene.orderAt(k));
-            let ok : bool = it.meshSlot >= 0 && it.meshSlot < self.meshCap && it.texSlot >= 0 && it.texSlot < self.texCap;
+            let mut ok : bool = it.meshSlot >= 0 && it.meshSlot < self.meshCap && it.texSlot >= 0 && it.texSlot < self.texCap;
             if (ok) {
                 ok = self.meshLive[it.meshSlot as i64] != 0 && self.texLive[it.texSlot as i64] != 0;
             }
@@ -325,8 +325,8 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
      * per pixel from the top-left, where the two overlap.
      */
     pub(file) fn composite(mut self, overlay : OverlayView) : void {
-        let px : i32[] = self.device.pixels();
-        let fw : i64 = self.device.width() as i64;
+        let mut px : i32[] = self.device.pixels();
+        let mut fw : i64 = self.device.width() as i64;
         let w : i64 = (overlay.w as i64).min(fw);
         let h : i64 = (overlay.h as i64).min(self.device.height() as i64);
         for (y of 0..h) {

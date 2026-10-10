@@ -81,7 +81,7 @@ pub class GpuCheck {
      * scene vertex, scene fragment, overlay vertex, overlay fragment, copy.
      */
     pub static fn shaders() : i32 {
-        let r : i32 = GpuCheck::module(Spirv::sceneVert(), Spirv::sceneVertBytes());
+        let mut r : i32 = GpuCheck::module(Spirv::sceneVert(), Spirv::sceneVertBytes());
         if (r != 0) {
             return 10 + r;
         }
@@ -158,7 +158,7 @@ pub class GpuCheck {
 
     /** The `Draw` push block for `item`, as the backend writes it per draw: 128 bytes as words. */
     pub static fn drawBlock(item : DrawItem) : i32[] {
-        let words : i32[] = malloc<i32>(DRAW_BYTES / 4);
+        let mut words : i32[] = malloc<i32>(DRAW_BYTES / 4);
         for (i of 0..(DRAW_BYTES / 4)) {
             words[i] = 0;
         }

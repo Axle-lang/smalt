@@ -45,7 +45,7 @@ class SysCursor {
         let block = new Blob(sizeof<POINT>());
         defer block.close();
         unsafe {
-            let point : ptr<POINT> = block.at() as ptr<POINT>;
+            let mut point : ptr<POINT> = block.at() as ptr<POINT>;
             (*point).x = x;
             (*point).y = y;
             if (ClientToScreen(win.handle(), point) != 0) {

@@ -52,7 +52,7 @@ class WinClass {
         defer block.close();
 
         unsafe {
-            let wc : ptr<WNDCLASSEXW> = block.at() as ptr<WNDCLASSEXW>;
+            let mut wc : ptr<WNDCLASSEXW> = block.at() as ptr<WNDCLASSEXW>;
             // `cbSize` is the size of the very record being filled, so it
             // is the same expression the allocation used. There is no
             // longer a number that could disagree with the other.

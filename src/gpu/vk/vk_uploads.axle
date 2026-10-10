@@ -248,7 +248,7 @@ pub(crate) class VkUploads {
 
     /** Forget every waiting update of texture `slot` — it is being released. */
     pub(crate) fn forget(mut self, slot : i32) : void {
-        let k : i32 = 0;
+        let mut k : i32 = 0;
         while (k < self.count) {
             if (self.slots[k as i64] == slot) {
                 let last : i64 = (self.count - 1) as i64;

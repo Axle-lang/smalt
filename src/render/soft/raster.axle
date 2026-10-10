@@ -408,7 +408,7 @@ pub class Raster {
      * both, by construction.
      */
     pub(file) static fn nearMask(a : ClipVertex, b : ClipVertex, c : ClipVertex) : i32 {
-        let mask : i32 = 0;
+        let mut mask : i32 = 0;
         if (a.visible()) {
             mask |= 1;
         }

@@ -78,7 +78,7 @@ pub(crate) class VkShaders {
 
     /** A mesh shader's pipeline for a draw: blended or not, one face or both. */
     pub(crate) fn meshPipeline(self, slot : i32, blend : bool, cullNone : bool) : i64 {
-        let k : i32 = 0;
+        let mut k : i32 = 0;
         if (blend) {
             k += 2;
         }
@@ -112,8 +112,8 @@ pub(crate) class VkShaders {
         }
         let s : i64 = slot as i64;
         let base : i64 = s * (SHADER_PIPES as i64);
-        let vs : i64 = pipes.fullscreenVert();
-        let ownVert : i64 = 0;
+        let mut vs : i64 = pipes.fullscreenVert();
+        let mut ownVert : i64 = 0;
         if (desc.kind == ShaderKind::Mesh) {
             ownVert = pipes.makeModule(ctx, desc.vert, desc.vertBytes);
             vs = ownVert;
@@ -128,8 +128,8 @@ pub(crate) class VkShaders {
             return -1;
         }
 
-        let made : i32 = 0;
-        let wanted : i32 = 0;
+        let mut made : i32 = 0;
+        let mut wanted : i32 = 0;
         if (desc.kind == ShaderKind::Mesh) {
             wanted = 4;
             let stages : MeshStages = MeshStages { vs: vs, fs: fs };

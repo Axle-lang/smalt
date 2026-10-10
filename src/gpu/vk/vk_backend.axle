@@ -266,7 +266,7 @@ pub(crate) class VkBackend : GpuBackend {
         self.sc = malloc<VkRect2D>(1);
         self.submitArr = malloc<VkSubmitInfo>(1);
 
-        let reason : string = "";
+        let mut reason : string = "";
         let format : i32 = self.swap.pickFormat(self.ctx);
         if ((self.ctx.maxPushBytes as i64) < DRAW_BYTES) {
             reason = "vulkan: the device allows fewer push-constant bytes than the backend uses";
@@ -302,7 +302,7 @@ pub(crate) class VkBackend : GpuBackend {
         // done *yet* (a window not mapped, with no extent) is left to the first frame;
         // giving up now would send `Auto` to the CPU for good.
         if (reason.byteLength == 0 && self.reqW > 0 && self.reqH > 0) {
-            let r : i32 = self.swap.build(
+            let mut r : i32 = self.swap.build(
                 self.ctx,
                 self.pipes,
                 self.reqW,
@@ -332,9 +332,9 @@ pub(crate) class VkBackend : GpuBackend {
             return false;
         }
         // The one-element arrays the descriptor calls read, rewritten for each slot.
-        let layouts : i64[] = malloc<i64>(1);
-        let bi : VkDescriptorBufferInfo[] = malloc<VkDescriptorBufferInfo>(1);
-        let w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
+        let mut layouts : i64[] = malloc<i64>(1);
+        let mut bi : VkDescriptorBufferInfo[] = malloc<VkDescriptorBufferInfo>(1);
+        let mut w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
         for (i of 0..n) {
             let k : i64 = i as i64;
             let sr : i32 = self.ctx.table.createSemaphore(
@@ -347,7 +347,7 @@ pub(crate) class VkBackend : GpuBackend {
             }
             self.avail[k] = Mem::qwordAt(self.ctx.scratch, 0);
 
-            let fi = VkInit::fenceCreateInfo();
+            let mut fi = VkInit::fenceCreateInfo();
             fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
             let fr : i32 = self.ctx.table.createFence(
                 self.ctx.device,
@@ -374,7 +374,7 @@ pub(crate) class VkBackend : GpuBackend {
             self.ubos[k] = ubo;
 
             layouts[0] = self.pipes.frameLayout;
-            let ai : VkDescriptorSetAllocateInfo = VkInit::descriptorSetAllocateInfo();
+            let mut ai : VkDescriptorSetAllocateInfo = VkInit::descriptorSetAllocateInfo();
             ai.descriptorPool = self.pipes.pool;
             ai.descriptorSetCount = 1;
             ai.pSetLayouts = VkAddr::handles(layouts);
@@ -389,7 +389,7 @@ pub(crate) class VkBackend : GpuBackend {
             self.frameSets[k] = Mem::qwordAt(self.ctx.scratch, 0);
 
             bi[0] = VkDescriptorBufferInfo { buffer: ubo.buffer, offset: 0, range: FRAME_BYTES };
-            let write : VkWriteDescriptorSet = VkInit::writeDescriptorSet();
+            let mut write : VkWriteDescriptorSet = VkInit::writeDescriptorSet();
             write.dstSet = self.frameSets[k];
             write.dstBinding = 0;
             write.descriptorCount = 1;
@@ -485,7 +485,7 @@ pub(crate) class VkBackend : GpuBackend {
         if (self.finished()) {
             return -1;
         }
-        let slot : i32 = self.meshes.create(self.ctx, self.heap, mesh);
+        let mut slot : i32 = self.meshes.create(self.ctx, self.heap, mesh);
         if (slot < 0 && self.grave.waiting() > 0) {
             // Memory that is buried but not yet swept may be all that is missing.
             self.drain();
@@ -553,7 +553,7 @@ pub(crate) class VkBackend : GpuBackend {
         if (self.finished()) {
             return -1;
         }
-        let slot : i32 = self.tryTexture(image, sampler);
+        let mut slot : i32 = self.tryTexture(image, sampler);
         if (slot < 0 && !self.lost && self.grave.waiting() > 0) {
             // Buried memory, or buried descriptor sets the pool still counts, may be all
             // that is missing.
@@ -618,7 +618,7 @@ pub(crate) class VkBackend : GpuBackend {
         if (self.reqW <= 0 || self.reqH <= 0) {
             return false;
         }
-        let r : i32 = self.swap.recreate(
+        let mut r : i32 = self.swap.recreate(
             self.ctx,
             self.pipes,
             self.grave,
@@ -736,7 +736,7 @@ pub(crate) class VkBackend : GpuBackend {
         }
         let blend : bool = it.material.opacity < 1.0;
         let cullNone : bool = !it.material.cullBackface;
-        let pipe : i64 = self.pipes.scenePipeline(blend, cullNone);
+        let mut pipe : i64 = self.pipes.scenePipeline(blend, cullNone);
         if (self.shaders.holds(it.shaderSlot, ShaderKind::Mesh)) {
             pipe = self.shaders.meshPipeline(it.shaderSlot, blend, cullNone);
         }
@@ -815,7 +815,7 @@ pub(crate) class VkBackend : GpuBackend {
         Mem::putFloatOf(self.block, BLK_CLEAR / 4 + 4, 1.0);
         Mem::putDword(self.block, BLK_CLEAR + 20, 0);
 
-        let info : VkRenderPassBeginInfo = VkInit::renderPassBeginInfo();
+        let mut info : VkRenderPassBeginInfo = VkInit::renderPassBeginInfo();
         info.renderPass = begin.pass;
         info.framebuffer = begin.framebuffer;
         info.renderArea = VkRect2D {
@@ -869,18 +869,18 @@ pub(crate) class VkBackend : GpuBackend {
      * free (`VkTargets::other`). A pass whose shader is gone is skipped.
      */
     pub(file) fn recordPasses(mut self, rec : FrameRec, scene : Scene) : PassChain {
-        let runnable : i32 = 0;
+        let mut runnable : i32 = 0;
         for (i of 0..scene.passCount()) {
             if (self.shaders.holds(scene.passAt(i).shaderSlot, ShaderKind::Pass)) {
                 runnable += 1;
             }
         }
-        let chain : PassChain = PassChain {
+        let mut chain : PassChain = PassChain {
             inputs: PassInputs { prev: 0, kept: 0 },
             last: PassItem { keep: false },
             hasLast: runnable > 0,
         };
-        let seen : i32 = 0;
+        let mut seen : i32 = 0;
         for (i of 0..scene.passCount()) {
             let p : PassItem = scene.passAt(i);
             if (self.shaders.holds(p.shaderSlot, ShaderKind::Pass)) {
@@ -899,7 +899,7 @@ pub(crate) class VkBackend : GpuBackend {
                     );
                     self.recordPass(rec, p, false, chain.inputs);
                     self.ctx.table.cmdEndRenderPass(rec.cb);
-                    let kept : i32 = chain.inputs.kept;
+                    let mut kept : i32 = chain.inputs.kept;
                     if (p.keep) {
                         kept = t;
                     }
@@ -975,7 +975,7 @@ pub(crate) class VkBackend : GpuBackend {
         Mem::putDword(self.block, BLK_STAGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
         Mem::putQword(self.block, BLK_CB, cb);
         Mem::putQword(self.block, BLK_SIGNAL, signal);
-        let si : VkSubmitInfo = VkInit::submitInfo();
+        let mut si : VkSubmitInfo = VkInit::submitInfo();
         si.waitSemaphoreCount = 1;
         si.pWaitSemaphores = Raw::at(self.block + BLK_WAIT);
         si.pWaitDstStageMask = Raw::at(self.block + BLK_STAGE);
@@ -1007,7 +1007,7 @@ pub(crate) class VkBackend : GpuBackend {
      */
     pub(file) fn present(mut self) : bool {
         Mem::putQword(self.block, BLK_SWAP, self.swap.handle);
-        let pi : VkPresentInfoKHR = VkInit::presentInfo();
+        let mut pi : VkPresentInfoKHR = VkInit::presentInfo();
         pi.waitSemaphoreCount = 1;
         pi.pWaitSemaphores = Raw::at(self.block + BLK_SIGNAL);
         pi.swapchainCount = 1;
@@ -1166,7 +1166,7 @@ pub(crate) class VkBackend : GpuBackend {
     pub(file) fn submitEmpty(mut self, f : i32) : void {
         Mem::putQword(self.block, BLK_WAIT, self.avail[f as i64]);
         Mem::putDword(self.block, BLK_STAGE, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-        let si : VkSubmitInfo = VkInit::submitInfo();
+        let mut si : VkSubmitInfo = VkInit::submitInfo();
         si.waitSemaphoreCount = 1;
         si.pWaitSemaphores = Raw::at(self.block + BLK_WAIT);
         si.pWaitDstStageMask = Raw::at(self.block + BLK_STAGE);

@@ -79,9 +79,9 @@ pub(crate) class SysAudio : Closeable {
 
     /** Open the default output device. */
     constructor() {
-        let align : i32 = AUDIO_CHANNELS * AUDIO_SAMPLE_BYTES;
+        let mut align : i32 = AUDIO_CHANNELS * AUDIO_SAMPLE_BYTES;
         unsafe {
-            let f = self.format.at() as ptr<WAVEFORMATEX>;
+            let mut f = self.format.at() as ptr<WAVEFORMATEX>;
             (*f).wFormatTag = WAVE_FORMAT_PCM as u16;
             (*f).nChannels = AUDIO_CHANNELS as u16;
             (*f).nSamplesPerSec = AUDIO_RATE as u32;
@@ -94,7 +94,7 @@ pub(crate) class SysAudio : Closeable {
             (*f).cbSize = 0;
         }
 
-        let rc : i32 = 0;
+        let mut rc : i32 = 0;
         unsafe {
             rc = waveOutOpen(
                 self.device.at(),
@@ -114,7 +114,7 @@ pub(crate) class SysAudio : Closeable {
         // never moves them, so this is the only place the two are tied.
         for (i of 0..AUDIO_BLOCKS) {
             unsafe {
-                let h = headerAt(self.headers, i);
+                let mut h = headerAt(self.headers, i);
                 (*h).lpData = Raw::at(self.blockAddress(i));
                 (*h).dwBufferLength = AudioFormat::blockBytes() as u32;
                 (*h).dwBytesRecorded = 0;
@@ -157,9 +157,9 @@ pub(crate) class SysAudio : Closeable {
             return -1;
         }
         for (i of 0..AUDIO_BLOCKS) {
-            let done : bool = false;
+            let mut done : bool = false;
             unsafe {
-                let h = headerAt(self.headers, i);
+                let mut h = headerAt(self.headers, i);
                 done = ((*h).dwFlags & (WHDR_DONE as u32)) != 0;
             }
             if (done) {
@@ -184,7 +184,7 @@ pub(crate) class SysAudio : Closeable {
         }
         let size : u32 = sizeof<WAVEHDR>() as u32;
         unsafe {
-            let h = headerAt(self.headers, i);
+            let mut h = headerAt(self.headers, i);
             waveOutUnprepareHeader(deviceHandle(self.device), h as ptr, size);
             (*h).dwFlags = 0;
             (*h).dwBufferLength = AudioFormat::blockBytes() as u32;

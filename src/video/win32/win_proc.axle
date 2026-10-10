@@ -102,7 +102,7 @@ pub(crate) fn windowProc(hwnd : ptr, msg : u32, wParam : u64, lParam : i64) : i6
         if (Raw::isNil(raw)) {
             return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
-        let st : ptr<WinProcState> = raw as ptr<WinProcState>;
+        let mut st : ptr<WinProcState> = raw as ptr<WinProcState>;
         let m : i32 = msg as i32;
 
         match m {
@@ -118,7 +118,7 @@ pub(crate) fn windowProc(hwnd : ptr, msg : u32, wParam : u64, lParam : i64) : i6
                 return 0;
             }
             WM_SIZE => {
-                let minimised : i32 = 0;
+                let mut minimised : i32 = 0;
                 if ((wParam as i64) == (SIZE_MINIMIZED as i64)) {
                     minimised = 1;
                 }
@@ -168,7 +168,7 @@ pub(crate) class WinProcBlock : Closeable {
     /** A block with nothing pending and focus assumed. */
     constructor() {
         unsafe {
-            let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
+            let mut st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             (*st).focused = 1;
         }
     }
@@ -181,7 +181,7 @@ pub(crate) class WinProcBlock : Closeable {
     /** Whether `WM_CLOSE` arrived, clearing the latch. */
     pub(crate) fn takeClose(mut self) : bool {
         unsafe {
-            let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
+            let mut st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             let pending : bool = (*st).closePending != 0;
             (*st).closePending = 0;
             return pending;
@@ -191,7 +191,7 @@ pub(crate) class WinProcBlock : Closeable {
     /** Whether `WM_DESTROY` arrived. Not a latch: destruction is final. */
     pub(crate) fn destroyed(self) : bool {
         unsafe {
-            let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
+            let mut st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             return (*st).destroyed != 0;
         }
     }
@@ -199,7 +199,7 @@ pub(crate) class WinProcBlock : Closeable {
     /** Whether a resize is waiting, clearing the latch. */
     pub(crate) fn takeResize(mut self) : bool {
         unsafe {
-            let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
+            let mut st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             let pending : bool = (*st).sizePending != 0;
             (*st).sizePending = 0;
             return pending;
@@ -225,7 +225,7 @@ pub(crate) class WinProcBlock : Closeable {
     /** Whether a focus edge is waiting, clearing the latch. */
     pub(crate) fn takeFocusEdge(mut self) : bool {
         unsafe {
-            let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
+            let mut st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             let pending : bool = (*st).focusPending != 0;
             (*st).focusPending = 0;
             return pending;
@@ -235,7 +235,7 @@ pub(crate) class WinProcBlock : Closeable {
     /** Whether the window holds focus. */
     pub(crate) fn focused(self) : bool {
         unsafe {
-            let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
+            let mut st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             return (*st).focused != 0;
         }
     }
@@ -243,7 +243,7 @@ pub(crate) class WinProcBlock : Closeable {
     /** Whether a minimise / restore edge is waiting, clearing the latch. */
     pub(crate) fn takeMinimiseEdge(mut self) : bool {
         unsafe {
-            let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
+            let mut st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             let pending : bool = (*st).minimisePending != 0;
             (*st).minimisePending = 0;
             return pending;
@@ -253,7 +253,7 @@ pub(crate) class WinProcBlock : Closeable {
     /** Whether the window is minimised. */
     pub(crate) fn minimised(self) : bool {
         unsafe {
-            let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
+            let mut st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             return (*st).minimised != 0;
         }
     }

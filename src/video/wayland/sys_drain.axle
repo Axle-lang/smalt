@@ -55,7 +55,7 @@ class SysDrain {
      */
     pub(crate) static fn waitReady(scratch : Blob, win : SysWindow, timeoutMs : i32) : bool {
         unsafe {
-            let st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
             let before = (*st).head;
             readAvailable(scratch, st, timeoutMs);
             return (*st).head != before || (*st).closePending != 0;

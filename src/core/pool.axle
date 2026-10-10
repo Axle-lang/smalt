@@ -129,7 +129,7 @@ pub class WorkerPool : Closeable {
      * @param crew  workers to start, over and above the calling thread
      */
     constructor(crew : i32) {
-        let want : i32 = crew;
+        let mut want : i32 = crew;
         if (want < 0) {
             want = 0;
         }
@@ -188,7 +188,7 @@ pub class WorkerPool : Closeable {
         if (shares <= 0 || pass < 0 || pass >= self.nJobs) {
             return;
         }
-        let helpers : i32 = shares - 1;
+        let mut helpers : i32 = shares - 1;
         if (helpers > self.n) {
             helpers = self.n;
         }
@@ -216,7 +216,7 @@ pub class WorkerPool : Closeable {
      * caller's buffers. Waiting again is the only safe answer.
      */
     pub(file) fn awaitOne(self) : void {
-        let waiting : bool = true;
+        let mut waiting : bool = true;
         while (waiting) {
             try {
                 self.ended.acquire();
@@ -260,7 +260,7 @@ pub class WorkerPool : Closeable {
  */
 fn poolLoop(p : WorkerPool) : i32 {
     while (true) {
-        let woken : bool = false;
+        let mut woken : bool = false;
         while (!woken) {
             try {
                 p.begin.acquire();

@@ -48,7 +48,7 @@ pub(crate) fn connect() : ptr {
             return Raw::nil();
         }
 
-        let app : ptr<WlApp> = Raw::take(sizeof<WlApp>()) as ptr<WlApp>;
+        let mut app : ptr<WlApp> = Raw::take(sizeof<WlApp>()) as ptr<WlApp>;
         Raw::clear(app as ptr, sizeof<WlApp>());
         (*app).display = display;
         (*app).core = Raw::take(sizeof<WlCore>());
@@ -95,7 +95,7 @@ pub(crate) fn disconnect(token : ptr) : void {
         if (Raw::isNil(token)) {
             return;
         }
-        let app : ptr<WlApp> = token as ptr<WlApp>;
+        let mut app : ptr<WlApp> = token as ptr<WlApp>;
         if (!Raw::isNil((*app).display)) {
             // One call releases every proxy made on this connection:
             // the registry, the globals, and anything a window left
@@ -128,7 +128,7 @@ fn sweep(app : ptr<WlApp>, args : WlArgs) : bool {
         }
         (*app).registry = registry;
 
-        let listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
+        let mut listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
         (*listeners).registry.global = onGlobal;
         (*listeners).registry.globalRemove = onGlobalRemove;
         wl_proxy_add_listener(registry, (*app).listeners, app as ptr);
@@ -143,7 +143,7 @@ fn bindShell(app : ptr<WlApp>, args : WlArgs) : bool {
         if ((*app).compositorName == 0 || (*app).shmName == 0 || (*app).wmBaseName == 0) {
             return false;
         }
-        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        let mut core : ptr<WlCore> = (*app).core as ptr<WlCore>;
         let xdg : ptr<XdgTables> = (*app).xdg as ptr<XdgTables>;
         (*app).compositor = bindGlobal(
             args, (*app).registry, (*app).compositorName, (*core).compositor, "wl_compositor"
@@ -168,12 +168,12 @@ fn bindSeat(app : ptr<WlApp>, args : WlArgs) : void {
         if ((*app).seatName == 0) {
             return;
         }
-        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        let mut core : ptr<WlCore> = (*app).core as ptr<WlCore>;
         (*app).seat = bindGlobal(args, (*app).registry, (*app).seatName, (*core).seat, "wl_seat");
         if (Raw::isNil((*app).seat)) {
             return;
         }
-        let listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
+        let mut listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
         (*listeners).seat.capabilities = onSeatCapabilities;
         (*listeners).seat.name = onSeatName;
         wl_proxy_add_listener((*app).seat, seatListenerAt(app), app as ptr);
@@ -224,7 +224,7 @@ fn bindOutput(app : ptr<WlApp>, args : WlArgs) : void {
         if (Raw::isNil((*app).output)) {
             return;
         }
-        let listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
+        let mut listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
         (*listeners).output.geometry = onOutputGeometry;
         (*listeners).output.mode = onOutputMode;
         (*listeners).output.done = onOutputDone;

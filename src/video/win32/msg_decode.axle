@@ -131,7 +131,7 @@ pub(crate) fn handle(
             // The very first motion has no previous position to subtract, so
             // the delta stays at the field's own default rather than being a
             // jump from wherever the pointer happened to enter.
-            let e = Event { kind: EventKind::MouseMotion, timestamp: stamp, x: nx, y: ny };
+            let mut e = Event { kind: EventKind::MouseMotion, timestamp: stamp, x: nx, y: ny };
             if (known) {
                 e.dx = nx - px;
                 e.dy = ny - py;

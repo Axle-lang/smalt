@@ -61,7 +61,7 @@ pub(crate) class VkCmd {
         self.barrier = malloc<VkImageMemoryBarrier>(1);
         self.memBarrier = malloc<VkMemoryBarrier>(1);
         self.submit = malloc<VkSubmitInfo>(1);
-        let info : VkCommandPoolCreateInfo = VkInit::commandPoolCreateInfo();
+        let mut info : VkCommandPoolCreateInfo = VkInit::commandPoolCreateInfo();
         info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         info.queueFamilyIndex = ctx.family;
         let r : i32 = ctx.table.createCommandPool(ctx.device, info, Raw::at(ctx.scratch));
@@ -77,7 +77,7 @@ pub(crate) class VkCmd {
 
     /** Allocate `count` primary command buffers into the block at `out` (8 bytes each); whether it worked. */
     pub(crate) fn allocate(self, ctx : VkContext, count : i32, out : i64) : bool {
-        let info : VkCommandBufferAllocateInfo = VkInit::commandBufferAllocateInfo();
+        let mut info : VkCommandBufferAllocateInfo = VkInit::commandBufferAllocateInfo();
         info.commandPool = self.pool;
         info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         info.commandBufferCount = count;
@@ -87,7 +87,7 @@ pub(crate) class VkCmd {
 
     /** Begin recording a command buffer for a single submission; whether it began. */
     pub(crate) fn begin(self, ctx : VkContext, cb : i64) : bool {
-        let info : VkCommandBufferBeginInfo = VkInit::commandBufferBeginInfo();
+        let mut info : VkCommandBufferBeginInfo = VkInit::commandBufferBeginInfo();
         info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         let r : i32 = ctx.table.beginCommandBuffer(cb, info);
         return VkErr::ok(r);
@@ -124,12 +124,12 @@ pub(crate) class VkCmd {
      * whose resources the work may still be using.
      */
     pub(crate) fn oneShotEnd(mut self, ctx : VkContext, cb : i64) : i32 {
-        let result : i32 = ctx.table.endCommandBuffer(cb);
-        let pending : bool = false;
+        let mut result : i32 = ctx.table.endCommandBuffer(cb);
+        let mut pending : bool = false;
         if (VkErr::ok(result)) {
             let slot : i64 = ctx.scratch + CTX_SCRATCH_CMD + 16;
             Mem::putQword(slot, 0, cb);
-            let info : VkSubmitInfo = VkInit::submitInfo();
+            let mut info : VkSubmitInfo = VkInit::submitInfo();
             info.commandBufferCount = 1;
             info.pCommandBuffers = Raw::at(slot);
             self.submit[0] = info;
@@ -175,7 +175,7 @@ pub(crate) class VkCmd {
         srcStage : i32,
         dstStage : i32
     ) : void {
-        let b : VkImageMemoryBarrier = VkInit::imageMemoryBarrier();
+        let mut b : VkImageMemoryBarrier = VkInit::imageMemoryBarrier();
         b.srcAccessMask = srcAccess;
         b.dstAccessMask = dstAccess;
         b.oldLayout = oldLayout;
@@ -215,7 +215,7 @@ pub(crate) class VkCmd {
         srcStage : i32,
         dstStage : i32
     ) : void {
-        let b : VkMemoryBarrier = VkInit::memoryBarrier();
+        let mut b : VkMemoryBarrier = VkInit::memoryBarrier();
         b.srcAccessMask = srcAccess;
         b.dstAccessMask = dstAccess;
         self.memBarrier[0] = b;

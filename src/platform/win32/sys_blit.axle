@@ -58,7 +58,7 @@ pub(crate) class SysBlit : Closeable {
     /** A blit path with no format described yet. */
     constructor() {
         unsafe {
-            let bmi = self.header();
+            let mut bmi = self.header();
             // `biSize` is the header validating itself, and it is the
             // header's own `sizeof` — the one number a DIB call fails on
             // with no diagnosis is the one number nobody types any more.
@@ -75,7 +75,7 @@ pub(crate) class SysBlit : Closeable {
             return;
         }
         unsafe {
-            let bmi = self.header();
+            let mut bmi = self.header();
             (*bmi).bmiHeader.biWidth = w;
             // Negative height declares the rows top-down, so row 0 is the
             // top of the screen rather than the bottom.

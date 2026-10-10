@@ -206,7 +206,7 @@ pub class MeshBuilder {
         if (needed > MeshBuilder::MAX_VERTICES) {
             return false;
         }
-        let cap : i32 = self.vcap;
+        let mut cap : i32 = self.vcap;
         while (cap < needed) {
             cap = (cap * 2).min(MeshBuilder::MAX_VERTICES);
         }
@@ -228,7 +228,7 @@ pub class MeshBuilder {
         if (needed > MeshBuilder::MAX_INDICES) {
             return false;
         }
-        let cap : i32 = self.icap;
+        let mut cap : i32 = self.icap;
         while (cap < needed) {
             cap = (cap * 2).min(MeshBuilder::MAX_INDICES);
         }
@@ -245,7 +245,7 @@ pub class MeshBuilder {
      * A NaN component is 0: the conversion of a NaN to an integer has no defined value.
      */
     pub(file) static fn snorm(v : f64) : i32 {
-        let c : f64 = v;
+        let mut c : f64 = v;
         if (c != c) {
             c = 0.0;
         }
@@ -554,7 +554,7 @@ pub class MeshBuilder {
 
     /** A signed byte (0..255 as stored) back to -1..1. */
     pub(file) static fn unsnorm(b : i32) : f64 {
-        let s : i32 = b;
+        let mut s : i32 = b;
         if (s > 127) {
             s -= 256;
         }

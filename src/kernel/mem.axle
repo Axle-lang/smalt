@@ -167,7 +167,7 @@ pub class Mem {
     /** Store the 32-bit element `v` at `index`. */
     pub static fn putWordOf(base : i64, index : i64, v : i32) : void {
         unsafe {
-            let slot : ptr<i32> = (base + index * Mem::WORD_BYTES) as ptr<i32>;
+            let mut slot : ptr<i32> = (base + index * Mem::WORD_BYTES) as ptr<i32>;
             *slot = v;
         }
     }
@@ -183,7 +183,7 @@ pub class Mem {
     /** Store the `f64` element `v` at `index`. */
     pub static fn putRealOf(base : i64, index : i64, v : f64) : void {
         unsafe {
-            let slot : ptr<f64> = (base + index * Mem::WIDE_BYTES) as ptr<f64>;
+            let mut slot : ptr<f64> = (base + index * Mem::WIDE_BYTES) as ptr<f64>;
             *slot = v;
         }
     }
@@ -204,7 +204,7 @@ pub class Mem {
     /** Store `v` at `index`, narrowed to 32 bits. */
     pub static fn putFloatOf(base : i64, index : i64, v : f64) : void {
         unsafe {
-            let slot : ptr<f32> = (base + index * Mem::FLOAT_BYTES) as ptr<f32>;
+            let mut slot : ptr<f32> = (base + index * Mem::FLOAT_BYTES) as ptr<f32>;
             *slot = v as f32;
         }
     }
@@ -220,7 +220,7 @@ pub class Mem {
     /** Store the `i64` element `v` at `index`. */
     pub static fn putQwordOf(base : i64, index : i64, v : i64) : void {
         unsafe {
-            let slot : ptr<i64> = (base + index * Mem::WIDE_BYTES) as ptr<i64>;
+            let mut slot : ptr<i64> = (base + index * Mem::WIDE_BYTES) as ptr<i64>;
             *slot = v;
         }
     }
@@ -284,7 +284,7 @@ pub class Mem {
         if (base == 0 || cap <= 0) {
             return 0;
         }
-        let n : i64 = s.byteLength;
+        let mut n : i64 = s.byteLength;
         if (n > (cap as i64)) {
             n = cap as i64;
         }
@@ -315,12 +315,12 @@ pub class Mem {
         }
         let bytes : i64 = s.byteLength;
         let room : i64 = (capChars as i64) - 1;
-        let units : i64 = 0;
-        let i : i64 = 0;
+        let mut units : i64 = 0;
+        let mut i : i64 = 0;
         while (i < bytes && units < room) {
             let b0 : i32 = s.byteAt(i) & 0xFF;
-            let cp : i32 = Mem::REPLACEMENT;
-            let taken : i64 = 1;
+            let mut cp : i32 = Mem::REPLACEMENT;
+            let mut taken : i64 = 1;
 
             // The lead byte's range is the length of the sequence — the
             // whole of UTF-8's table, written as one. The guard is the

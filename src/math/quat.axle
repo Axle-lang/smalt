@@ -152,8 +152,8 @@ pub struct Quat {
      * than dividing by it.
      */
     pub fn slerp(self, o : Quat, t : f64) : Quat {
-        let target : Quat = o;
-        let cosine = self.dot(o);
+        let mut target : Quat = o;
+        let mut cosine = self.dot(o);
         if (cosine < 0.0) {
             target = Quat::make(-o.x, -o.y, -o.z, -o.w);
             cosine = -cosine;

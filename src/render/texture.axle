@@ -58,8 +58,8 @@ pub class Texture {
 
     /** One texel by integer coordinate, wrapped into range. */
     pub fn texel(self, x : i32, y : i32) : i32 {
-        let tx : i32 = x % self.w;
-        let ty : i32 = y % self.h;
+        let mut tx : i32 = x % self.w;
+        let mut ty : i32 = y % self.h;
         if (tx < 0) {
             tx += self.w;
         }

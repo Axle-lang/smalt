@@ -105,8 +105,8 @@ pub(file) const FMT_FIGURE_BYTES : i32 = 32;
 pub class Fmt {
     /** Reverse the `n` bytes at `base + off` — digits are emitted low-first. */
     pub(file) static fn reverse(base : i64, off : i64, n : i32) : void {
-        let i : i32 = 0;
-        let j : i32 = n - 1;
+        let mut i : i32 = 0;
+        let mut j : i32 = n - 1;
         while (i < j) {
             let a : i32 = Mem::byteAt(base, off + (i as i64));
             let b : i32 = Mem::byteAt(base, off + (j as i64));
@@ -163,19 +163,19 @@ pub class Fmt {
         if (v == 0) {
             return Fmt::ch(base, off, FMT_DIGIT0);
         }
-        let at : i64 = off;
-        let sign : i32 = 0;
+        let mut at : i64 = off;
+        let mut sign : i32 = 0;
         if (v < 0) {
             sign = Fmt::ch(base, at, FMT_MINUS);
             at = at + 1;
         }
-        let n : i32 = 0;
-        let x : i64 = v;
+        let mut n : i32 = 0;
+        let mut x : i64 = v;
         while (x != 0) {
             // `%` on a negative operand answers a negative remainder, so
             // the digit is negated rather than the value — which is what
             // keeps the most negative `i64` printable.
-            let d : i64 = x % 10;
+            let mut d : i64 = x % 10;
             if (d < 0) {
                 d = -d;
             }
@@ -197,22 +197,22 @@ pub class Fmt {
         if (v == 0) {
             return Fmt::ch(base, off, FMT_DIGIT0);
         }
-        let at : i64 = off;
-        let sign : i32 = 0;
+        let mut at : i64 = off;
+        let mut sign : i32 = 0;
         if (v < 0) {
             sign = Fmt::ch(base, at, FMT_MINUS);
             at = at + 1;
         }
-        let n : i32 = 0;
-        let digits : i32 = 0;
-        let x : i64 = v;
+        let mut n : i32 = 0;
+        let mut digits : i32 = 0;
+        let mut x : i64 = v;
         while (x != 0) {
             if (digits == FMT_GROUP_SIZE) {
                 Mem::putByte(base, at + (n as i64), FMT_GROUP_SEP);
                 n = n + 1;
                 digits = 0;
             }
-            let d : i64 = x % 10;
+            let mut d : i64 = x % 10;
             if (d < 0) {
                 d = -d;
             }
@@ -228,7 +228,7 @@ pub class Fmt {
     /** `v` scaled by ten, rendered with one decimal — `123` becomes `12.3`. */
     pub static fn tenths(base : i64, off : i64, v : i64) : i32 {
         let whole : i64 = v / 10;
-        let frac : i64 = v % 10;
+        let mut frac : i64 = v % 10;
         if (frac < 0) {
             frac = -frac;
         }
@@ -241,7 +241,7 @@ pub class Fmt {
     /** `v` scaled by a hundred, rendered with two decimals. */
     pub static fn hundredths(base : i64, off : i64, v : i64) : i32 {
         let whole : i64 = v / 100;
-        let frac : i64 = v % 100;
+        let mut frac : i64 = v % 100;
         if (frac < 0) {
             frac = -frac;
         }
@@ -272,7 +272,7 @@ pub class Fmt {
      */
     pub static fn fixed(base : i64, off : i64, v : f64, decimals : i32) : i32 {
         let places : i32 = decimals.max(0).min(6);
-        let scale : i64 = 1;
+        let mut scale : i64 = 1;
         for (i of 0..places) {
             scale = scale * 10;
         }
@@ -281,15 +281,15 @@ pub class Fmt {
             return Fmt::decimal(base, off, scaled);
         }
         let whole : i64 = scaled / scale;
-        let frac : i64 = scaled % scale;
+        let mut frac : i64 = scaled % scale;
         if (frac < 0) {
             frac = -frac;
         }
-        let n : i32 = Fmt::decimal(base, off, whole);
+        let mut n : i32 = Fmt::decimal(base, off, whole);
         Mem::putByte(base, off + (n as i64), FMT_DOT);
         n = n + 1;
         // Leading zeros of the fraction are significant — `.05` is not `.5`.
-        let divisor : i64 = scale / 10;
+        let mut divisor : i64 = scale / 10;
         while (divisor > 0) {
             Mem::putByte(base, off + (n as i64), FMT_DIGIT0 + ((frac / divisor) as i32));
             frac = frac % divisor;
@@ -339,8 +339,8 @@ pub class Fmt {
             let d : i32 = Fmt::decimal(base, off, n);
             return d + Fmt::literal(base, off + (d as i64), " B", FMT_UNIT_BYTES);
         }
-        let unit : i64 = FMT_KIB;
-        let suffix : string = " KB";
+        let mut unit : i64 = FMT_KIB;
+        let mut suffix : string = " KB";
         if (n >= FMT_TIB) {
             unit = FMT_TIB;
             suffix = " TB";
@@ -371,8 +371,8 @@ pub class Fmt {
      * 271843 ms ago".
      */
     pub static fn elapsed(base : i64, off : i64, ms : i64) : i32 {
-        let value : i64 = ms;
-        let suffix : string = " ms";
+        let mut value : i64 = ms;
+        let mut suffix : string = " ms";
         if (ms >= FMT_MS_DAY) {
             value = ms / FMT_MS_DAY;
             suffix = " d";
@@ -392,11 +392,11 @@ pub class Fmt {
 
     /** A clock span as `h:mm:ss`, for a duration a reader tracks rather than skims. */
     pub static fn clock(base : i64, off : i64, ms : i64) : i32 {
-        let total : i64 = ms / FMT_MS_SEC;
+        let mut total : i64 = ms / FMT_MS_SEC;
         if (total < 0) {
             total = 0;
         }
-        let n : i32 = Fmt::decimal(base, off, total / 3600);
+        let mut n : i32 = Fmt::decimal(base, off, total / 3600);
         Mem::putByte(base, off + (n as i64), 58);
         n = n + 1;
         let mins : i64 = (total % 3600) / 60;
@@ -438,7 +438,7 @@ pub class Scratch : Closeable {
 
     /** A scratch of `bytes`, or the default when that is not positive. */
     constructor(bytes : i32) {
-        let n : i32 = bytes;
+        let mut n : i32 = bytes;
         if (n < FMT_FIGURE_BYTES) {
             n = Scratch::DEFAULT_BYTES;
         }

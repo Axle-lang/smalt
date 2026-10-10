@@ -78,7 +78,7 @@ class Raw {
     /** Store the low byte of `v` at `base + off`. */
     pub(crate) static fn putU8(base : ptr, off : i64, v : i32) : void {
         unsafe {
-            let slot : ptr<u8> = ((base as i64) + off) as ptr<u8>;
+            let mut slot : ptr<u8> = ((base as i64) + off) as ptr<u8>;
             *slot = v as u8;
         }
     }
@@ -115,7 +115,7 @@ class Raw {
     /** Store the low 16 bits of `v` at `base + off`. */
     pub(crate) static fn putU16(base : ptr, off : i64, v : i32) : void {
         unsafe {
-            let slot : ptr<u16> = ((base as i64) + off) as ptr<u16>;
+            let mut slot : ptr<u16> = ((base as i64) + off) as ptr<u16>;
             *slot = (v & 0xFFFF) as u16;
         }
     }
@@ -131,7 +131,7 @@ class Raw {
     /** Store the 32-bit word `v` at `base + off`. */
     pub(crate) static fn putI32(base : ptr, off : i64, v : i32) : void {
         unsafe {
-            let slot : ptr<i32> = ((base as i64) + off) as ptr<i32>;
+            let mut slot : ptr<i32> = ((base as i64) + off) as ptr<i32>;
             *slot = v;
         }
     }
@@ -147,7 +147,7 @@ class Raw {
     /** Store the 64-bit word `v` at `base + off`. */
     pub(crate) static fn putI64(base : ptr, off : i64, v : i64) : void {
         unsafe {
-            let slot : ptr<i64> = ((base as i64) + off) as ptr<i64>;
+            let mut slot : ptr<i64> = ((base as i64) + off) as ptr<i64>;
             *slot = v;
         }
     }

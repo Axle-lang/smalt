@@ -40,8 +40,8 @@ fn run() : i32 ! PlatformError {
     let device = new SoftDevice(VIEW_W, VIEW_H);
     defer device.close();
     let pacer = new FramePacer(FRAME_RATE);
-    let running = true;
-    let frames = 0;
+    let mut running = true;
+    let mut frames = 0;
 
     while (running) {
         pacer.tick(clock);

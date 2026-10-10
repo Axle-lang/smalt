@@ -36,7 +36,7 @@ pub class SoundBank : Closeable {
 
     /** A bank that can hold `capacity` variants. */
     constructor(capacity : i32) {
-        let n : i32 = capacity;
+        let mut n : i32 = capacity;
         if (n < 1) {
             n = 1;
         }
@@ -79,7 +79,7 @@ pub class SoundBank : Closeable {
         if (self.count <= 0) {
             return -1;
         }
-        let i : i32 = (rnd * (self.count as f64)).floorToInt() as i32;
+        let mut i : i32 = (rnd * (self.count as f64)).floorToInt() as i32;
         if (i < 0) {
             i = 0;
         }

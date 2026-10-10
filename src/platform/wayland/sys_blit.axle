@@ -63,7 +63,7 @@ pub(crate) class SysBlit : Closeable {
     constructor() {
         unsafe {
             Raw::clear(self.info.at(), sizeof<WlBlitHeader>());
-            let header : ptr<WlBlitHeader> = self.info.at() as ptr<WlBlitHeader>;
+            let mut header : ptr<WlBlitHeader> = self.info.at() as ptr<WlBlitHeader>;
             (*header).format = BLIT_FORMAT;
         }
     }
@@ -89,7 +89,7 @@ pub(crate) class SysBlit : Closeable {
      */
     pub(crate) fn describe(mut self, w : i32, h : i32) : void {
         unsafe {
-            let header : ptr<WlBlitHeader> = self.info.at() as ptr<WlBlitHeader>;
+            let mut header : ptr<WlBlitHeader> = self.info.at() as ptr<WlBlitHeader>;
             (*header).width = w;
             (*header).height = h;
             (*header).stride = w * (WL_PIXEL_BYTES as i32);

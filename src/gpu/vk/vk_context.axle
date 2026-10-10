@@ -218,7 +218,7 @@ pub(crate) class VkContext {
         // differently from C would hand it garbage it reads without a word, so the
         // layout is checked before the first one is filled — cheap, and the CPU is
         // still there to fall back to.
-        let layout : i32 = VkLayout::verify();
+        let mut layout : i32 = VkLayout::verify();
         if (layout == 0 && SysVkSurface::recordLayout() != 0) {
             layout = 10000 + SysVkSurface::recordLayout();
         }
@@ -240,7 +240,7 @@ pub(crate) class VkContext {
             throw PlatformError("vulkan: out of memory taking the context's scratch blocks");
         }
 
-        let missing : string = self.table.loadGlobal();
+        let mut missing : string = self.table.loadGlobal();
         if (missing.byteLength != 0) {
             self.releaseBlocks();
             throw PlatformError("vulkan: the loader does not export ${missing}");
@@ -315,8 +315,8 @@ pub(crate) class VkContext {
         }
         let countAt : i64 = self.scratch + CTX_SCRATCH_QUERY_COUNT;
         Mem::putDword(countAt, 0, 0);
-        let r : i32 = self.table.enumerateInstanceLayerProperties(Raw::at(countAt), Raw::nil());
-        let n : i32 = Mem::dwordAt(countAt, 0).min(CTX_MAX_LAYERS);
+        let mut r : i32 = self.table.enumerateInstanceLayerProperties(Raw::at(countAt), Raw::nil());
+        let mut n : i32 = Mem::dwordAt(countAt, 0).min(CTX_MAX_LAYERS);
         if (!VkErr::ok(r) || n <= 0) {
             return false;
         }
@@ -326,7 +326,7 @@ pub(crate) class VkContext {
         }
         Mem::putDword(countAt, 0, n);
         r = self.table.enumerateInstanceLayerProperties(Raw::at(countAt), Raw::at(list));
-        let found : bool = false;
+        let mut found : bool = false;
         if (VkErr::ok(r)) {
             n = Mem::dwordAt(countAt, 0).min(n);
             for (i of 0..n) {
@@ -342,13 +342,13 @@ pub(crate) class VkContext {
 
     /** Create the instance with the surface extensions this window system needs. */
     pub(file) fn createInstance(mut self, desc : RendererDesc) : void ! PlatformError {
-        let at : i64 = CTX_STRINGS;
+        let mut at : i64 = CTX_STRINGS;
         Mem::putQword(self.names, CTX_INSTANCE_EXTENSIONS, self.names + at);
         at = self.putName(at, VK_KHR_SURFACE_EXTENSION_NAME);
         Mem::putQword(self.names, CTX_INSTANCE_EXTENSIONS + 8, self.names + at);
         at = self.putName(at, SysVkSurface::extension());
 
-        let layers : i32 = 0;
+        let mut layers : i32 = 0;
         if (desc.validation) {
             let layerAt : i64 = at;
             at = self.putName(at, CTX_VALIDATION_LAYER);
@@ -363,13 +363,13 @@ pub(crate) class VkContext {
         let appAt : i64 = at;
         at = self.putName(at, desc.appName);
 
-        let app : VkApplicationInfo[] = malloc<VkApplicationInfo>(1);
-        let ai : VkApplicationInfo = VkInit::applicationInfo();
+        let mut app : VkApplicationInfo[] = malloc<VkApplicationInfo>(1);
+        let mut ai : VkApplicationInfo = VkInit::applicationInfo();
         ai.pApplicationName = Raw::at(self.names + appAt);
         ai.apiVersion = VK_API_VERSION_1_0;
         app[0] = ai;
 
-        let ici : VkInstanceCreateInfo = VkInit::instanceCreateInfo();
+        let mut ici : VkInstanceCreateInfo = VkInit::instanceCreateInfo();
         ici.pApplicationInfo = VkAddr::applicationInfo(app);
         ici.enabledExtensionCount = 2;
         ici.ppEnabledExtensionNames = Raw::at(self.names + CTX_INSTANCE_EXTENSIONS);
@@ -388,7 +388,7 @@ pub(crate) class VkContext {
         let count : i64 = self.scratch;
         Mem::putDword(count, 0, 0);
         self.table.getPhysicalDeviceQueueFamilyProperties(pd, Raw::at(count), Raw::nil());
-        let n : i32 = Mem::dwordAt(count, 0);
+        let mut n : i32 = Mem::dwordAt(count, 0);
         if (n <= 0) {
             return -1;
         }
@@ -398,7 +398,7 @@ pub(crate) class VkContext {
         }
         self.table.getPhysicalDeviceQueueFamilyProperties(pd, Raw::at(count), Raw::at(props));
         n = Mem::dwordAt(count, 0);
-        let found : i32 = -1;
+        let mut found : i32 = -1;
         for (i of 0..n) {
             if (found < 0) {
                 let flags : i32 = Mem::dwordAt(
@@ -442,12 +442,12 @@ pub(crate) class VkContext {
     pub(file) fn pickDevice(mut self, desc : RendererDesc) : void ! PlatformError {
         let countAt : i64 = self.scratch + CTX_SCRATCH_DEVICE_COUNT;
         Mem::putDword(countAt, 0, 0);
-        let r : i32 = self.table.enumeratePhysicalDevices(
+        let mut r : i32 = self.table.enumeratePhysicalDevices(
             self.instance,
             Raw::at(countAt),
             Raw::nil()
         );
-        let n : i32 = Mem::dwordAt(countAt, 0);
+        let mut n : i32 = Mem::dwordAt(countAt, 0);
         if (!VkErr::ok(r) || n <= 0) {
             throw PlatformError("vulkan: the loader reports no physical device");
         }
@@ -467,13 +467,13 @@ pub(crate) class VkContext {
         // VK_INCOMPLETE (a device appeared between the two calls) still lists `n` good ones.
         n = Mem::dwordAt(countAt, 0).min(n);
 
-        let best : i64 = 0;
-        let bestRank : i32 = 0;
-        let bestFamily : i32 = -1;
-        let bestKind : i32 = 0;
+        let mut best : i64 = 0;
+        let mut bestRank : i32 = 0;
+        let mut bestFamily : i32 = -1;
+        let mut bestKind : i32 = 0;
         for (i of 0..n) {
             let pd : i64 = Mem::qwordOf(devices, i as i64);
-            let family : i32 = -1;
+            let mut family : i32 = -1;
             if (pd != 0) {
                 family = self.familyFor(pd);
             }
@@ -542,28 +542,28 @@ pub(crate) class VkContext {
         ) != 0;
         Mem::release(features);
 
-        let want : VkPhysicalDeviceFeatures = VkInit::physicalDeviceFeatures();
+        let mut want : VkPhysicalDeviceFeatures = VkInit::physicalDeviceFeatures();
         if (canAniso) {
             want.samplerAnisotropy = 1;
         }
-        let featureArr : VkPhysicalDeviceFeatures[] = malloc<VkPhysicalDeviceFeatures>(1);
+        let mut featureArr : VkPhysicalDeviceFeatures[] = malloc<VkPhysicalDeviceFeatures>(1);
         featureArr[0] = want;
 
         // One queue, full priority. The priority is a float the driver reads by
         // pointer, so it lives in the block, not in a local.
         Mem::putFloatOf(self.names, CTX_PRIORITY / 4, 1.0);
-        let qi : VkDeviceQueueCreateInfo = VkInit::deviceQueueCreateInfo();
+        let mut qi : VkDeviceQueueCreateInfo = VkInit::deviceQueueCreateInfo();
         qi.queueFamilyIndex = self.family;
         qi.queueCount = 1;
         qi.pQueuePriorities = Raw::at(self.names + CTX_PRIORITY);
-        let qarr : VkDeviceQueueCreateInfo[] = malloc<VkDeviceQueueCreateInfo>(1);
+        let mut qarr : VkDeviceQueueCreateInfo[] = malloc<VkDeviceQueueCreateInfo>(1);
         qarr[0] = qi;
 
         // The swapchain extension, in the device-extension table.
         self.putName(CTX_DEVICE_STRINGS, VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         Mem::putQword(self.names, CTX_DEVICE_EXTENSIONS, self.names + CTX_DEVICE_STRINGS);
 
-        let dci : VkDeviceCreateInfo = VkInit::deviceCreateInfo();
+        let mut dci : VkDeviceCreateInfo = VkInit::deviceCreateInfo();
         dci.queueCreateInfoCount = 1;
         dci.pQueueCreateInfos = VkAddr::deviceQueueCreateInfo(qarr);
         dci.enabledExtensionCount = 1;

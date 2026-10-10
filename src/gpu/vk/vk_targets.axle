@@ -71,7 +71,7 @@ pub(crate) class VkTargets {
 
     /** Nothing made yet. */
     constructor() {
-        let n : i64 = TARGET_COUNT as i64;
+        let mut n : i64 = TARGET_COUNT as i64;
         self.colors = malloc<GpuImage>(n);
         self.colorViews = malloc<i64>(n);
         self.postFrames = malloc<i64>(n);
@@ -114,7 +114,7 @@ pub(crate) class VkTargets {
 
     /** A clamped sampler with `filter`; 0 on failure. */
     pub(file) fn makeSampler(self, ctx : VkContext, filter : i32) : i64 {
-        let info = VkInit::samplerCreateInfo();
+        let mut info = VkInit::samplerCreateInfo();
         info.magFilter = filter;
         info.minFilter = filter;
         info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
@@ -133,10 +133,10 @@ pub(crate) class VkTargets {
 
     /** A framebuffer of `views` (one or two) at the targets' size; 0 on failure. */
     pub(file) fn makeFrame(self, ctx : VkContext, pass : i64, a : i64, b : i64) : i64 {
-        let at : i64[] = malloc<i64>(2);
+        let mut at : i64[] = malloc<i64>(2);
         at[0] = a;
         at[1] = b;
-        let fi : VkFramebufferCreateInfo = VkInit::framebufferCreateInfo();
+        let mut fi : VkFramebufferCreateInfo = VkInit::framebufferCreateInfo();
         fi.renderPass = pass;
         fi.attachmentCount = 1;
         if (b != 0) {
@@ -156,9 +156,9 @@ pub(crate) class VkTargets {
 
     /** The set that reads `prev`, `kept` and the depth; 0 on failure. */
     pub(file) fn makeSet(self, ctx : VkContext, pipes : VkPipelines, prev : i32, kept : i32) : i64 {
-        let layouts : i64[] = malloc<i64>(1);
+        let mut layouts : i64[] = malloc<i64>(1);
         layouts[0] = pipes.passSetLayout;
-        let ai : VkDescriptorSetAllocateInfo = VkInit::descriptorSetAllocateInfo();
+        let mut ai : VkDescriptorSetAllocateInfo = VkInit::descriptorSetAllocateInfo();
         ai.descriptorPool = pipes.pool;
         ai.descriptorSetCount = 1;
         ai.pSetLayouts = VkAddr::handles(layouts);
@@ -168,7 +168,7 @@ pub(crate) class VkTargets {
             return 0;
         }
         let set : i64 = Mem::qwordAt(ctx.scratch, 0);
-        let ii : VkDescriptorImageInfo[] = malloc<VkDescriptorImageInfo>(3);
+        let mut ii : VkDescriptorImageInfo[] = malloc<VkDescriptorImageInfo>(3);
         ii[0] = VkDescriptorImageInfo {
             sampler: self.linear,
             imageView: self.colorViews[prev as i64],
@@ -184,13 +184,13 @@ pub(crate) class VkTargets {
             imageView: self.depthSample,
             imageLayout: VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
         };
-        let write : VkWriteDescriptorSet = VkInit::writeDescriptorSet();
+        let mut write : VkWriteDescriptorSet = VkInit::writeDescriptorSet();
         write.dstSet = set;
         write.dstBinding = 0;
         write.descriptorCount = 3;
         write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         write.pImageInfo = VkAddr::descriptorImageInfo(ii);
-        let w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
+        let mut w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
         w[0] = write;
         ctx.table.updateDescriptorSets(ctx.device, 1, VkAddr::writeDescriptorSet(w), 0, Raw::nil());
         free(w);
@@ -218,7 +218,7 @@ pub(crate) class VkTargets {
         if (self.nearest == 0) {
             self.nearest = self.makeSampler(ctx, VK_FILTER_NEAREST);
         }
-        let ok : bool = self.linear != 0 && self.nearest != 0;
+        let mut ok : bool = self.linear != 0 && self.nearest != 0;
 
         let colorUse : i32 = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
         for (i of 0..TARGET_COUNT) {
@@ -247,7 +247,7 @@ pub(crate) class VkTargets {
             ok = !self.depth.isNone();
         }
         if (ok) {
-            let aspect : i32 = VK_IMAGE_ASPECT_DEPTH_BIT;
+            let mut aspect : i32 = VK_IMAGE_ASPECT_DEPTH_BIT;
             if (pipes.depthFormat != VK_FORMAT_D32_SFLOAT) {
                 aspect = aspect | VK_IMAGE_ASPECT_STENCIL_BIT;
             }

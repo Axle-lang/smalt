@@ -164,7 +164,7 @@ fn run() : i32 ! PlatformError {
     defer events.close();
 
     let smoke : bool = smokeRun();
-    let end : i32 = session(win, clock, events, chooseBackend(), smoke)?;
+    let mut end : i32 = session(win, clock, events, chooseBackend(), smoke)?;
     if (end == END_LOST) {
         // The documented answer to a lost GPU: drop the renderer, carry on with the CPU.
         println("the GPU was lost; carrying on with the CPU");
@@ -198,12 +198,12 @@ fn session(
 
     // Geometry, built on the CPU and uploaded once. Handles, not objects: the renderer
     // owns what is on the GPU.
-    let cube = gfx.uploadMesh(MeshBuilder::fromMesh(Primitives::cube(1.6)));
+    let mut cube = gfx.uploadMesh(MeshBuilder::fromMesh(Primitives::cube(1.6)));
     let ground = gfx.uploadMesh(MeshBuilder::fromMesh(Primitives::ground(24.0, 12.0)));
     let wall = gfx.uploadMesh(coloredWall(-6.0));
     let pane = gfx.uploadMesh(MeshBuilder::fromMesh(Primitives::ground(2.5, 1.0)));
 
-    let crate1 = gfx.uploadTexture(crateImage(), SamplerDesc { nearest: true, anisotropy: 8 });
+    let mut crate1 = gfx.uploadTexture(crateImage(), SamplerDesc { nearest: true, anisotropy: 8 });
     let tiles = gfx.uploadTexture(
         Image::fromTexture(
             Texture::checker(128, 2, Color::rgb(0.3, 0.33, 0.38), Color::rgb(0.18, 0.2, 0.24))
@@ -216,7 +216,7 @@ fn session(
         println("  (some of the scene could not be uploaded; it is drawn without it)");
     }
 
-    let glass = Material::matte(Color::rgb(0.35, 0.6, 1.0));
+    let mut glass = Material::matte(Color::rgb(0.35, 0.6, 1.0));
     glass.opacity = 0.45;
     glass.cullBackface = false;
     let cubeMaterial = Material::glossy(0.35, 48.0);
@@ -231,13 +231,13 @@ fn session(
     let scene = new Scene(64);
     let ui = BitmapFont::baked(Face::Ui);
     let pacer = new FramePacer(FRAME_RATE);
-    let running = true;
-    let looking = false;
-    let reload = false;
-    let spin : f64 = 0.0;
-    let frames : i32 = 0;
-    let captureFails : i32 = 0;
-    let shownCount : i32 = 0;
+    let mut running = true;
+    let mut looking = false;
+    let mut reload = false;
+    let mut spin : f64 = 0.0;
+    let mut frames : i32 = 0;
+    let mut captureFails : i32 = 0;
+    let mut shownCount : i32 = 0;
 
     while (running) {
         let dt = pacer.tick(clock);
@@ -337,7 +337,7 @@ fn session(
 
     // The teardown a program can get wrong: a second close is harmless, and a closed
     // renderer refuses everything instead of touching what it gave back.
-    let fails : i32 = captureFails;
+    let mut fails : i32 = captureFails;
     if (shownCount == 0) {
         println("smoke: no frame was shown");
         fails += 1;
@@ -368,7 +368,7 @@ fn checkCapture(px : FramePixels) : i32 {
         println("smoke: the captured frame is empty");
         return 1;
     }
-    let fails : i32 = 0;
+    let mut fails : i32 = 0;
     let panel : i32 = px.frame().at(14, 14);
     if (panel != C_PANEL) {
         println("smoke: the captured panel reads ${panel}, not ${C_PANEL}");
@@ -398,7 +398,7 @@ fn walk(camera : Camera, events : Events, dt : f64) : void {
     let step = WALK_SPEED * dt;
     let forward = camera.forward();
     let right = camera.right();
-    let move = Vec3::zero();
+    let mut move = Vec3::zero();
 
     if (events.isKeyDown(Scancode::W)) {
         move = move.plus(forward);

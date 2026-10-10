@@ -91,7 +91,7 @@ pub(crate) class SysBlit : Closeable {
             return;
         }
         unsafe {
-            let img = self.header();
+            let mut img = self.header();
             (*img).width = w;
             (*img).height = h;
             (*img).xoffset = 0;
@@ -143,9 +143,9 @@ pub(crate) class SysBlit : Closeable {
                 return;
             }
 
-            let putW = srcW;
-            let putH = srcH;
-            let source = Raw::pixelsOf(pixels);
+            let mut putW = srcW;
+            let mut putH = srcH;
+            let mut source = Raw::pixelsOf(pixels);
             if (srcW != dstW || srcH != dstH) {
                 self.scaled.reserve((dstW as i64) * (dstH as i64));
                 self.scaled.resample(pixels, srcW, srcH, dstW, dstH);
@@ -155,7 +155,7 @@ pub(crate) class SysBlit : Closeable {
             }
 
             self.describe(putW, putH);
-            let img = self.header();
+            let mut img = self.header();
             (*img).data = source;
             XPutImage(
                 (*target).display,

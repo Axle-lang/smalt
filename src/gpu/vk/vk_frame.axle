@@ -173,7 +173,7 @@ pub(crate) class VkFrame {
         VkFrame::putColor(base, FRAME_SUN_COLOR, sun.color, 1.0);
         VkFrame::putColor(base, FRAME_AMBIENT, scene.ambient(), 1.0);
         let fog = scene.fog();
-        let fogOn : f64 = 0.0;
+        let mut fogOn : f64 = 0.0;
         if (fog.isOn()) {
             fogOn = 1.0;
         }
@@ -203,7 +203,7 @@ pub(crate) class VkFrame {
         let m = item.material;
         VkFrame::putColor(base, DRAW_ALBEDO, m.albedo, m.opacity);
         VkFrame::putVec4(base, DRAW_PARAMS, m.ambient, m.specular, m.shininess, m.cutoff);
-        let sky : f64 = 0.0;
+        let mut sky : f64 = 0.0;
         if (m.skyLight) {
             sky = 1.0;
         }

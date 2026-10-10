@@ -107,7 +107,7 @@ pub extern "C" struct WlDrawable {
  */
 pub(crate) fn onBufferRelease(data : ptr, buffer : ptr) : void {
     unsafe {
-        let slot : ptr<WlSlot> = data as ptr<WlSlot>;
+        let mut slot : ptr<WlSlot> = data as ptr<WlSlot>;
         (*slot).busy = 0;
     }
 }
@@ -125,7 +125,7 @@ pub(crate) fn initDrawable(target : ptr<WlDrawable>) : void {
         (*target).slots = Raw::take(WL_BUFFER_COUNT * sizeof<WlSlot>());
         Raw::clear((*target).slots, WL_BUFFER_COUNT * sizeof<WlSlot>());
         (*target).listener = Raw::take(sizeof<BufferListener>());
-        let listener : ptr<BufferListener> = (*target).listener as ptr<BufferListener>;
+        let mut listener : ptr<BufferListener> = (*target).listener as ptr<BufferListener>;
         (*listener).release = onBufferRelease;
         (*target).fd = -1;
     }
@@ -215,7 +215,7 @@ pub(crate) fn commitFrame(target : ptr<WlDrawable>, args : WlArgs, index : i64) 
         if (index < 0) {
             return;
         }
-        let slot : ptr<WlSlot> = slotAt(target, index);
+        let mut slot : ptr<WlSlot> = slotAt(target, index);
         if (Raw::isNil((*slot).proxy)) {
             return;
         }
@@ -253,7 +253,7 @@ pub(crate) fn detachFrame(target : ptr<WlDrawable>, args : WlArgs) : void {
 pub(crate) fn releaseBuffers(target : ptr<WlDrawable>, args : WlArgs) : void {
     unsafe {
         for (i of 0..WL_BUFFER_COUNT) {
-            let slot : ptr<WlSlot> = slotAt(target, i);
+            let mut slot : ptr<WlSlot> = slotAt(target, i);
             args.sendDestroy((*slot).proxy, WL_BUFFER_DESTROY);
             (*slot).proxy = Raw::nil();
             (*slot).pixels = Raw::nil();
@@ -339,7 +339,7 @@ fn makeBuffer(
         if (Raw::isNil(proxy)) {
             return false;
         }
-        let slot : ptr<WlSlot> = slotAt(target, index);
+        let mut slot : ptr<WlSlot> = slotAt(target, index);
         (*slot).proxy = proxy;
         (*slot).pixels = Raw::at(Raw::addr((*target).mapping) + offset);
         (*slot).busy = 0;

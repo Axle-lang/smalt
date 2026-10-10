@@ -107,7 +107,7 @@ pub(crate) fn createWindow(
             throw PlatformError("xdg_wm_base.get_xdg_surface produced no surface");
         }
         (*st).xdgSurface = xdgSurface;
-        let surfaceListener : ptr<XdgSurfaceListener> =
+        let mut surfaceListener : ptr<XdgSurfaceListener> =
             (*st).surfaceListener as ptr<XdgSurfaceListener>;
         (*surfaceListener).configure = onSurfaceConfigure;
         wl_proxy_add_listener(xdgSurface, (*st).surfaceListener, st as ptr);
@@ -118,7 +118,7 @@ pub(crate) fn createWindow(
             throw PlatformError("xdg_surface.get_toplevel produced no toplevel");
         }
         (*st).toplevel = toplevel;
-        let toplevelListener : ptr<XdgToplevelListener> =
+        let mut toplevelListener : ptr<XdgToplevelListener> =
             (*st).toplevelListener as ptr<XdgToplevelListener>;
         (*toplevelListener).configure = onToplevelConfigure;
         (*toplevelListener).close = onToplevelClose;
@@ -199,7 +199,7 @@ fn requestDecoration(st : ptr<WlWinState>, app : ptr<WlApp>, args : WlArgs) : vo
             return;
         }
         (*st).decoration = decoration;
-        let listener : ptr<XdgDecorationListener> =
+        let mut listener : ptr<XdgDecorationListener> =
             (*st).decorationListener as ptr<XdgDecorationListener>;
         (*listener).configure = onDecorationConfigure;
         wl_proxy_add_listener(decoration, (*st).decorationListener, st as ptr);
@@ -254,7 +254,7 @@ pub(crate) fn syncRoundTrip(st : ptr<WlWinState>, core : ptr<WlCore>, args : WlA
         if (Raw::isNil((*st).syncListener)) {
             (*st).syncListener = Raw::take(sizeof<WlCallbackListener>());
         }
-        let listener : ptr<WlCallbackListener> = (*st).syncListener as ptr<WlCallbackListener>;
+        let mut listener : ptr<WlCallbackListener> = (*st).syncListener as ptr<WlCallbackListener>;
         (*listener).done = onSyncDone;
         wl_proxy_add_listener(callback, (*st).syncListener, st as ptr);
         if (wl_display_roundtrip((*st).display) < 0) {

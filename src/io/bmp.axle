@@ -157,9 +157,9 @@ pub class Bmp {
     pub(file) static fn decode(data : Blob, width : i32, height : i32, topDown : bool, bpp : i32) : Texture {
         let bytesPerPixel : i32 = bpp / 8;
         let rowBytes = Bmp::stride(width, bytesPerPixel);
-        let start : i64 = 0;
+        let mut start : i64 = 0;
         unsafe {
-            let h : ptr<BMPHEADER> = data.at() as ptr<BMPHEADER>;
+            let mut h : ptr<BMPHEADER> = data.at() as ptr<BMPHEADER>;
             start = (*h).file.bfOffBits as i64;
         }
         let needed : i64 = start + (rowBytes as i64) * (height as i64);
@@ -172,7 +172,7 @@ pub class Bmp {
             // A positive `biHeight` means the first row in the file is
             // the *bottom* of the image, which is the default and the
             // reason an unflipped decoder shows everything upside down.
-            let sourceRow : i32 = y;
+            let mut sourceRow : i32 = y;
             if (!topDown) {
                 sourceRow = height - 1 - y;
             }
@@ -255,7 +255,7 @@ pub class Bmp {
 
         let src : i64 = f.base();
         let rowBase : i64 = Raw::addr(row.at());
-        let y : i32 = h - 1;
+        let mut y : i32 = h - 1;
         while (y >= 0) {
             for (x of 0..w) {
                 let c : i32 = Mem::wordOf(src, (y as i64) * (w as i64) + (x as i64));
@@ -290,7 +290,7 @@ pub class Bmp {
     pub(file) static fn fillHeader(header : Blob, w : i32, h : i32, stride : i32) : void {
         let pixels : i32 = stride * h;
         unsafe {
-            let p : ptr<BMPHEADER> = header.at() as ptr<BMPHEADER>;
+            let mut p : ptr<BMPHEADER> = header.at() as ptr<BMPHEADER>;
             (*p).file.bfType = Bmp::MAGIC as u16;
             (*p).file.bfSize = ((sizeof<BMPHEADER>() as i32) + pixels) as u32;
             (*p).file.bfReserved1 = 0;
@@ -330,13 +330,13 @@ pub class Bmp {
             throw IOException("${path} is not a BMP this loader reads");
         }
 
-        let bpp : i32 = 0;
-        let width : i32 = 0;
-        let rawHeight : i32 = 0;
-        let magic : i32 = 0;
-        let compression : i32 = 0;
+        let mut bpp : i32 = 0;
+        let mut width : i32 = 0;
+        let mut rawHeight : i32 = 0;
+        let mut magic : i32 = 0;
+        let mut compression : i32 = 0;
         unsafe {
-            let h : ptr<BMPHEADER> = data.at() as ptr<BMPHEADER>;
+            let mut h : ptr<BMPHEADER> = data.at() as ptr<BMPHEADER>;
             magic = (*h).file.bfType as i32;
             compression = (*h).info.biCompression as i32;
             bpp = (*h).info.biBitCount as i32;

@@ -41,7 +41,7 @@ const LOADER_ENTRY : string = "vkGetInstanceProcAddr";
 pub(crate) class SysGpuLoader {
     /** The address of `vkGetInstanceProcAddr`, or nil. */
     pub(crate) static fn entry() : ptr {
-        let lib : ptr = dlopen(LOADER_SONAME, RTLD_NOW);
+        let mut lib : ptr = dlopen(LOADER_SONAME, RTLD_NOW);
         if (Raw::isNil(lib)) {
             lib = dlopen(LOADER_LINKNAME, RTLD_NOW);
         }

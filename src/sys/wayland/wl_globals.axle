@@ -25,7 +25,7 @@ const WL_OUTPUT_MODE_CURRENT : i32 = 1;
 /** One global the compositor offers; the name is what a bind quotes. */
 pub(crate) fn onGlobal(data : ptr, registry : ptr, name : u32, iface : ptr, version : u32) : void {
     unsafe {
-        let app : ptr<WlApp> = data as ptr<WlApp>;
+        let mut app : ptr<WlApp> = data as ptr<WlApp>;
         if (cstrcmp(iface, "wl_compositor") == 0) {
             (*app).compositorName = name;
         }
@@ -85,7 +85,7 @@ pub(crate) fn onOutputMode(
         if (((flags % 2) as i32) != WL_OUTPUT_MODE_CURRENT) {
             return;
         }
-        let app : ptr<WlApp> = data as ptr<WlApp>;
+        let mut app : ptr<WlApp> = data as ptr<WlApp>;
         (*app).screenW = width;
         (*app).screenH = height;
     }
@@ -105,7 +105,7 @@ pub(crate) fn onOutputDescription(data : ptr, output : ptr, description : ptr) :
  */
 pub(crate) fn onSeatCapabilities(data : ptr, seat : ptr, caps : u32) : void {
     unsafe {
-        let app : ptr<WlApp> = data as ptr<WlApp>;
+        let mut app : ptr<WlApp> = data as ptr<WlApp>;
         (*app).seatCaps = caps;
     }
 }

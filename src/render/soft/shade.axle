@@ -60,7 +60,7 @@ pub class Shader {
         normal : Vec3,
         world : Vec3
     ) : i32 {
-        let albedo : Color = sh.material.albedo;
+        let mut albedo : Color = sh.material.albedo;
         if (sh.material.textured) {
             albedo = albedo.times(Color::unpack(tex.sampleNearest(u, v)));
         }
@@ -69,14 +69,14 @@ pub class Shader {
         // The light *travels* along `direction`, so the vector towards
         // the light is its opposite.
         let toLight : Vec3 = sh.light.direction.negated();
-        let diffuse = n.dot(toLight);
+        let mut diffuse = n.dot(toLight);
         if (diffuse < 0.0) {
             diffuse = 0.0;
         }
 
         let lit : Color = sh.light.color.scaled(diffuse);
         let ambient = Color::white().scaled(sh.material.ambient);
-        let out = albedo.times(ambient.plus(lit));
+        let mut out = albedo.times(ambient.plus(lit));
 
         if (sh.material.specular > Shader::MIN_SPECULAR && diffuse > 0.0) {
             let toEye : Vec3 = sh.eye.minus(world).normalized();

@@ -178,13 +178,13 @@ pub(crate) class VkSwapchain {
         self.colorSpace = 0;
         let countAt : i64 = ctx.scratch + CTX_SCRATCH_QUERY_COUNT;
         Mem::putDword(countAt, 0, 0);
-        let r : i32 = ctx.table.getPhysicalDeviceSurfaceFormatsKHR(
+        let mut r : i32 = ctx.table.getPhysicalDeviceSurfaceFormatsKHR(
             ctx.physical,
             ctx.surface,
             Raw::at(countAt),
             Raw::nil()
         );
-        let n : i32 = Mem::dwordAt(countAt, 0).min(SWAP_MAX_QUERY);
+        let mut n : i32 = Mem::dwordAt(countAt, 0).min(SWAP_MAX_QUERY);
         if (!VkErr::ok(r) || n <= 0) {
             return 0;
         }
@@ -199,8 +199,8 @@ pub(crate) class VkSwapchain {
             Raw::at(countAt),
             Raw::at(list)
         );
-        let format : i32 = 0;
-        let space : i32 = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+        let mut format : i32 = 0;
+        let mut space : i32 = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
         if (VkErr::ok(r)) {
             n = Mem::dwordAt(countAt, 0).min(SWAP_MAX_QUERY);
             if (n > 0) {
@@ -238,13 +238,13 @@ pub(crate) class VkSwapchain {
         // create's to report.
         let countAt : i64 = ctx.scratch + CTX_SCRATCH_QUERY_COUNT;
         Mem::putDword(countAt, 0, 0);
-        let r : i32 = ctx.table.getPhysicalDeviceSurfacePresentModesKHR(
+        let mut r : i32 = ctx.table.getPhysicalDeviceSurfacePresentModesKHR(
             ctx.physical,
             ctx.surface,
             Raw::at(countAt),
             Raw::nil()
         );
-        let n : i32 = Mem::dwordAt(countAt, 0).min(SWAP_MAX_QUERY);
+        let mut n : i32 = Mem::dwordAt(countAt, 0).min(SWAP_MAX_QUERY);
         if (!VkErr::ok(r) || n <= 0) {
             return VK_PRESENT_MODE_FIFO_KHR;
         }
@@ -264,8 +264,8 @@ pub(crate) class VkSwapchain {
             return VK_PRESENT_MODE_FIFO_KHR;
         }
         n = Mem::dwordAt(countAt, 0).min(n);
-        let immediate : bool = false;
-        let mailbox : bool = false;
+        let mut immediate : bool = false;
+        let mut mailbox : bool = false;
         for (i of 0..n) {
             let m : i32 = Mem::wordOf(list, i as i64);
             if (m == VK_PRESENT_MODE_IMMEDIATE_KHR) {
@@ -316,7 +316,7 @@ pub(crate) class VkSwapchain {
         if (caps == 0) {
             return VK_ERROR_OUT_OF_HOST_MEMORY;
         }
-        let r : i32 = ctx.table.getPhysicalDeviceSurfaceCapabilitiesKHR(
+        let mut r : i32 = ctx.table.getPhysicalDeviceSurfaceCapabilitiesKHR(
             ctx.physical,
             ctx.surface,
             Raw::at(caps)
@@ -325,8 +325,8 @@ pub(crate) class VkSwapchain {
             Mem::release(caps);
             return r;
         }
-        let w : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_CURRENT_EXTENT);
-        let h : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_CURRENT_EXTENT + 4);
+        let mut w : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_CURRENT_EXTENT);
+        let mut h : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_CURRENT_EXTENT + 4);
         if (w == -1) {
             // 0xFFFFFFFF: the window system leaves the size to the program.
             w = VkSwapchain::clamp(
@@ -352,19 +352,19 @@ pub(crate) class VkSwapchain {
         if (w <= 0 || h <= 0) {
             return VK_NOT_READY;
         }
-        let want : i32 = minImages + 1;
+        let mut want : i32 = minImages + 1;
         if (maxImages > 0 && want > maxImages) {
             want = maxImages;
         }
         want = want.min(SWAP_MAX_IMAGES);
         // Opaque when offered; otherwise the lowest bit the surface sets (it must set one).
-        let alpha : i32 = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        let mut alpha : i32 = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
         if ((alphaBits & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) == 0 && alphaBits != 0) {
             alpha = alphaBits & (0 - alphaBits);
         }
 
         let format : i32 = self.format;
-        let info : VkSwapchainCreateInfoKHR = VkInit::swapchainCreateInfo();
+        let mut info : VkSwapchainCreateInfoKHR = VkInit::swapchainCreateInfo();
         info.surface = ctx.surface;
         info.minImageCount = want;
         info.imageFormat = format;
@@ -393,7 +393,7 @@ pub(crate) class VkSwapchain {
         let countAt : i64 = ctx.scratch + CTX_SCRATCH_QUERY_COUNT;
         Mem::putDword(countAt, 0, 0);
         r = ctx.table.getSwapchainImagesKHR(ctx.device, swap, Raw::at(countAt), Raw::nil());
-        let n : i32 = Mem::dwordAt(countAt, 0);
+        let mut n : i32 = Mem::dwordAt(countAt, 0);
         if (r != VK_SUCCESS || n <= 0 || n > SWAP_MAX_IMAGES) {
             ctx.table.destroySwapchainKHR(ctx.device, swap);
             return VkSwapchain::failure(r);
@@ -418,7 +418,7 @@ pub(crate) class VkSwapchain {
         self.w = w;
         self.h = h;
         self.count = n;
-        let result : i32 = VK_SUCCESS;
+        let mut result : i32 = VK_SUCCESS;
         for (i of 0..n) {
             let k : i64 = i as i64;
             self.images[k] = Mem::qwordOf(imgBlock, k);
@@ -434,9 +434,9 @@ pub(crate) class VkSwapchain {
             self.frames[k] = 0;
             self.done[k] = 0;
             if (self.views[k] != 0) {
-                let at : i64[] = malloc<i64>(1);
+                let mut at : i64[] = malloc<i64>(1);
                 at[0] = self.views[k];
-                let fi : VkFramebufferCreateInfo = VkInit::framebufferCreateInfo();
+                let mut fi : VkFramebufferCreateInfo = VkInit::framebufferCreateInfo();
                 fi.renderPass = pipes.presentPass;
                 fi.attachmentCount = 1;
                 fi.pAttachments = VkAddr::handles(at);

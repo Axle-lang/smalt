@@ -39,11 +39,11 @@ class WinWindow {
      * classic bug where a 1280×720 request yields a 1264×681 framebuffer.
      */
     pub(crate) static fn create(instance : ptr, title : string, w : i32, h : i32, style : i32) : ptr {
-        let outerW : i32 = 0;
-        let outerH : i32 = 0;
+        let mut outerW : i32 = 0;
+        let mut outerH : i32 = 0;
         let block = new Blob(sizeof<RECT>());
         unsafe {
-            let rect : ptr<RECT> = block.at() as ptr<RECT>;
+            let mut rect : ptr<RECT> = block.at() as ptr<RECT>;
             (*rect).left = 0;
             (*rect).top = 0;
             (*rect).right = w;

@@ -235,8 +235,8 @@ pub class BitmapFont {
             if (y >= top && y < bottom) {
                 let word : i64 = ((g * self.rows + row) * 2) as i64;
                 for (half of 0..2) {
-                    let rest : i32 = self.glyphs[word + (half as i64)];
-                    let col : i32 = x + half * TEXT_WORD_PIXELS;
+                    let mut rest : i32 = self.glyphs[word + (half as i64)];
+                    let mut col : i32 = x + half * TEXT_WORD_PIXELS;
                     while (rest != 0) {
                         let cover : i32 = rest & 3;
                         if (cover != 0) {
@@ -288,8 +288,8 @@ pub class BitmapFont {
             if (y + k > top && y < bottom) {
                 let word : i64 = ((g * self.rows + row) * 2) as i64;
                 for (half of 0..2) {
-                    let rest : i32 = self.glyphs[word + (half as i64)];
-                    let col : i32 = x + half * TEXT_WORD_PIXELS * k;
+                    let mut rest : i32 = self.glyphs[word + (half as i64)];
+                    let mut col : i32 = x + half * TEXT_WORD_PIXELS * k;
                     while (rest != 0) {
                         let cover : i32 = rest & 3;
                         if (cover != 0) {
@@ -327,7 +327,7 @@ pub class BitmapFont {
         scale : i32,
         ink : i32
     ) : i32 {
-        let pen : i32 = x;
+        let mut pen : i32 = x;
         let n : i64 = s.byteLength;
         for (i of 0..n) {
             pen = pen + self.glyphScaled(f, pen, baseline, s.byteAt(i), scale, ink);
@@ -353,7 +353,7 @@ pub class BitmapFont {
 
     /** The pen after drawing `s` from `x` with its baseline at `baseline`. */
     pub fn draw(self, f : Frame, x : i32, baseline : i32, s : string, ink : i32) : i32 {
-        let pen : i32 = x;
+        let mut pen : i32 = x;
         let n : i64 = s.byteLength;
         for (i of 0..n) {
             pen = pen + self.glyph(f, pen, baseline, s.byteAt(i), ink);
@@ -363,7 +363,7 @@ pub class BitmapFont {
 
     /** The width `s` would occupy, without drawing it. */
     pub fn width(self, s : string) : i32 {
-        let w : i32 = 0;
+        let mut w : i32 = 0;
         let n : i64 = s.byteLength;
         for (i of 0..n) {
             w = w + self.advance(s.byteAt(i));
@@ -406,7 +406,7 @@ pub class BitmapFont {
         len : i32,
         ink : i32
     ) : i32 {
-        let pen : i32 = x;
+        let mut pen : i32 = x;
         for (i of 0..len) {
             pen = pen + self.glyph(f, pen, baseline, Mem::byteAt(buf, off + (i as i64)), ink);
         }
@@ -415,7 +415,7 @@ pub class BitmapFont {
 
     /** The width those bytes would occupy, without drawing them. */
     pub fn widthBytes(self, buf : i64, off : i64, len : i32) : i32 {
-        let w : i32 = 0;
+        let mut w : i32 = 0;
         for (i of 0..len) {
             w = w + self.advance(Mem::byteAt(buf, off + (i as i64)));
         }
@@ -460,7 +460,7 @@ pub class BitmapFont {
             return self.drawBytes(f, x, baseline, buf, off, len, ink);
         }
         let dots : i32 = self.advance(TEXT_DOT) * 3;
-        let pen : i32 = x;
+        let mut pen : i32 = x;
         for (i of 0..len) {
             let c : i32 = Mem::byteAt(buf, off + (i as i64));
             if (pen + self.advance(c) + dots > x + limit) {
@@ -488,7 +488,7 @@ pub class BitmapFont {
             return self.draw(f, x, baseline, s, ink);
         }
         let dots : i32 = self.advance(TEXT_DOT) * 3;
-        let pen : i32 = x;
+        let mut pen : i32 = x;
         let n : i64 = s.byteLength;
         for (i of 0..n) {
             let c : i32 = s.byteAt(i);

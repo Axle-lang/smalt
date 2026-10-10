@@ -210,7 +210,7 @@ pub(crate) class VkGraveyard {
         pool : i64,
         completed : i64
     ) : void {
-        let kept : i32 = 0;
+        let mut kept : i32 = 0;
         for (i of 0..self.count) {
             let k : i64 = i as i64;
             if (self.born[k] - 1 <= completed) {

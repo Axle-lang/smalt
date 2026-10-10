@@ -74,7 +74,7 @@ pub class BytePool : Closeable {
 
     /** A pool of `capacity` bytes, or a default megabyte when that is not positive. */
     constructor(capacity : i64) {
-        let n : i64 = capacity;
+        let mut n : i64 = capacity;
         if (n <= 0) {
             n = STORE_POOL_BYTES;
         }
@@ -178,7 +178,7 @@ pub class BytePool : Closeable {
             return false;
         }
         for (start of 0..(len - needleLen + 1)) {
-            let hit : bool = true;
+            let mut hit : bool = true;
             for (i of 0..needleLen) {
                 let a : i32 = BytePool::fold(Mem::byteAt(self.block, offset + ((start + i) as i64)));
                 let b : i32 = BytePool::fold(Mem::byteAt(needle, i as i64));
@@ -226,7 +226,7 @@ pub class SlotIndex : Closeable {
 
     /** A table sized to the next power of two at or above `capacity`. */
     constructor(capacity : i32) {
-        let n : i32 = STORE_MIN_SLOTS;
+        let mut n : i32 = STORE_MIN_SLOTS;
         while (n < capacity && n < 1073741824) {
             n = n * 2;
         }
@@ -279,7 +279,7 @@ pub class SlotIndex : Closeable {
             return -1;
         }
         let k : i64 = SlotIndex::live(key);
-        let at : i32 = self.start(k);
+        let mut at : i32 = self.start(k);
         for (probe of 0..self.slotCount) {
             let held : i64 = Mem::qwordOf(self.keys, at as i64);
             if (held == STORE_EMPTY_KEY) {
@@ -310,7 +310,7 @@ pub class SlotIndex : Closeable {
             return false;
         }
         let k : i64 = SlotIndex::live(key);
-        let at : i32 = self.start(k);
+        let mut at : i32 = self.start(k);
         for (probe of 0..self.slotCount) {
             let held : i64 = Mem::qwordOf(self.keys, at as i64);
             if (held == STORE_EMPTY_KEY) {

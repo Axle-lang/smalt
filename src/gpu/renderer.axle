@@ -152,7 +152,7 @@ pub class Renderer : Closeable {
             throw PlatformError("renderer: out of memory taking the 2-D layer");
         }
 
-        let opened : bool = false;
+        let mut opened : bool = false;
         if (desc.backend != Backend::Software) {
             try {
                 let vk = new VkBackend(win, desc, meshSlots, textureSlots)?;
@@ -208,7 +208,7 @@ pub class Renderer : Closeable {
         let clock = new SysClock();
         defer clock.close();
         // xorshift64: shifts and exclusive-ors only, so nothing here can overflow.
-        let x : i64 = clock.counter() ^ (Raw::addr(win.sys.handle()) << 7) ^ 1;
+        let mut x : i64 = clock.counter() ^ (Raw::addr(win.sys.handle()) << 7) ^ 1;
         x = x ^ (x << 13);
         x = x ^ (x >>> 7);
         x = x ^ (x << 17);
@@ -286,7 +286,7 @@ pub class Renderer : Closeable {
         if (self.closed) {
             return MeshHandle::none();
         }
-        let slot : i32 = HandleTable::EMPTY;
+        let mut slot : i32 = HandleTable::EMPTY;
         let b : dyn GpuBackend = self.backends[0];
         if (!mesh.isEmpty()) {
             slot = b.createMesh(mesh);
@@ -464,7 +464,7 @@ pub class Renderer : Closeable {
 
     /** The backend slots of a full-screen draw: its shader's, and its texture's or the white texel's. */
     pub(file) fn passSlots(self, item : PassItem, whiteSlot : i32) : DrawSlots {
-        let tex : i32 = whiteSlot;
+        let mut tex : i32 = whiteSlot;
         if (!item.tex.isNone()) {
             tex = self.textures.resolve(item.tex.index, item.tex.gen);
             if (tex < 0) {
@@ -489,7 +489,7 @@ pub class Renderer : Closeable {
             return;
         }
         let need : i64 = (w as i64) * (h as i64);
-        let oldW : i64 = self.layerW as i64;
+        let mut oldW : i64 = self.layerW as i64;
         let newW : i64 = w as i64;
         let rows : i32 = h.min(self.layerH);
         if (need > self.layerCap && self.retiredN < RENDERER_RETIRED) {
@@ -526,11 +526,11 @@ pub class Renderer : Closeable {
             }
             Mem::clear(self.layer + (rows as i64) * newW * 4, (need - (rows as i64) * newW) * 4);
         } else {
-            let y : i32 = rows - 1;
+            let mut y : i32 = rows - 1;
             while (y >= 0) {
-                let x : i64 = newW - 1;
+                let mut x : i64 = newW - 1;
                 while (x >= 0) {
-                    let word : i32 = 0;
+                    let mut word : i32 = 0;
                     if (x < oldW) {
                         word = Mem::wordOf(self.layer, (y as i64) * oldW + x);
                     }
@@ -587,7 +587,7 @@ pub class Renderer : Closeable {
         for (i of 0..n) {
             let it : DrawItem = scene.item(i);
             let meshSlot : i32 = self.meshes.resolve(it.mesh.index, it.mesh.gen);
-            let texSlot : i32 = self.textures.resolve(it.tex.index, it.tex.gen);
+            let mut texSlot : i32 = self.textures.resolve(it.tex.index, it.tex.gen);
             if (it.tex.isNone() || !it.material.textured) {
                 texSlot = whiteSlot;
             }

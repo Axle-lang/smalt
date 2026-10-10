@@ -39,12 +39,12 @@ pub class Display {
      * prefers `let (w, h) = …` is unaffected.
      */
     pub static fn suggestedSize(fraction : f64) : (w: i32, h: i32) {
-        let f : f64 = fraction;
+        let mut f : f64 = fraction;
         if (f <= 0.0 || f > 1.0) {
             f = 0.75;
         }
-        let w = ((Display::width() as f64) * f).floorToInt() as i32;
-        let h = ((Display::height() as f64) * f).floorToInt() as i32;
+        let mut w = ((Display::width() as f64) * f).floorToInt() as i32;
+        let mut h = ((Display::height() as f64) * f).floorToInt() as i32;
         if (w < 640) {
             w = 640;
         }

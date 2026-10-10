@@ -69,11 +69,11 @@ fn run() : i32 ! PlatformError {
     let groundMaterial = Material::textured();
     device.setLight(DirectionalLight::noon());
 
-    let running = true;
-    let looking = false;
-    let spin : f64 = 0.0;
+    let mut running = true;
+    let mut looking = false;
+    let mut spin : f64 = 0.0;
     let pacer = new FramePacer(FRAME_RATE);
-    let sinceTitle : f64 = 0.0;
+    let mut sinceTitle : f64 = 0.0;
 
     while (running) {
         let dt = pacer.tick(clock);
@@ -140,7 +140,7 @@ fn walk(camera : Camera, events : Events, dt : f64) : void {
     let step = WALK_SPEED * dt;
     let forward = camera.forward();
     let right = camera.right();
-    let move = Vec3::zero();
+    let mut move = Vec3::zero();
 
     if (events.isKeyDown(Scancode::W)) {
         move = move.plus(forward);

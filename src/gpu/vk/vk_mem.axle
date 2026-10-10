@@ -122,11 +122,11 @@ pub(crate) class VkMem {
         if (size <= 0) {
             return GpuBuffer::none();
         }
-        let info : VkBufferCreateInfo = VkInit::bufferCreateInfo();
+        let mut info : VkBufferCreateInfo = VkInit::bufferCreateInfo();
         info.size = size;
         info.usage = usage;
         info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        let r : i32 = ctx.table.createBuffer(ctx.device, info, Raw::at(ctx.scratch));
+        let mut r : i32 = ctx.table.createBuffer(ctx.device, info, Raw::at(ctx.scratch));
         if (!VkErr::ok(r)) {
             return GpuBuffer::none();
         }
@@ -137,9 +137,9 @@ pub(crate) class VkMem {
         let align : i64 = Mem::qwordAt(req, VKO_MEMORY_REQUIREMENTS_ALIGNMENT);
         let bits : i32 = Mem::dwordAt(req, VKO_MEMORY_REQUIREMENTS_MEMORY_TYPE_BITS);
 
-        let alloc : HeapAlloc = HeapAlloc::none();
+        let mut alloc : HeapAlloc = HeapAlloc::none();
         if (kind == MemUse::Device) {
-            let local : i32 = heap.pick(bits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+            let mut local : i32 = heap.pick(bits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
             if (local < 0) {
                 local = heap.pick(bits, 0, 0);
             }
@@ -148,7 +148,7 @@ pub(crate) class VkMem {
             }
         } else {
             let both : i32 = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            let first : i32 = -1;
+            let mut first : i32 = -1;
             if (kind == MemUse::Stream) {
                 first = heap.pick(bits, both | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
             } else {
@@ -209,7 +209,7 @@ pub(crate) class VkMem {
         layers : i32,
         usage : i32
     ) : GpuImage {
-        let info : VkImageCreateInfo = VkInit::imageCreateInfo();
+        let mut info : VkImageCreateInfo = VkInit::imageCreateInfo();
         info.imageType = VK_IMAGE_TYPE_2D;
         info.format = format;
         info.extent = VkExtent3D { width: w, height: h, depth: 1 };
@@ -220,7 +220,7 @@ pub(crate) class VkMem {
         info.usage = usage;
         info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        let r : i32 = ctx.table.createImage(ctx.device, info, Raw::at(ctx.scratch));
+        let mut r : i32 = ctx.table.createImage(ctx.device, info, Raw::at(ctx.scratch));
         if (!VkErr::ok(r)) {
             return GpuImage::none();
         }
@@ -231,11 +231,11 @@ pub(crate) class VkMem {
         let align : i64 = Mem::qwordAt(req, VKO_MEMORY_REQUIREMENTS_ALIGNMENT);
         let bits : i32 = Mem::dwordAt(req, VKO_MEMORY_REQUIREMENTS_MEMORY_TYPE_BITS);
 
-        let local : i32 = heap.pick(bits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+        let mut local : i32 = heap.pick(bits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
         if (local < 0) {
             local = heap.pick(bits, 0, 0);
         }
-        let alloc : HeapAlloc = HeapAlloc::none();
+        let mut alloc : HeapAlloc = HeapAlloc::none();
         if (local >= 0) {
             alloc = heap.alloc(ctx, local, 0, need, align);
         }
@@ -278,7 +278,7 @@ pub(crate) class VkMem {
         mips : i32,
         layers : i32
     ) : i64 {
-        let info : VkImageViewCreateInfo = VkInit::imageViewCreateInfo();
+        let mut info : VkImageViewCreateInfo = VkInit::imageViewCreateInfo();
         info.image = image;
         info.viewType = viewType;
         info.format = format;

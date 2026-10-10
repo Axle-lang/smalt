@@ -159,14 +159,14 @@ pub(crate) class VkTextures {
 
     /** The sampler for a description. */
     pub(file) fn makeSampler(self, ctx : VkContext, d : SamplerDesc, mips : i32) : i64 {
-        let info : VkSamplerCreateInfo = VkInit::samplerCreateInfo();
-        let filter : i32 = VK_FILTER_LINEAR;
-        let mipMode : i32 = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        let mut info : VkSamplerCreateInfo = VkInit::samplerCreateInfo();
+        let mut filter : i32 = VK_FILTER_LINEAR;
+        let mut mipMode : i32 = VK_SAMPLER_MIPMAP_MODE_LINEAR;
         if (d.nearest) {
             filter = VK_FILTER_NEAREST;
             mipMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
         }
-        let wrap : i32 = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        let mut wrap : i32 = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         if (d.repeat) {
             wrap = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         }
@@ -200,9 +200,9 @@ pub(crate) class VkTextures {
         view : i64,
         sampler : i64
     ) : i64 {
-        let layouts : i64[] = malloc<i64>(1);
+        let mut layouts : i64[] = malloc<i64>(1);
         layouts[0] = pipes.textureLayout;
-        let ai : VkDescriptorSetAllocateInfo = VkInit::descriptorSetAllocateInfo();
+        let mut ai : VkDescriptorSetAllocateInfo = VkInit::descriptorSetAllocateInfo();
         ai.descriptorPool = pipes.pool;
         ai.descriptorSetCount = 1;
         ai.pSetLayouts = VkAddr::handles(layouts);
@@ -211,14 +211,14 @@ pub(crate) class VkTextures {
             return 0;
         }
         let set : i64 = Mem::qwordAt(ctx.scratch, 0);
-        let ii : VkDescriptorImageInfo[] = malloc<VkDescriptorImageInfo>(1);
+        let mut ii : VkDescriptorImageInfo[] = malloc<VkDescriptorImageInfo>(1);
         ii[0] = VkDescriptorImageInfo {
             sampler: sampler,
             imageView: view,
             imageLayout: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         };
-        let w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
-        let write : VkWriteDescriptorSet = VkInit::writeDescriptorSet();
+        let mut w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
+        let mut write : VkWriteDescriptorSet = VkInit::writeDescriptorSet();
         write.dstSet = set;
         write.dstBinding = 0;
         write.descriptorCount = 1;
@@ -265,11 +265,11 @@ pub(crate) class VkTextures {
 
         // One region per level; a level's layers follow one another in the buffer, which
         // is what a region with `layerCount` > 1 and a tight row length reads.
-        let regions : VkBufferImageCopy[] = malloc<VkBufferImageCopy>(mips as i64);
-        let offset : i64 = 0;
+        let mut regions : VkBufferImageCopy[] = malloc<VkBufferImageCopy>(mips as i64);
+        let mut offset : i64 = 0;
         for (m of 0..mips) {
             let lw : i32 = Image::levelSide(w, m);
-            let lh : i32 = Image::levelSide(h, m);
+            let mut lh : i32 = Image::levelSide(h, m);
             regions[m as i64] = VkBufferImageCopy {
                 bufferOffset: offset,
                 bufferRowLength: 0,
@@ -341,7 +341,7 @@ pub(crate) class VkTextures {
             return -1;
         }
         let layers : i32 = img.layerCount();
-        let mips : i32 = 1;
+        let mut mips : i32 = 1;
         if (desc.mipmaps) {
             mips = Image::mipLevels(w, h);
         }
@@ -366,7 +366,7 @@ pub(crate) class VkTextures {
         }
 
         let usage : i32 = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        let format : i32 = VK_FORMAT_B8G8R8A8_UNORM;
+        let mut format : i32 = VK_FORMAT_B8G8R8A8_UNORM;
         if (desc.srgb) {
             format = VK_FORMAT_B8G8R8A8_SRGB;
         }
@@ -419,7 +419,7 @@ pub(crate) class VkTextures {
             layers
         );
         let sampler : i64 = self.makeSampler(ctx, desc, mips);
-        let set : i64 = 0;
+        let mut set : i64 = 0;
         if (view != 0 && sampler != 0) {
             set = self.makeSet(ctx, pipes, view, sampler);
         }

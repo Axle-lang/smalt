@@ -92,7 +92,7 @@ pub class Window : Closeable {
 
     /** The flag word `desc` asks for. */
     pub static fn flagsOf(desc : WindowDesc) : i32 {
-        let flags : i32 = Window::NONE;
+        let mut flags : i32 = Window::NONE;
         if (desc.resizable) {
             flags |= Window::RESIZABLE;
         }
