@@ -232,7 +232,7 @@ pub(crate) class VkBackend : GpuBackend {
         meshSlots : i32,
         textureSlots : i32
     ) ! PlatformError {
-        self.ctx = new VkContext(win, desc)?;
+        self.ctx = new VkContext(win, desc);
         self.heap = new GpuHeap(self.ctx);
         self.grave = new VkGraveyard();
         self.cmd = new VkCmd(self.ctx);

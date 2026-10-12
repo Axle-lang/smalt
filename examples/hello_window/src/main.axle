@@ -26,11 +26,11 @@ fn main() : i32 {
 
 /** The program proper; every startup failure leaves through `!`. */
 fn run() : i32 ! PlatformError {
-    let platform = new Platform()?;
+    let platform = new Platform();
     defer platform.close();
     let win = platform.open(
         WindowDesc { title: "smalt — hello", w: VIEW_W, h: VIEW_H, resizable: true }
-    )?;
+    );
     defer win.close();
 
     let clock = new Clock();

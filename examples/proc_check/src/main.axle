@@ -60,9 +60,9 @@ fn run() : i32 ! PlatformError {
         return 4;
     }
 
-    let platform = new Platform()?;
+    let platform = new Platform();
     defer platform.close();
-    let win = platform.createWindow("proc_check", VIEW_W, VIEW_H, Window::HIDDEN)?;
+    let win = platform.createWindow("proc_check", VIEW_W, VIEW_H, Window::HIDDEN);
     defer win.close();
     let clock = new Clock();
     defer clock.close();

@@ -155,7 +155,7 @@ pub class Renderer : Closeable {
         let mut opened : bool = false;
         if (desc.backend != Backend::Software) {
             try {
-                let vk = new VkBackend(win, desc, meshSlots, textureSlots)?;
+                let vk = new VkBackend(win, desc, meshSlots, textureSlots);
                 self.adopt(vk);
                 opened = true;
             } catch e : PlatformError {

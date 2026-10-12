@@ -83,7 +83,7 @@ pub class Platform : Closeable {
             desc.w,
             desc.h,
             Window::flagsOf(desc)
-        )?;
+        );
     }
 
     /**
@@ -93,7 +93,7 @@ pub class Platform : Closeable {
      * `open` is the one to reach for.
      */
     pub fn createWindow(self, title : string, w : i32, h : i32, flags : i32) : Window ! PlatformError {
-        return new Window(self.instance, title, w, h, flags)?;
+        return new Window(self.instance, title, w, h, flags);
     }
 
     /**

@@ -91,7 +91,7 @@ pub(crate) class SysWindow : Closeable {
             (*st).focused = 1;
             initState(st);
 
-            createWindow(st, a, self.args, title, w, h, resizable)?;
+            createWindow(st, a, self.args, title, w, h, resizable);
 
             let target : ptr<WlDrawable> = self.token.at() as ptr<WlDrawable>;
             (*target).display = (*a).display;

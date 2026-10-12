@@ -153,9 +153,9 @@ fn coloredWall(z : f64) : MeshBuilder {
 }
 
 fn run() : i32 ! PlatformError {
-    let platform = new Platform()?;
+    let platform = new Platform();
     defer platform.close();
-    let win = platform.createWindow("smalt — gpu cube", VIEW_W, VIEW_H, Window::RESIZABLE)?;
+    let win = platform.createWindow("smalt — gpu cube", VIEW_W, VIEW_H, Window::RESIZABLE);
     defer win.close();
 
     let clock = new Clock();
@@ -164,11 +164,11 @@ fn run() : i32 ! PlatformError {
     defer events.close();
 
     let smoke : bool = smokeRun();
-    let end : i32 = session(win, clock, events, chooseBackend(), smoke)?;
+    let end : i32 = session(win, clock, events, chooseBackend(), smoke);
     if (end == END_LOST) {
         // The documented answer to a lost GPU: drop the renderer, carry on with the CPU.
         println("the GPU was lost; carrying on with the CPU");
-        end = session(win, clock, events, Backend::Software, smoke)?;
+        end = session(win, clock, events, Backend::Software, smoke);
     }
     if (end == END_FAILED) {
         return 1;
@@ -189,7 +189,7 @@ fn session(
     smoke : bool
 ) : i32 ! PlatformError {
     // The only place a backend is chosen. `Auto` takes the GPU when there is one.
-    let gfx = new Renderer(win, RendererDesc { backend: backend })?;
+    let gfx = new Renderer(win, RendererDesc { backend: backend });
     defer gfx.close();
     println("renderer: ${gfx.backendName()}");
     if (gfx.fallbackReason().byteLength != 0) {

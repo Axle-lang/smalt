@@ -33,9 +33,9 @@ fn run() : i32 ! PlatformError {
     let w : i32 = screenW;
     let h : i32 = screenH;
 
-    let platform = new Platform()?;
+    let platform = new Platform();
     defer platform.close();
-    let win = platform.createWindow("Axle 3D — a torus, by hand", w, h, Window::NONE)?;
+    let win = platform.createWindow("Axle 3D — a torus, by hand", w, h, Window::NONE);
     defer win.close();
     let device = new SoftDevice(w, h);
     defer device.close();

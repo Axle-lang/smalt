@@ -197,7 +197,7 @@ pub class Bmp {
      */
     pub static fn load(path : string) : Texture {
         try {
-            return Bmp::read(path)?;
+            return Bmp::read(path);
         } catch e : IOException {
             return Bmp::missing();
         }
@@ -318,7 +318,7 @@ pub class Bmp {
      * Bmp::missing()` here would be a second answer to the same question.
      */
     pub static fn read(path : string) : Texture ! IOException {
-        let data = AssetFile::readAll(path)?;
+        let data = AssetFile::readAll(path);
         // Six exits, one release: a `defer` is registered against the
         // function, so the malformed-header throws below and the success
         // return all leave through it.

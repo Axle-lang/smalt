@@ -246,7 +246,7 @@ pub(crate) class VkContext {
             throw PlatformError("vulkan: the loader does not export ${missing}");
         }
         try {
-            self.createInstance(desc)?;
+            self.createInstance(desc);
         } catch e : PlatformError {
             self.releaseBlocks();
             throw PlatformError(e.message);
@@ -270,8 +270,8 @@ pub(crate) class VkContext {
         // Anything that fails from here on must give back the instance and the surface — a
         // window left holding a Vulkan surface cannot then be drawn to by the CPU fallback.
         try {
-            self.pickDevice(desc)?;
-            self.createDevice()?;
+            self.pickDevice(desc);
+            self.createDevice();
         } catch e : PlatformError {
             self.close();
             throw PlatformError(e.message);

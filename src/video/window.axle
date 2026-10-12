@@ -136,7 +136,7 @@ pub class Window : Closeable {
             (flags & Window::RESIZABLE) != 0,
             (flags & Window::BORDERLESS) != 0,
             (flags & Window::HIDDEN) != 0
-        )?;
+        );
     }
 
     /** Client-area width, in pixels. */

@@ -121,16 +121,16 @@ fn check(px : FramePixels, back : i32) : i32 {
 }
 
 fn run() : i32 ! PlatformError {
-    let platform = new Platform()?;
+    let platform = new Platform();
     defer platform.close();
-    let win = platform.createWindow("smalt — gpu shaders", SIDE_W, SIDE_H, 0)?;
+    let win = platform.createWindow("smalt — gpu shaders", SIDE_W, SIDE_H, 0);
     defer win.close();
     let clock = new Clock();
     defer clock.close();
     let events = new Events();
     defer events.close();
 
-    let gfx = new Renderer(win, RendererDesc { backend: Backend::Auto })?;
+    let gfx = new Renderer(win, RendererDesc { backend: Backend::Auto });
     defer gfx.close();
     println("renderer: ${gfx.backendName()}");
     if (!gfx.isGpu()) {
