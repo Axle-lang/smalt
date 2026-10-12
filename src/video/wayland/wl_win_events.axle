@@ -34,8 +34,8 @@ use crate::video::wayland::wl_win_state::WlWinState;
  */
 pub(crate) fn onSurfaceConfigure(data : ptr, xdgSurface : ptr, serial : u32) : void {
     unsafe {
-        let mut st : ptr<WlWinState> = data as ptr<WlWinState>;
-        let mut slot : ptr<i64> = recordAt((*st).ackArgs, 0, WL_WORD_BYTES) as ptr<i64>;
+        let st : ptr<WlWinState> = data as ptr<WlWinState>;
+        let slot : ptr<i64> = recordAt((*st).ackArgs, 0, WL_WORD_BYTES) as ptr<i64>;
         (*slot) = serial as i64;
         wl_proxy_marshal_array_flags(
             xdgSurface,
@@ -70,7 +70,7 @@ pub(crate) fn onToplevelConfigure(
         if (width <= 0 || height <= 0) {
             return;
         }
-        let mut st : ptr<WlWinState> = data as ptr<WlWinState>;
+        let st : ptr<WlWinState> = data as ptr<WlWinState>;
         if (width == (*st).pendingW && height == (*st).pendingH) {
             return;
         }
@@ -83,7 +83,7 @@ pub(crate) fn onToplevelConfigure(
 /** `xdg_toplevel.close` — the user asked; the client decides. */
 pub(crate) fn onToplevelClose(data : ptr, toplevel : ptr) : void {
     unsafe {
-        let mut st : ptr<WlWinState> = data as ptr<WlWinState>;
+        let st : ptr<WlWinState> = data as ptr<WlWinState>;
         (*st).closePending = 1;
     }
 }
@@ -94,7 +94,7 @@ pub(crate) fn onToplevelClose(data : ptr, toplevel : ptr) : void {
  */
 pub(crate) fn onDecorationConfigure(data : ptr, decoration : ptr, mode : u32) : void {
     unsafe {
-        let mut st : ptr<WlWinState> = data as ptr<WlWinState>;
+        let st : ptr<WlWinState> = data as ptr<WlWinState>;
         (*st).decorationMode = mode as i32;
     }
 }
@@ -109,7 +109,7 @@ pub(crate) fn onDecorationConfigure(data : ptr, decoration : ptr, mode : u32) : 
  */
 pub(crate) fn onSyncDone(data : ptr, callback : ptr, serial : u32) : void {
     unsafe {
-        let mut st : ptr<WlWinState> = data as ptr<WlWinState>;
+        let st : ptr<WlWinState> = data as ptr<WlWinState>;
         (*st).syncDone = 1;
     }
 }

@@ -84,7 +84,7 @@ class SysDrain {
         }
         XFlush(display);
         unsafe {
-            let mut fds : ptr<PollFd> = scratch.at() as ptr<PollFd>;
+            let fds : ptr<PollFd> = scratch.at() as ptr<PollFd>;
             (*fds).fd = XConnectionNumber(display);
             (*fds).events = POLL_IN;
             (*fds).revents = 0;

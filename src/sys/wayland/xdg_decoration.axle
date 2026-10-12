@@ -64,8 +64,8 @@ pub extern "C" struct XdgDecorationTables {
 pub(crate) fn buildDecorationTables(out : ptr<XdgDecorationTables>, xdgToplevel : ptr) : void {
     unsafe {
         let block = Raw::take(2 * sizeof<WlInterface>());
-        let mut manager : ptr<WlInterface> = recordAt(block, 0, sizeof<WlInterface>()) as ptr<WlInterface>;
-        let mut decoration : ptr<WlInterface> = recordAt(block, 1, sizeof<WlInterface>()) as ptr<WlInterface>;
+        let manager : ptr<WlInterface> = recordAt(block, 0, sizeof<WlInterface>()) as ptr<WlInterface>;
+        let decoration : ptr<WlInterface> = recordAt(block, 1, sizeof<WlInterface>()) as ptr<WlInterface>;
         (*out).manager = manager as ptr;
         (*out).decoration = decoration as ptr;
 

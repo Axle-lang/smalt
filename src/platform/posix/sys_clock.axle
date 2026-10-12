@@ -87,7 +87,7 @@ pub(crate) class SysClock : Closeable {
             return;
         }
         unsafe {
-            let mut req = self.nap.at() as ptr<timespec>;
+            let req = self.nap.at() as ptr<timespec>;
             (*req).tv_sec = (ms as i64) / MS_PER_SEC;
             (*req).tv_nsec = ((ms as i64) % MS_PER_SEC) * NANOS_PER_MS;
             nanosleep(req, Raw::nil());

@@ -81,7 +81,7 @@ class Player {
 
     /** Apply horizontal velocity, then resolve against walls. */
     pub(crate) fn stepX(mut self, level : Level) : void {
-        let mut t : f64 = tile as f64;
+        let t : f64 = tile as f64;
         let w : f64 = playerW;
         let h : f64 = playerH;
         self.x = self.x + self.vx;
@@ -104,7 +104,7 @@ class Player {
 
     /** Apply gravity + vertical velocity, then land or bonk. */
     pub(crate) fn stepY(mut self, level : Level) : void {
-        let mut t : f64 = tile as f64;
+        let t : f64 = tile as f64;
         let w : f64 = playerW;
         let h : f64 = playerH;
         self.vy = self.vy + gravity;

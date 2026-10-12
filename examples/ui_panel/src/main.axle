@@ -95,10 +95,10 @@ fn run() : i32 ! PlatformError {
     defer scratch.close();
 
     let snapping = wantsSnap();
-    let mut clicks : i64 = 0;
-    let mut hovering = false;
-    let mut dirty = true;
-    let mut running = true;
+    let clicks : i64 = 0;
+    let hovering = false;
+    let dirty = true;
+    let running = true;
 
     while (running && win.isOpen()) {
         // Blocks in the OS until something arrives. Idle, this program
@@ -155,7 +155,7 @@ fn run() : i32 ! PlatformError {
 
 /** Whether `--snap` was asked for: one frame, one file, then out. */
 fn wantsSnap() : bool {
-    let mut i : i32 = 1;
+    let i : i32 = 1;
     while (i < argc()) {
         try {
             if (argAt(i) == "--snap") {
@@ -216,7 +216,7 @@ fn paint(
     // The button. `hovering` is the only thing that changes about it, so
     // the two states differ by one blend rather than by two drawings.
     let b = buttonRect();
-    let mut fill : i32 = Color::mix(C_CARD, C_ACCENT, 1, 4);
+    let fill : i32 = Color::mix(C_CARD, C_ACCENT, 1, 4);
     if (hovering) {
         fill = Color::mix(C_CARD, C_ACCENT, 1, 2);
     }

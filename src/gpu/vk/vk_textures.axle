@@ -269,7 +269,7 @@ pub(crate) class VkTextures {
         let mut offset : i64 = 0;
         for (m of 0..mips) {
             let lw : i32 = Image::levelSide(w, m);
-            let mut lh : i32 = Image::levelSide(h, m);
+            let lh : i32 = Image::levelSide(h, m);
             regions[m as i64] = VkBufferImageCopy {
                 bufferOffset: offset,
                 bufferRowLength: 0,

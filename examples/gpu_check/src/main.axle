@@ -44,7 +44,7 @@ fn expect(ok : bool, what : string) : i32 {
 
 /** The mesh builder: layout, growth, refusal, reuse, bounds, and the round trip to a CPU mesh. */
 fn checkBuilder() : i32 {
-    let mut fails : i32 = 0;
+    let fails : i32 = 0;
     let b = new MeshBuilder(4, 6);
     let white = MeshBuilder::white();
     let a = b.vertex(0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, white, 0);
@@ -80,7 +80,7 @@ fn checkBuilder() : i32 {
     );
     fails += expect(Mem::byteAt(base + at, 22) == 127, "normal z is +127 snorm at byte 22");
     // Four different bytes, so a B,G,R,A or A,R,G,B order cannot pass.
-    let mut rgbaOk : bool = Mem::byteAt(base + at, 24) == 10 && Mem::byteAt(base + at, 25) == 20;
+    let rgbaOk : bool = Mem::byteAt(base + at, 24) == 10 && Mem::byteAt(base + at, 25) == 20;
     rgbaOk = rgbaOk && Mem::byteAt(base + at, 26) == 30 && Mem::byteAt(base + at, 27) == 40;
     fails += expect(rgbaOk, "colour is R,G,B,A at byte 24");
     fails += expect(Mem::dwordAt(base + at, 28) == 3, "layer 3 at byte 28");
@@ -214,7 +214,7 @@ fn checkBuilder() : i32 {
 
 /** The handle table: generations, reuse, capacity, double release. */
 fn checkHandles() : i32 {
-    let mut fails : i32 = 0;
+    let fails : i32 = 0;
     let t = new HandleTable(2, 0);
     let a = t.acquire(10);
     let b = t.acquire(11);
@@ -266,7 +266,7 @@ fn checkHandles() : i32 {
 
 /** The image: texels, layers, the strip cut, the opaque alpha. */
 fn checkImage() : i32 {
-    let mut fails : i32 = 0;
+    let fails : i32 = 0;
     let img = new Image(4, 2, 3);
     fails += expect(img.wordCount() == 24 && img.byteCount() == 96, "4x2x3 is 24 words");
     img.put(1, 1, 2, Image::pack(10, 20, 30, 40));
@@ -274,7 +274,7 @@ fn checkImage() : i32 {
     fails += expect(img.get(1, 1, 0) == 0, "other layers are untouched");
     img.put(9, 9, 0, 5);
     img.put(-1, 0, 0, 5);
-    let mut stray : i32 = 0;
+    let stray : i32 = 0;
     for (l of 0..3) {
         for (y of 0..2) {
             for (x of 0..4) {
@@ -322,7 +322,7 @@ fn checkImage() : i32 {
 
 /** The share of `count` words at `start` of `words` whose alpha is at least `cut`. */
 fn coverageOf(words : i32[], start : i64, count : i64, cut : i32) : f64 {
-    let mut pass : i64 = 0;
+    let pass : i64 = 0;
     for (i of 0..count) {
         if (((words[start + i] >>> 24) & 0xFF) >= cut) {
             pass += 1;
@@ -333,7 +333,7 @@ fn coverageOf(words : i32[], start : i64, count : i64, cut : i32) : f64 {
 
 /** Mip levels: their count and sizes, colour weighted by alpha, coverage kept for a cut-out. */
 fn checkMips() : i32 {
-    let mut fails : i32 = 0;
+    let fails : i32 = 0;
 
     // An sRGB chain averages light, not bytes: black beside white is mid-grey light,
     // which encodes as 188, where the bytes' own mean would be 128.
@@ -366,11 +366,11 @@ fn checkMips() : i32 {
     // A 32x32 leaf: 40 % of its texels opaque, scattered. Plain averaging thins it as it
     // shrinks; with the cut-out it was made for, every level keeps about 40 % above it.
     let leaf = new Image(32, 32, 1);
-    let mut seed : i64 = 12345;
+    let seed : i64 = 12345;
     for (y of 0..32) {
         for (x of 0..32) {
             seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF;
-            let mut a : i32 = 0;
+            let a : i32 = 0;
             if ((seed >>> 16) % 100 < 40) {
                 a = 255;
             }
@@ -379,7 +379,7 @@ fn checkMips() : i32 {
     }
     let levels : i32 = Image::mipLevels(32, 32);
     let cut : i32 = 128;
-    let mut base : f64 = 0.0;
+    let base : f64 = 0.0;
     for (y of 0..32) {
         for (x of 0..32) {
             if (((leaf.get(x, y, 0) >>> 24) & 0xFF) >= cut) {
@@ -401,7 +401,7 @@ fn checkMips() : i32 {
 
 /** The scene: ordering, culling, the lamp limit, reset. */
 fn checkScene() : i32 {
-    let mut fails : i32 = 0;
+    let fails : i32 = 0;
     let scene = new Scene(2);
     let cam = new Camera();
     cam.moveTo(Vec3::zero());
@@ -411,7 +411,7 @@ fn checkScene() : i32 {
     let m = MeshHandle { index: 1, gen: 0 };
     let t = TextureHandle { index: 1, gen: 0 };
     let opaque = Material::matte(Color::white());
-    let mut glass = Material::matte(Color::white());
+    let glass = Material::matte(Color::white());
     glass.opacity = 0.5;
 
     // Growth past the starting capacity.
@@ -502,7 +502,7 @@ fn checkScene() : i32 {
     }
     water.add(m, t, glass, Mat4::translation(Vec3::make(0.0, 0.0, -1.0)));
     GpuCheck::prepare(water);
-    let mut sorted : bool = true;
+    let sorted : bool = true;
     for (k of 1..many) {
         let before = GpuCheck::item(water, GpuCheck::orderAt(water, k - 1));
         let after = GpuCheck::item(water, GpuCheck::orderAt(water, k));
@@ -518,7 +518,7 @@ fn checkScene() : i32 {
 
     // The lamp limit.
     scene.reset();
-    let mut added : i32 = 0;
+    let added : i32 = 0;
     for (i of 0..12) {
         if (scene.addLight(PointLight::make(Vec3::zero(), Color::white(), 1.0))) {
             added += 1;
@@ -534,7 +534,7 @@ fn checkScene() : i32 {
 
 /** Clip space and the two blocks the shaders read. */
 fn checkBlocks() : i32 {
-    let mut fails : i32 = 0;
+    let fails : i32 = 0;
 
     // OpenGL clip -> Vulkan clip: Y flips, depth [-1, 1] -> [0, 1].
     let fix = GpuCheck::clipFix();
@@ -607,7 +607,7 @@ fn checkBlocks() : i32 {
 
     // The Draw push block: model at 0, albedo + opacity at 64, params at 80, extra at 96.
     let one = new Scene(1);
-    let mut voxel = Material::voxel();
+    let voxel = Material::voxel();
     voxel.opacity = 0.5;
     voxel.cutoff = 0.25;
     one.setDrawUser(Vec4::make(0.125, 0.0, 0.0, 9.0));
@@ -647,7 +647,7 @@ fn checkBlocks() : i32 {
 
 /** A matrix times its inverse is the identity — a projection as much as a rotation. */
 fn checkInverse() : i32 {
-    let mut fails : i32 = 0;
+    let fails : i32 = 0;
     let m = Mat4::perspective(1.1, 1.6, 0.05, 300.0).mul(
         Mat4::lookAt(Vec3::make(3.0, 70.0, -2.0), Vec3::make(5.0, 69.0, 4.0), Vec3::make(0.0, 1.0, 0.0))
     );
@@ -660,7 +660,7 @@ fn checkInverse() : i32 {
 
 /** Whether every entry of `p` is the identity's. */
 fn isIdentity(p : Mat4) : bool {
-    let mut ok : bool = near(p.m00, 1.0) && near(p.m01, 0.0) && near(p.m02, 0.0) && near(p.m03, 0.0);
+    let ok : bool = near(p.m00, 1.0) && near(p.m01, 0.0) && near(p.m02, 0.0) && near(p.m03, 0.0);
     ok = ok && near(p.m10, 0.0) && near(p.m11, 1.0) && near(p.m12, 0.0) && near(p.m13, 0.0);
     ok = ok && near(p.m20, 0.0) && near(p.m21, 0.0) && near(p.m22, 1.0) && near(p.m23, 0.0);
     return ok && near(p.m30, 0.0) && near(p.m31, 0.0) && near(p.m32, 0.0) && near(p.m33, 1.0);
@@ -668,7 +668,7 @@ fn isIdentity(p : Mat4) : bool {
 
 /** The program's shading in a scene: the shader a draw takes, the background, the passes. */
 fn checkShading() : i32 {
-    let mut fails : i32 = 0;
+    let fails : i32 = 0;
     let scene = new Scene(4);
     let m = MeshHandle { index: 1, gen: 0 };
     let t = TextureHandle { index: 1, gen: 0 };
@@ -708,7 +708,7 @@ fn checkShading() : i32 {
 
 /** The facts written in more than one place, and the overlay texture's sizing. */
 fn checkConstants() : i32 {
-    let mut fails : i32 = 0;
+    let fails : i32 = 0;
     let which : i32 = GpuCheck::constants();
     fails += expect(which == 0, "blocks, vertex and limits agree (first disagreement: ${which})");
     fails += expect(
@@ -721,7 +721,7 @@ fn checkConstants() : i32 {
 
 /** Materials: the voxel one is sky-lit, unlit by the sun and lit by lamps; the baked one by neither. */
 fn checkMaterials() : i32 {
-    let mut fails : i32 = 0;
+    let fails : i32 = 0;
     let v = Material::voxel();
     fails += expect(
         v.skyLight && v.directLight == 0.0 && v.textured,
@@ -740,7 +740,7 @@ fn checkMaterials() : i32 {
 
 /** Each embedded shader module starts with the SPIR-V magic number. */
 fn checkShaders() : i32 {
-    let mut fails : i32 = 0;
+    let fails : i32 = 0;
     let which : i32 = GpuCheck::shaders();
     fails += expect(
         which == 0,
@@ -750,7 +750,7 @@ fn checkShaders() : i32 {
 }
 
 fn main() : i32 {
-    let mut fails : i32 = 0;
+    let fails : i32 = 0;
     fails += expect(
         GpuCheck::layout() == 0,
         "the Vulkan records have the layout the C headers give them"

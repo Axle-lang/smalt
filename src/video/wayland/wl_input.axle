@@ -173,7 +173,7 @@ pub(crate) fn onPointerEnter(
     y : i32
 ) : void {
     unsafe {
-        let mut st : ptr<WlWinState> = data as ptr<WlWinState>;
+        let st : ptr<WlWinState> = data as ptr<WlWinState>;
         (*st).pointerSerial = serial;
         push(st, RING_MOTION, x >> FIXED_SHIFT, y >> FIXED_SHIFT);
     }
@@ -218,7 +218,7 @@ pub(crate) fn onPointerAxis(data : ptr, pointer : ptr, time : u32, axis : u32, v
         if ((axis as i32) != AXIS_VERTICAL || value == 0) {
             return;
         }
-        let mut notches = 0 - WHEEL_NOTCH;
+        let notches = 0 - WHEEL_NOTCH;
         if (value < 0) {
             notches = WHEEL_NOTCH;
         }
@@ -251,7 +251,7 @@ pub(crate) fn bindInput(app : ptr<WlApp>, st : ptr<WlWinState>) : void {
         (*st).inputBound = 1;
         if (!Raw::isNil((*app).keyboard)) {
             (*st).keyboardListener = Raw::take(sizeof<KeyboardListener>());
-            let mut kl : ptr<KeyboardListener> = (*st).keyboardListener as ptr<KeyboardListener>;
+            let kl : ptr<KeyboardListener> = (*st).keyboardListener as ptr<KeyboardListener>;
             (*kl).keymap = onKeymap;
             (*kl).enter = onKeyEnter;
             (*kl).leave = onKeyLeave;
@@ -262,7 +262,7 @@ pub(crate) fn bindInput(app : ptr<WlApp>, st : ptr<WlWinState>) : void {
         }
         if (!Raw::isNil((*app).pointer)) {
             (*st).pointerListener = Raw::take(sizeof<PointerListener>());
-            let mut pl : ptr<PointerListener> = (*st).pointerListener as ptr<PointerListener>;
+            let pl : ptr<PointerListener> = (*st).pointerListener as ptr<PointerListener>;
             (*pl).enter = onPointerEnter;
             (*pl).leave = onPointerLeave;
             (*pl).motion = onPointerMotion;
@@ -308,7 +308,7 @@ pub(crate) fn readAvailable(scratch : Blob, st : ptr<WlWinState>, timeoutMs : i3
         }
         wl_display_flush(display);
 
-        let mut fds : ptr<PollFd> = scratch.at() as ptr<PollFd>;
+        let fds : ptr<PollFd> = scratch.at() as ptr<PollFd>;
         (*fds).fd = wl_display_get_fd(display);
         (*fds).events = POLL_IN;
         (*fds).revents = 0;

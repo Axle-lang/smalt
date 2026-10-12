@@ -49,9 +49,9 @@ fn run() : i32 ! PlatformError {
     // nothing to copy at the end of a frame.
     let zb : f64[] = malloc<f64>((w as i64) * (h as i64));
 
-    let mut a : f64 = 0.0;
-    let mut b : f64 = 0.0;
-    let mut running : bool = true;
+    let a : f64 = 0.0;
+    let b : f64 = 0.0;
+    let running : bool = true;
     let pacer = new FramePacer(frameRate);
 
     while (running && win.isOpen()) {

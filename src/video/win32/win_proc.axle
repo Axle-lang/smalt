@@ -191,7 +191,7 @@ pub(crate) class WinProcBlock : Closeable {
     /** Whether `WM_DESTROY` arrived. Not a latch: destruction is final. */
     pub(crate) fn destroyed(self) : bool {
         unsafe {
-            let mut st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
+            let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             return (*st).destroyed != 0;
         }
     }
@@ -235,7 +235,7 @@ pub(crate) class WinProcBlock : Closeable {
     /** Whether the window holds focus. */
     pub(crate) fn focused(self) : bool {
         unsafe {
-            let mut st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
+            let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             return (*st).focused != 0;
         }
     }
@@ -253,7 +253,7 @@ pub(crate) class WinProcBlock : Closeable {
     /** Whether the window is minimised. */
     pub(crate) fn minimised(self) : bool {
         unsafe {
-            let mut st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
+            let st : ptr<WinProcState> = self.mem.at() as ptr<WinProcState>;
             return (*st).minimised != 0;
         }
     }

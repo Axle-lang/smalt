@@ -580,9 +580,9 @@ pub class Scene {
         let mut k : i32 = 0;
         for (i of 0..n) {
             let mut it : DrawItem = self.items[i as i64];
-            let mut dx : f64 = it.centre.x - self.eyePos.x;
-            let mut dy : f64 = it.centre.y - self.eyePos.y;
-            let mut dz : f64 = it.centre.z - self.eyePos.z;
+            let dx : f64 = it.centre.x - self.eyePos.x;
+            let dy : f64 = it.centre.y - self.eyePos.y;
+            let dz : f64 = it.centre.z - self.eyePos.z;
             it.depth = dx * dx + dy * dy + dz * dz;
             self.items[i as i64] = it;
             // One predicate for both passes, so a NaN opacity lands in exactly one of

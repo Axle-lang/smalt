@@ -326,7 +326,7 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
      */
     pub(file) fn composite(mut self, overlay : OverlayView) : void {
         let mut px : i32[] = self.device.pixels();
-        let mut fw : i64 = self.device.width() as i64;
+        let fw : i64 = self.device.width() as i64;
         let w : i64 = (overlay.w as i64).min(fw);
         let h : i64 = (overlay.h as i64).min(self.device.height() as i64);
         for (y of 0..h) {

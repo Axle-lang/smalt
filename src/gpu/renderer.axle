@@ -489,7 +489,7 @@ pub class Renderer : Closeable {
             return;
         }
         let need : i64 = (w as i64) * (h as i64);
-        let mut oldW : i64 = self.layerW as i64;
+        let oldW : i64 = self.layerW as i64;
         let newW : i64 = w as i64;
         let rows : i32 = h.min(self.layerH);
         if (need > self.layerCap && self.retiredN < RENDERER_RETIRED) {

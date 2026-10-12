@@ -82,7 +82,7 @@ class World {
         self.eAlive = malloc<i32>(maxEnemies);
         self.nEnemies = 0;
 
-        let mut t : f64 = tile as f64;
+        let t : f64 = tile as f64;
         let groundTop : f64 = ((levelRows - 2) as f64) * t;
         self.startX = 2.0 * t;
         self.startY = groundTop - playerH;
@@ -145,7 +145,7 @@ class World {
     pub(crate) fn update(mut self, events : Events) : void {
         if (self.state != GameState::Playing) { return; }
 
-        let mut dir : f64 = 0.0;
+        let dir : f64 = 0.0;
         if (events.isKeyDown(Scancode::D) || events.isKeyDown(Scancode::Right)) {
             dir = 1.0;
         }
@@ -198,10 +198,10 @@ class World {
     /** Whether scancode `sc` is currently held in keyboard state `kb`. */
     /** Advance each live enemy along its patrol, reversing at the bounds. */
     fn updateEnemies(mut self) : void {
-        let mut i : i32 = 0;
+        let i : i32 = 0;
         while (i < self.nEnemies) {
             if (self.eAlive[i] == 1) {
-                let mut x : f64 = self.eX[i] + self.eDir[i] * enemySpeed;
+                let x : f64 = self.eX[i] + self.eDir[i] * enemySpeed;
                 if (x > self.eMaxX[i]) {
                     x = self.eMaxX[i];
                     self.eDir[i] = -1.0;
@@ -218,7 +218,7 @@ class World {
 
     /** Stomp enemies landed on from above; otherwise take damage. */
     fn checkEnemies(mut self) : void {
-        let mut i : i32 = 0;
+        let i : i32 = 0;
         while (i < self.nEnemies) {
             if (self.eAlive[i] == 1) {
                 let ex : f64 = self.eX[i];
@@ -240,7 +240,7 @@ class World {
 
     /** Collect any coin the player overlaps. */
     fn checkCoins(mut self) : void {
-        let mut i : i32 = 0;
+        let i : i32 = 0;
         while (i < self.nCoins) {
             if (self.cAlive[i] == 1) {
                 if (self.player.overlapsRect(self.cx[i], self.cy[i], coinSize, coinSize)) {
@@ -272,7 +272,7 @@ class World {
     /** Follow the player horizontally, clamped to the level bounds. */
     fn updateCamera(mut self) : void {
         let half : f64 = (screenW as f64) * 0.5;
-        let mut cam : f64 = self.player.x + playerW * 0.5 - half;
+        let cam : f64 = self.player.x + playerW * 0.5 - half;
         if (cam < 0.0) { cam = 0.0; }
         let maxCam : f64 = (levelCols as f64) * (tile as f64) - (screenW as f64);
         if (cam > maxCam) { cam = maxCam; }

@@ -68,7 +68,7 @@ fn run() : i32 ! PlatformError {
     defer clock.close();
     let events = new Events();
     defer events.close();
-    let mut code = 0;
+    let code = 0;
 
     // Half one: the procedure ran and recorded what it was sent.
     let step = win.selfCheckProc(RESIZE_W, RESIZE_H);
@@ -82,7 +82,7 @@ fn run() : i32 ! PlatformError {
     // queue here is the resize and the focus edges it left behind.
     if (code == 0) {
         events.pump(win, clock);
-        let mut sawResize = false;
+        let sawResize = false;
         while (events.hasNext()) {
             let e = events.next();
             if (e.kind == EventKind::WindowResized) {

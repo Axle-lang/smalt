@@ -41,7 +41,7 @@ pub(crate) class WlArgs : Closeable {
     /** Set slot `i` to `value`; every argument crosses as one word. */
     pub(crate) fn set(mut self, i : i64, value : i64) : void {
         unsafe {
-            let mut slot : ptr<i64> = recordAt(self.mem.at(), i, WL_WORD_BYTES) as ptr<i64>;
+            let slot : ptr<i64> = recordAt(self.mem.at(), i, WL_WORD_BYTES) as ptr<i64>;
             (*slot) = value;
         }
     }

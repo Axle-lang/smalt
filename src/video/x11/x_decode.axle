@@ -130,7 +130,7 @@ pub(crate) fn handleButton(
             if (!press) {
                 return;
             }
-            let mut notches = X_WHEEL_NOTCH;
+            let notches = X_WHEEL_NOTCH;
             if (number == X_BUTTON_WHEEL_DOWN) {
                 notches = 0 - X_WHEEL_NOTCH;
             }
@@ -179,7 +179,7 @@ pub(crate) fn handleMotion(event : ptr, stamp : i64, queue : EventQueue, mouse :
         // The very first motion has no previous position to subtract,
         // so the delta stays at the field's own default rather than
         // being a jump from wherever the pointer happened to enter.
-        let mut e = Event { kind: EventKind::MouseMotion, timestamp: stamp, x: nx, y: ny };
+        let e = Event { kind: EventKind::MouseMotion, timestamp: stamp, x: nx, y: ny };
         if (known) {
             e.dx = nx - px;
             e.dy = ny - py;

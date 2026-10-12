@@ -364,17 +364,17 @@ pub class Mixer : Closeable {
  * entirely.
  *
  * ```
- * let audio : Task<i32> = spawn mixerLoop(mixer);
+ * let audio : Future<i32> = spawn mixerLoop(mixer);
  * ...
  * mixer.requestStop();
- * audio.join();
+ * await audio;
  * mixer.close();
  * ```
  *
- * A free function rather than a `Mixer.startPump()`, because a `Task<T>`
- * is a handle minted on the thread that spawned it and joined by that
+ * A free function rather than a `Mixer.startPump()`, because a `Future<T>`
+ * is a handle minted on the thread that spawned it and awaited by that
  * same thread — parking one in a field would put it where the thread
- * that must join it cannot reach. The two lines above are the shape the
+ * that must await it cannot reach. The two lines above are the shape the
  * language asks for, and both programs that needed this wrote the same
  * thirty-line loop to get them.
  *

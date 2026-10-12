@@ -32,7 +32,7 @@ use std::concurrent::{ AtomicBoolean, AtomicI32, Semaphore };
 /**
  * Workers one pool may hold.
  *
- * A literal, and mirrored by the `Task` array below, because a fixed-array size
+ * A literal, and mirrored by the `Future` array below, because a fixed-array size
  * must be one. It is a ceiling, not a size: a pool holds what it was asked for.
  */
 const POOL_MAX : i32 = 31;
@@ -67,27 +67,14 @@ class IdlePass : Job {
 }
 
 /**
- * A crew of threads, started once, that a caller hands passes to.
+ * The state a pool's workers read: the permits that wake them and report them
+ * done, the pass in flight and how it is cut, and the attached passes.
  *
- * The caller runs share 0 ITSELF and the crew takes 1 upward, so a pass of `n`
- * shares occupies the calling thread as well as `n - 1` workers. That is not a
- * detail of the implementation but the point of it: the thread that would
- * otherwise sit in a join is the one doing the first share.
- *
- * ```
- * let pool = new WorkerPool(11);
- * let rows = pool.attach(new RowPass(target));   // once
- * // …every frame…
- * pool.run(rows, 12);   // this thread takes row band 0, the crew takes 1..11
- * // …at the end…
- * pool.close();
- * ```
- *
- * One thread drives a pool. `attach`, `run` and `close` are for the owner to
- * call, one at a time and never while a pass is in flight — the crew is what is
- * parallel here, not the calls that steer it.
+ * Apart from `WorkerPool` because a worker is handed this and nothing else: the
+ * pool also holds the workers' own `Future` handles, which may not cross into
+ * the tasks they name (E0729).
  */
-pub class WorkerPool : Closeable {
+class PoolCore {
     /** Permits released to let a pass begin: one per worker the pass wants. */
     pub(file) begin : Semaphore = new Semaphore(0),
 
@@ -117,7 +104,42 @@ pub class WorkerPool : Closeable {
     pub(file) jobs : dyn Job[],
     pub(file) nJobs : i32,
 
-    pub(file) crew : Task<i32>[31],
+    /** Every slot holding the idle pass until something is attached there. */
+    constructor() {
+        self.nJobs = 0;
+        self.jobs = malloc<dyn Job>(POOL_JOBS as i64);
+        for (i of 0..POOL_JOBS) {
+            self.jobs[i] = new IdlePass();
+        }
+    }
+}
+
+/**
+ * A crew of threads, started once, that a caller hands passes to.
+ *
+ * The caller runs share 0 ITSELF and the crew takes 1 upward, so a pass of `n`
+ * shares occupies the calling thread as well as `n - 1` workers. That is not a
+ * detail of the implementation but the point of it: the thread that would
+ * otherwise sit in a join is the one doing the first share.
+ *
+ * ```
+ * let pool = new WorkerPool(11);
+ * let rows = pool.attach(new RowPass(target));   // once
+ * // …every frame…
+ * pool.run(rows, 12);   // this thread takes row band 0, the crew takes 1..11
+ * // …at the end…
+ * pool.close();
+ * ```
+ *
+ * One thread drives a pool. `attach`, `run` and `close` are for the owner to
+ * call, one at a time and never while a pass is in flight — the crew is what is
+ * parallel here, not the calls that steer it.
+ */
+pub class WorkerPool : Closeable {
+    /** What the crew reads; the handles to the crew are kept apart from it. */
+    pub(file) core : PoolCore,
+
+    pub(file) crew : Future<i32>[31],
     pub(file) n : i32,
 
     /**
@@ -137,13 +159,9 @@ pub class WorkerPool : Closeable {
             want = POOL_MAX;
         }
         self.n = want;
-        self.nJobs = 0;
-        self.jobs = malloc<dyn Job>(POOL_JOBS as i64);
-        for (i of 0..POOL_JOBS) {
-            self.jobs[i] = new IdlePass();
-        }
+        self.core = new PoolCore();
         for (i of 0..want) {
-            self.crew[i] = spawn poolLoop(self);
+            self.crew[i] = spawn poolLoop(self.core);
         }
     }
 
@@ -156,12 +174,12 @@ pub class WorkerPool : Closeable {
      * @return its handle, or -1 if the pool is already carrying `POOL_JOBS`
      */
     pub fn attach(mut self, own work : dyn Job) : i32 {
-        if (self.nJobs >= POOL_JOBS) {
+        if (self.core.nJobs >= POOL_JOBS) {
             return 0 - 1;
         }
-        let at : i32 = self.nJobs;
-        self.jobs[at] = work;
-        self.nJobs = at + 1;
+        let at : i32 = self.core.nJobs;
+        self.core.jobs[at] = work;
+        self.core.nJobs = at + 1;
         return at;
     }
 
@@ -185,23 +203,23 @@ pub class WorkerPool : Closeable {
      * @param shares  how many pieces to cut the pass into; 1 runs it all here
      */
     pub fn run(mut self, pass : i32, shares : i32) : void {
-        if (shares <= 0 || pass < 0 || pass >= self.nJobs) {
+        if (shares <= 0 || pass < 0 || pass >= self.core.nJobs) {
             return;
         }
         let mut helpers : i32 = shares - 1;
         if (helpers > self.n) {
             helpers = self.n;
         }
-        self.active.set(pass);
-        self.shares.set(shares);
-        self.ticket.set(0);
+        self.core.active.set(pass);
+        self.core.shares.set(shares);
+        self.core.ticket.set(0);
         for (i of 0..helpers) {
-            self.begin.release();
+            self.core.begin.release();
         }
         // This thread's own share, and any the crew was too small to take.
-        self.jobs[pass].run(0, shares);
+        self.core.jobs[pass].run(0, shares);
         for (mine of (helpers + 1)..shares) {
-            self.jobs[pass].run(mine, shares);
+            self.core.jobs[pass].run(mine, shares);
         }
         for (i of 0..helpers) {
             self.awaitOne();
@@ -219,7 +237,7 @@ pub class WorkerPool : Closeable {
         let mut waiting : bool = true;
         while (waiting) {
             try {
-                self.ended.acquire();
+                self.core.ended.acquire();
                 waiting = false;
             } catch e : InterruptedException {
                 waiting = true;
@@ -238,12 +256,12 @@ pub class WorkerPool : Closeable {
         if (self.n == 0) {
             return;
         }
-        self.alive.set(false);
+        self.core.alive.set(false);
         for (i of 0..self.n) {
-            self.begin.release();
+            self.core.begin.release();
         }
         for (i of 0..self.n) {
-            let done : i32 = self.crew[i].join();
+            let done : i32 = await self.crew[i];
         }
         self.n = 0;
     }
@@ -252,13 +270,13 @@ pub class WorkerPool : Closeable {
 /**
  * One worker's life: park, claim a share, run it, report, park again.
  *
- * A free function because a `Task<T>` is minted by `spawn` on a free call, and
+ * A free function because a `Future<T>` is minted by `spawn` on a free call, and
  * the pool is passed rather than captured because a class is a reference — the
  * one the constructor is building is the one every worker reads.
- * @param p  the pool this worker belongs to
+ * @param p  the state of the pool this worker belongs to
  * @return 0, unused
  */
-fn poolLoop(p : WorkerPool) : i32 {
+fn poolLoop(p : PoolCore) : i32 {
     while (true) {
         let mut woken : bool = false;
         while (!woken) {

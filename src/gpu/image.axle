@@ -268,7 +268,7 @@ pub class Image {
         let mut total : i64 = 0;
         for (m of 1..levels) {
             let lw : i64 = Image::levelSide(self.w, m) as i64;
-            let mut lh : i64 = Image::levelSide(self.h, m) as i64;
+            let lh : i64 = Image::levelSide(self.h, m) as i64;
             total += lw * lh * (self.layers as i64);
         }
         return total;
@@ -384,7 +384,7 @@ pub class Image {
 
     /** Linear light back to an sRGB byte. */
     pub(file) static fn encodeByte(x : f64) : i32 {
-        let mut c : f64 = x.max(0.0).min(1.0);
+        let c : f64 = x.max(0.0).min(1.0);
         let mut s : f64 = c * 12.92;
         if (c > 0.0031308) {
             s = 1.055 * c.pow(1.0 / 2.4) - 0.055;
@@ -413,7 +413,7 @@ pub class Image {
                 let mut pb : i64 = 0;
                 for (k of 0..4) {
                     let t : i32 = src.texel(x * 2 + (k & 1), y * 2 + (k >> 1));
-                    let mut ta : i64 = ((t >>> 24) & 0xFF) as i64;
+                    let ta : i64 = ((t >>> 24) & 0xFF) as i64;
                     let tr : i64 = ((t >>> 16) & 0xFF) as i64;
                     let tg : i64 = ((t >>> 8) & 0xFF) as i64;
                     let tb : i64 = (t & 0xFF) as i64;
@@ -455,7 +455,7 @@ pub class Image {
                 let mut a : i64 = 0;
                 for (k of 0..4) {
                     let t : i32 = src.texel(x * 2 + (k & 1), y * 2 + (k >> 1));
-                    let mut ta : i64 = ((t >>> 24) & 0xFF) as i64;
+                    let ta : i64 = ((t >>> 24) & 0xFF) as i64;
                     let tr : f64 = lin[((t >>> 16) & 0xFF) as i64];
                     let tg : f64 = lin[((t >>> 8) & 0xFF) as i64];
                     let tb : f64 = lin[(t & 0xFF) as i64];

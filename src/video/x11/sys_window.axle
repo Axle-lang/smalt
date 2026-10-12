@@ -172,7 +172,7 @@ pub(crate) class SysWindow : Closeable {
 
         self.gc = XCreateGC(app, self.window, 0, Raw::nil());
         unsafe {
-            let mut t : ptr<XSurface> = self.token.at() as ptr<XSurface>;
+            let t : ptr<XSurface> = self.token.at() as ptr<XSurface>;
             (*t).display = app;
             (*t).window = self.window;
             (*t).gc = self.gc;

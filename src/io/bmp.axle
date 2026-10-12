@@ -159,7 +159,7 @@ pub class Bmp {
         let rowBytes = Bmp::stride(width, bytesPerPixel);
         let mut start : i64 = 0;
         unsafe {
-            let mut h : ptr<BMPHEADER> = data.at() as ptr<BMPHEADER>;
+            let h : ptr<BMPHEADER> = data.at() as ptr<BMPHEADER>;
             start = (*h).file.bfOffBits as i64;
         }
         let needed : i64 = start + (rowBytes as i64) * (height as i64);
@@ -336,7 +336,7 @@ pub class Bmp {
         let mut magic : i32 = 0;
         let mut compression : i32 = 0;
         unsafe {
-            let mut h : ptr<BMPHEADER> = data.at() as ptr<BMPHEADER>;
+            let h : ptr<BMPHEADER> = data.at() as ptr<BMPHEADER>;
             magic = (*h).file.bfType as i32;
             compression = (*h).info.biCompression as i32;
             bpp = (*h).info.biBitCount as i32;

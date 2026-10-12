@@ -57,8 +57,8 @@ class SysCursor {
             if (visible) {
                 return;
             }
-            let mut app : ptr<WlApp> = winApp(win) as ptr<WlApp>;
-            let mut st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
+            let app : ptr<WlApp> = winApp(win) as ptr<WlApp>;
+            let st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
             if (Raw::isNil((*app).pointer) || (*st).pointerSerial == 0) {
                 return;
             }

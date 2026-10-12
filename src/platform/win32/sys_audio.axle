@@ -79,7 +79,7 @@ pub(crate) class SysAudio : Closeable {
 
     /** Open the default output device. */
     constructor() {
-        let mut align : i32 = AUDIO_CHANNELS * AUDIO_SAMPLE_BYTES;
+        let align : i32 = AUDIO_CHANNELS * AUDIO_SAMPLE_BYTES;
         unsafe {
             let mut f = self.format.at() as ptr<WAVEFORMATEX>;
             (*f).wFormatTag = WAVE_FORMAT_PCM as u16;
@@ -159,7 +159,7 @@ pub(crate) class SysAudio : Closeable {
         for (i of 0..AUDIO_BLOCKS) {
             let mut done : bool = false;
             unsafe {
-                let mut h = headerAt(self.headers, i);
+                let h = headerAt(self.headers, i);
                 done = ((*h).dwFlags & (WHDR_DONE as u32)) != 0;
             }
             if (done) {

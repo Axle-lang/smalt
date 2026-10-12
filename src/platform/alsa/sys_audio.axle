@@ -172,7 +172,7 @@ pub(crate) class SysAudio : Closeable {
         if (!self.opened || i < 0 || i >= AUDIO_BLOCKS) {
             return;
         }
-        let mut written : i64 = 0;
+        let written : i64 = 0;
         unsafe {
             written = snd_pcm_writei(
                 pcm(self.handle),
