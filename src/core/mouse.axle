@@ -12,6 +12,12 @@
 // rather than a raw-input device registration, which keeps the whole
 // mechanism inside the polled model the library is built on.
 
+/** Longest gap between presses that still make a double click, in milliseconds. */
+const CLICK_INTERVAL_MS : i64 = 500;
+
+/** Furthest the pointer may move between presses that still make a double click, in pixels. */
+const CLICK_SLOP : i32 = 4;
+
 /** Buttons, numbered as the OS numbers them: 1 is the left one. */
 pub enum MouseButton : i8 {
     Left = 1,
@@ -34,6 +40,14 @@ pub class MouseState {
     buttons  : i32 = 0;
     relative : bool = false;
     primed   : bool = false;
+    inside   : bool = false;
+
+    /** The button, time and place of the last press, and how many in a row it made. */
+    lastButton : i32 = 0;
+    lastStamp  : i64 = 0;
+    lastX      : i32 = 0;
+    lastY      : i32 = 0;
+    clickRun   : i32 = 0;
 
     /**
      * Whether a real pointer position has been seen yet.
@@ -85,6 +99,40 @@ pub class MouseState {
     /** Whether the pointer is pinned and hidden for relative motion. */
     pub fn isRelative(self) : bool {
         return self.relative;
+    }
+
+    /** Whether the pointer is over the window's client area. */
+    pub fn isInside(self) : bool {
+        return self.inside;
+    }
+
+    /** Whether any button is held. */
+    pub fn anyDown(self) : bool {
+        return self.buttons != 0;
+    }
+
+    /** Record that the pointer is over the client area or not. */
+    pub(crate) fn setInside(mut self, inside : bool) : void {
+        self.inside = inside;
+    }
+
+    /**
+     * Count a press of `b` at (`x`, `y`) at time `stamp`: 1 for a first
+     * click, 2 when it follows a press of the same button within half a
+     * second and four pixels, 3 for the next, and so on.
+     */
+    pub(crate) fn countClick(mut self, b : MouseButton, stamp : i64, x : i32, y : i32) : i32 {
+        let near : bool = (x - self.lastX).abs() <= CLICK_SLOP && (y - self.lastY).abs() <= CLICK_SLOP;
+        if (self.clickRun > 0 && (b as i32) == self.lastButton && stamp - self.lastStamp <= CLICK_INTERVAL_MS && near) {
+            self.clickRun += 1;
+        } else {
+            self.clickRun = 1;
+        }
+        self.lastButton = b as i32;
+        self.lastStamp = stamp;
+        self.lastX = x;
+        self.lastY = y;
+        return self.clickRun;
     }
 
     /** Record `b` as held. */

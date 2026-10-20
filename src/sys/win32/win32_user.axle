@@ -13,7 +13,7 @@
 // `GetWindowLongPtrW` for the per-window state slot, and `DefWindowProcW`
 // for every message `video/windows/win_proc` does not answer itself.
 
-use crate::sys::win32_types::{MSG, POINT, RECT, WNDCLASSEXW};
+use crate::sys::win32_types::{MSG, POINT, RECT, TRACKMOUSEEVENT, WNDCLASSEXW};
 
 extern "C" from "user32" {
     /** `ATOM RegisterClassExW(const WNDCLASSEXW *)` — 0 on failure. */
@@ -115,6 +115,21 @@ extern "C" from "user32" {
      * every mouse move, so what lasts is what the window procedure answers.
      */
     fn SetCursor(cursor : ptr) : ptr;
+
+    /**
+     * `BOOL TrackMouseEvent(LPTRACKMOUSEEVENT)` — with `TME_LEAVE`, one `WM_MOUSELEAVE` the next
+     * time the pointer leaves the window. One-shot: it must be asked again after it fires.
+     */
+    fn TrackMouseEvent(track : ptr<TRACKMOUSEEVENT>) : i32;
+
+    /**
+     * `HWND SetCapture(HWND)` — every mouse message goes to this window until the capture ends,
+     * wherever the pointer is. What lets a drag that leaves the window still end where it began.
+     */
+    fn SetCapture(hwnd : ptr) : ptr;
+
+    /** `BOOL ReleaseCapture(void)`. */
+    fn ReleaseCapture() : i32;
 
     /** `BOOL GetClientRect(HWND, LPRECT)` — the client area, with the origin at (0, 0). */
     fn GetClientRect(hwnd : ptr, rect : ptr<RECT>) : i32;

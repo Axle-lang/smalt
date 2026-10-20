@@ -98,7 +98,7 @@ class SysDrain {
                 let message = (*m).message as i32;
                 let wp = (*m).wParam as i64;
                 let lp = (*m).lParam;
-                handle(message, wp, lp, stamp, queue, keys, mouse);
+                handle((*m).hwnd, message, wp, lp, stamp, queue, keys, mouse);
                 TranslateMessage(m);
                 DispatchMessageW(m);
             }

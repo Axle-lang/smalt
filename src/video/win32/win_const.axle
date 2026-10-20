@@ -142,6 +142,12 @@ const WM_SYSKEYUP : i32 = 261;
 /** `WM_MOUSEMOVE` (0x0200). */
 const WM_MOUSEMOVE : i32 = 512;
 
+/** `WM_MOUSELEAVE` (0x02A3) — the pointer left the client area, once, after `TrackMouseEvent`. */
+const WM_MOUSELEAVE : i32 = 675;
+
+/** `TME_LEAVE` (0x2) — `TrackMouseEvent`'s request for a `WM_MOUSELEAVE`. */
+const TME_LEAVE : i32 = 2;
+
 /** `WM_SETCURSOR` (0x0020) — the system asking which cursor to show. */
 const WM_SETCURSOR : i32 = 32;
 

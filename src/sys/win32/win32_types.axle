@@ -47,6 +47,21 @@ pub extern "C" struct RECT {
     pub bottom : i32;
 }
 
+/** `typedef struct tagTRACKMOUSEEVENT { DWORD cbSize; DWORD dwFlags; HWND hwndTrack; DWORD dwHoverTime; } TRACKMOUSEEVENT;` */
+pub extern "C" struct TRACKMOUSEEVENT {
+    /** `DWORD cbSize` — must carry `sizeof<TRACKMOUSEEVENT>()`. */
+    pub cbSize      : u32;
+
+    /** `DWORD dwFlags` — `TME_LEAVE` asks for one `WM_MOUSELEAVE`. */
+    pub dwFlags     : u32;
+
+    /** `HWND hwndTrack` — the window whose pointer is watched. */
+    pub hwndTrack   : ptr;
+
+    /** `DWORD dwHoverTime` — unused with `TME_LEAVE`. */
+    pub dwHoverTime : u32;
+}
+
 /**
  * `typedef struct tagMSG { HWND hwnd; UINT message; WPARAM wParam;
  *                          LPARAM lParam; DWORD time; POINT pt; } MSG;`

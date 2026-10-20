@@ -17,7 +17,7 @@
 // the assertion runs rather than merely existing.
 
 use crate::sys::dib::{BITMAPINFO, BITMAPINFOHEADER};
-use crate::sys::win32_types::{MSG, POINT, RECT, WNDCLASSEXW};
+use crate::sys::win32_types::{MSG, POINT, RECT, TRACKMOUSEEVENT, WNDCLASSEXW};
 
 /** Sizes and offsets of the Win32 records, checked against the SDK. */
 pub(crate) class Win32Layout {
@@ -116,6 +116,13 @@ pub(crate) class Win32Layout {
         if (offsetof(BITMAPINFO, bmiColors) != 40) {
             return 31;
         }
+
+        // `hwndTrack` is pointer-aligned, so `dwFlags` is followed by no gap and
+        // `dwHoverTime` by four bytes of one: 24, not 20.
+        if (sizeof<TRACKMOUSEEVENT>() != 24) { return 32; }
+        if (offsetof(TRACKMOUSEEVENT, dwFlags) != 4) { return 33; }
+        if (offsetof(TRACKMOUSEEVENT, hwndTrack) != 8) { return 34; }
+        if (offsetof(TRACKMOUSEEVENT, dwHoverTime) != 16) { return 35; }
 
         return 0;
     }

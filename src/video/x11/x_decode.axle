@@ -150,6 +150,7 @@ pub(crate) fn handleButton(
                     button: b,
                     x: (*btn).x,
                     y: (*btn).y,
+                    clicks: mouse.countClick(b, stamp, (*btn).x, (*btn).y),
                 }
             );
             return;
@@ -186,6 +187,29 @@ pub(crate) fn handleMotion(event : ptr, stamp : i64, queue : EventQueue, mouse :
             e.dy = ny - py;
         }
         queue.push(e);
+    }
+}
+
+/**
+ * Turn an `EnterNotify` or `LeaveNotify` into the pointer coming or going.
+ *
+ * Both carry the pointer's position in the same place a `MotionNotify` does — the two records
+ * share their first twelve fields — so a motion record is read here. Every crossing is taken,
+ * including the ones a grab makes: a drag that ends outside the window ends with a `LeaveNotify`,
+ * and that is the pointer leaving. The state, not the event, decides whether it is news.
+ */
+pub(crate) fn handleCrossing(event : ptr, entered : bool, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
+    unsafe {
+        let at : ptr<XMotionEvent> = event as ptr<XMotionEvent>;
+        if (entered == mouse.isInside()) {
+            return;
+        }
+        mouse.setInside(entered);
+        if (entered) {
+            queue.push(Event { kind: EventKind::MouseEntered, timestamp: stamp, x: (*at).x, y: (*at).y });
+            return;
+        }
+        queue.push(Event { kind: EventKind::MouseLeft, timestamp: stamp });
     }
 }
 

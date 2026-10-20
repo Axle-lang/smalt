@@ -10,7 +10,11 @@
 use crate::core::event::{Event, EventKind, EventQueue};
 use crate::core::keyboard::{KeyboardState, Scancode};
 use crate::core::mouse::{MouseButton, MouseState};
-use crate::video::win_const::{WHEEL_DELTA, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP};
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
+use crate::sys::win32_types::TRACKMOUSEEVENT;
+use crate::sys::win32_user::{ReleaseCapture, SetCapture, TrackMouseEvent};
+use crate::video::win_const::{TME_LEAVE, WM_MOUSELEAVE, WHEEL_DELTA, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP};
 use crate::video::win_keymap::WinKeymap;
 
 /** The first UTF-16 surrogate — a code unit that is half a character. */
@@ -76,6 +80,24 @@ pub(crate) fn wheelOf(wp : i64) : i32 {
 }
 
 /**
+ * Ask Windows for one `WM_MOUSELEAVE` when the pointer next leaves `hwnd`.
+ *
+ * The request is one-shot, which is why it is made when the pointer *enters* and not once at
+ * start: the leave consumes it, and the next entry asks again.
+ */
+fn watchForLeave(hwnd : ptr) : void {
+    let block = new Blob(sizeof<TRACKMOUSEEVENT>());
+    defer block.close();
+    unsafe {
+        let mut track : ptr<TRACKMOUSEEVENT> = block.at() as ptr<TRACKMOUSEEVENT>;
+        (*track).cbSize = sizeof<TRACKMOUSEEVENT>() as u32;
+        (*track).dwFlags = TME_LEAVE as u32;
+        (*track).hwndTrack = hwnd;
+        TrackMouseEvent(track);
+    }
+}
+
+/**
  * Turn one message into state changes and queued events.
  *
  * Split out of the drain loop so the loop stays a loop: this is the
@@ -85,6 +107,7 @@ pub(crate) fn wheelOf(wp : i64) : i32 {
  * that treats them alike.
  */
 pub(crate) fn handle(
+    hwnd : ptr,
     message : i32,
     wp : i64,
     lp : i64,
@@ -124,6 +147,11 @@ pub(crate) fn handle(
         WM_MOUSEMOVE => {
             let nx = mouseX(lp);
             let ny = mouseY(lp);
+            if (!mouse.isInside()) {
+                mouse.setInside(true);
+                watchForLeave(hwnd);
+                queue.push(Event { kind: EventKind::MouseEntered, timestamp: stamp, x: nx, y: ny });
+            }
             let known = mouse.isPrimed();
             let px = mouse.posX();
             let py = mouse.posY();
@@ -140,20 +168,32 @@ pub(crate) fn handle(
         }
         WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN => {
             let b = buttonOf(message);
+            // The first button down takes the capture, so a drag that leaves
+            // the window keeps its messages and ends where it began.
+            if (!mouse.anyDown() && !Raw::isNil(hwnd)) {
+                SetCapture(hwnd);
+            }
             mouse.press(b);
+            let at = mouseX(lp);
+            let down = mouseY(lp);
             queue.push(
                 Event {
                     kind: EventKind::MouseButtonDown,
                     timestamp: stamp,
                     button: b,
-                    x: mouseX(lp),
-                    y: mouseY(lp),
+                    x: at,
+                    y: down,
+                    clicks: mouse.countClick(b, stamp, at, down),
                 }
             );
         }
         WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP => {
             let b = buttonOf(message);
             mouse.release(b);
+            // The last button up gives the capture back.
+            if (!mouse.anyDown()) {
+                ReleaseCapture();
+            }
             queue.push(
                 Event {
                     kind: EventKind::MouseButtonUp,
@@ -163,6 +203,13 @@ pub(crate) fn handle(
                     y: mouseY(lp),
                 }
             );
+        }
+        WM_MOUSELEAVE => {
+            // Sent once per `TrackMouseEvent`. A drag in progress holds the
+            // capture and keeps getting motion and the release from outside;
+            // the program is told the pointer left, and decides what it means.
+            mouse.setInside(false);
+            queue.push(Event { kind: EventKind::MouseLeft, timestamp: stamp });
         }
         WM_MOUSEWHEEL => {
             let notches = wheelOf(wp);

@@ -46,6 +46,8 @@ const RING_MOTION : i32 = 3;
 const RING_WHEEL : i32 = 4;
 const RING_ENTER : i32 = 5;
 const RING_LEAVE : i32 = 6;
+const RING_POINTER_IN : i32 = 7;
+const RING_POINTER_OUT : i32 = 8;
 
 /** `wl_keyboard.key`'s state: pressed, as against released. */
 const KEY_PRESSED : i32 = 1;
@@ -177,11 +179,15 @@ pub(crate) fn onPointerEnter(
         (*st).pointerSerial = serial;
         // The compositor shows no cursor of ours until we say which, once per enter.
         (*st).cursorDirty = 1;
+        push(st, RING_POINTER_IN, x >> FIXED_SHIFT, y >> FIXED_SHIFT);
         push(st, RING_MOTION, x >> FIXED_SHIFT, y >> FIXED_SHIFT);
     }
 }
 
 pub(crate) fn onPointerLeave(data : ptr, pointer : ptr, serial : u32, surface : ptr) : void {
+    unsafe {
+        push(data as ptr<WlWinState>, RING_POINTER_OUT, 0, 0);
+    }
 }
 
 pub(crate) fn onPointerMotion(data : ptr, pointer : ptr, time : u32, x : i32, y : i32) : void {
@@ -353,6 +359,18 @@ pub(crate) fn drainRing(
                         Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: a }
                     );
                 }
+                RING_POINTER_IN => {
+                    if (!mouse.isInside()) {
+                        mouse.setInside(true);
+                        queue.push(Event { kind: EventKind::MouseEntered, timestamp: stamp, x: a, y: b });
+                    }
+                }
+                RING_POINTER_OUT => {
+                    if (mouse.isInside()) {
+                        mouse.setInside(false);
+                        queue.push(Event { kind: EventKind::MouseLeft, timestamp: stamp });
+                    }
+                }
                 RING_ENTER => {
                     (*st).focused = 1;
                     (*st).focusPending = 1;
@@ -421,7 +439,14 @@ fn emitButton(state : i32, code : i32, stamp : i64, queue : EventQueue, mouse : 
     }
     mouse.press(b);
     queue.push(
-        Event { kind: EventKind::MouseButtonDown, timestamp: stamp, button: b, x: x, y: y }
+        Event {
+            kind: EventKind::MouseButtonDown,
+            timestamp: stamp,
+            button: b,
+            x: x,
+            y: y,
+            clicks: mouse.countClick(b, stamp, x, y),
+        }
     );
 }
 

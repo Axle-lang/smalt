@@ -32,6 +32,12 @@ pub(crate) const X_BUTTON_RELEASE : i32 = 5;
 /** `MotionNotify`. */
 pub(crate) const X_MOTION_NOTIFY : i32 = 6;
 
+/** `EnterNotify` — the pointer came over the window. */
+pub(crate) const X_ENTER_NOTIFY : i32 = 7;
+
+/** `LeaveNotify` — the pointer left it. */
+pub(crate) const X_LEAVE_NOTIFY : i32 = 8;
+
 /** `FocusIn`. */
 pub(crate) const X_FOCUS_IN : i32 = 9;
 
@@ -67,6 +73,12 @@ pub(crate) const X_MASK_BUTTON_PRESS : i64 = 4;
 
 /** `ButtonReleaseMask`. */
 pub(crate) const X_MASK_BUTTON_RELEASE : i64 = 8;
+
+/** `EnterWindowMask`. */
+pub(crate) const X_MASK_ENTER_WINDOW : i64 = 16;
+
+/** `LeaveWindowMask`. */
+pub(crate) const X_MASK_LEAVE_WINDOW : i64 = 32;
 
 /** `PointerMotionMask`. */
 pub(crate) const X_MASK_POINTER_MOTION : i64 = 64;

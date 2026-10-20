@@ -68,6 +68,15 @@ pub enum EventKind : i8 {
 
     /** The window came back from being minimised. */
     WindowRestored = 13,
+
+    /** The pointer came over the window's client area; `x`, `y` say where. */
+    MouseEntered = 14,
+
+    /**
+     * The pointer left the client area. A button still held keeps the pointer's motion and its
+     * release coming from outside — the drag is captured — so this is not the end of a drag.
+     */
+    MouseLeft = 15,
 }
 
 /**
@@ -80,7 +89,9 @@ pub enum EventKind : i8 {
  * | `KeyDown` / `KeyUp` | `scancode`, `repeat` |
  * | `TextInput` | `text` (a Unicode codepoint) |
  * | `MouseMotion` | `x`, `y`, `dx`, `dy` |
- * | `MouseButtonDown` / `MouseButtonUp` | `button`, `x`, `y` |
+ * | `MouseButtonDown` | `button`, `x`, `y`, `clicks` |
+ * | `MouseButtonUp` | `button`, `x`, `y` |
+ * | `MouseEntered` | `x`, `y` |
  * | `MouseWheel` | `wheel` |
  * | `WindowResized` | `width`, `height` |
  */
@@ -114,6 +125,13 @@ pub struct Event {
 
     /** Vertical motion since the previous event, for `MouseMotion`. */
     pub dy        : i32 = 0;
+
+    /**
+     * For `MouseButtonDown`: how many presses of this button, close together in time and place,
+     * this one makes — 1 for a single click, 2 for a double click, 3 for a triple. The interval
+     * and distance are fixed (half a second, four pixels), not the desktop's setting.
+     */
+    pub clicks    : i32 = 1;
 
     /** Wheel notches, for `MouseWheel`; positive is away from the user. */
     pub wheel     : i32 = 0;
