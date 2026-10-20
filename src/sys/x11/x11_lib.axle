@@ -248,6 +248,16 @@ extern "C" from "X11" {
         y : i32
     ) : i64;
 
+    /**
+     * `Cursor XCreateFontCursor(Display *, unsigned int shape)`.
+     *
+     * A pointer from the server's standard `cursor` font, named by one of
+     * the glyph numbers in `X11/cursorfont.h`. The server draws it, so
+     * there is no image to make and nothing to ship; a client that links
+     * libXcursor gets the user's theme through the same call.
+     */
+    fn XCreateFontCursor(display : ptr, shape : i32) : i64;
+
     /** `int XFreeCursor(Display *, Cursor)`. */
     fn XFreeCursor(display : ptr, cursor : i64) : i32;
 

@@ -1,0 +1,104 @@
+// cursor_shape — asking the compositor to draw the pointer.
+//
+// `wp_cursor_shape_manager_v1` is the extension that lets a client say *what* the pointer should be
+// — "a hand", "a text cursor" — and leaves the picture to the compositor, which draws it from the
+// user's own theme at the right size for the monitor. Before it, a client had to load a cursor theme
+// itself (libwayland-cursor and a name like "left_ptr") or draw one; with it there is nothing to
+// load and nothing to draw.
+//
+// It is an extension, so a compositor may not offer it — older GNOME and Weston do not — and the
+// window layer has a built-in pointer for that case (`video::wayland::wl_cursor`). Like xdg-shell
+// and xdg-decoration, the tables are built here because an extension's are generated per project
+// and exist in no library.
+//
+// Version 1. The shapes a `CursorShape` maps onto are all in it; the later versions only add shapes
+// (`dnd_ask`, `all_resize`) this library has no name for.
+
+use crate::kernel::raw::Raw;
+use crate::sys::wl_lib::{WlInterface, WlMessage};
+use crate::sys::wl_libc::cstr;
+use crate::sys::wl_table::{nullTypes, putMessage, recordAt, typesOf2};
+
+/** `wp_cursor_shape_manager_v1.destroy`. */
+pub(crate) const WP_CURSOR_SHAPE_MANAGER_DESTROY : i32 = 0;
+
+/** `wp_cursor_shape_manager_v1.get_pointer`. */
+pub(crate) const WP_CURSOR_SHAPE_MANAGER_GET_POINTER : i32 = 1;
+
+/** `wp_cursor_shape_device_v1.destroy`. */
+pub(crate) const WP_CURSOR_SHAPE_DEVICE_DESTROY : i32 = 0;
+
+/** `wp_cursor_shape_device_v1.set_shape`. */
+pub(crate) const WP_CURSOR_SHAPE_DEVICE_SET_SHAPE : i32 = 1;
+
+/** Requests in the manager (`destroy`, `get_pointer`, `get_tablet_tool_v2`) and in a device. */
+const MANAGER_REQUESTS : i64 = 3;
+const DEVICE_REQUESTS : i64 = 2;
+
+/** The two tables the extension needs. */
+pub extern "C" struct CursorShapeTables {
+    pub manager : ptr;
+    pub device : ptr;
+}
+
+/**
+ * The protocol's number for the shape `shape` of `video::cursor::CursorShape`.
+ *
+ * `wp_cursor_shape_device_v1.shape`: default 1, help 3, pointer 4, wait 6, crosshair 8, text 9,
+ * move 13, not_allowed 15, ns_resize 27, nesw_resize 28, ew_resize 26, nwse_resize 29.
+ */
+pub(crate) fn protocolShape(shape : i32) : i64 {
+    return match shape {
+        1 => 4,
+        2 => 9,
+        3 => 8,
+        4 => 26,
+        5 => 27,
+        6 => 29,
+        7 => 28,
+        8 => 13,
+        9 => 6,
+        10 => 15,
+        11 => 3,
+        _ => 1,
+    };
+}
+
+/**
+ * Build the manager's table and the per-pointer device's.
+ *
+ * `wlPointer` is the core `wl_pointer` table, which `get_pointer` names as its second argument.
+ */
+pub(crate) fn buildCursorShapeTables(out : ptr<CursorShapeTables>, wlPointer : ptr) : void {
+    unsafe {
+        let block = Raw::take(2 * sizeof<WlInterface>());
+        let manager : ptr<WlInterface> = recordAt(block, 0, sizeof<WlInterface>()) as ptr<WlInterface>;
+        let device : ptr<WlInterface> = recordAt(block, 1, sizeof<WlInterface>()) as ptr<WlInterface>;
+        (*out).manager = manager as ptr;
+        (*out).device = device as ptr;
+
+        // The manager: no events. `get_tablet_tool_v2` keeps its slot because an opcode is a
+        // position, though this port never sends it.
+        let mMethods = Raw::take(MANAGER_REQUESTS * sizeof<WlMessage>());
+        putMessage(mMethods, 0, "destroy", "", Raw::nil());
+        putMessage(mMethods, 1, "get_pointer", "no", typesOf2(device as ptr, wlPointer));
+        putMessage(mMethods, 2, "get_tablet_tool_v2", "no", nullTypes(2));
+        (*manager).name = cstr("wp_cursor_shape_manager_v1");
+        (*manager).version = 1;
+        (*manager).methodCount = MANAGER_REQUESTS as i32;
+        (*manager).methods = mMethods;
+        (*manager).eventCount = 0;
+        (*manager).events = Raw::nil();
+
+        // One pointer's device: two requests, no events.
+        let dMethods = Raw::take(DEVICE_REQUESTS * sizeof<WlMessage>());
+        putMessage(dMethods, 0, "destroy", "", Raw::nil());
+        putMessage(dMethods, 1, "set_shape", "uu", nullTypes(2));
+        (*device).name = cstr("wp_cursor_shape_device_v1");
+        (*device).version = 1;
+        (*device).methodCount = DEVICE_REQUESTS as i32;
+        (*device).methods = dMethods;
+        (*device).eventCount = 0;
+        (*device).events = Raw::nil();
+    }
+}

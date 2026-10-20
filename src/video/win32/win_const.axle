@@ -60,6 +60,39 @@ const CS_OWNDC : i32 = 32;
 /** `IDC_ARROW` (32512) — passed where a `LPCWSTR` is expected, as an atom. */
 const IDC_ARROW : i64 = 32512;
 
+/** `IDC_IBEAM` (32513) — the text cursor. */
+const IDC_IBEAM : i64 = 32513;
+
+/** `IDC_WAIT` (32514) — the busy cursor. */
+const IDC_WAIT : i64 = 32514;
+
+/** `IDC_CROSS` (32515) — the crosshair. */
+const IDC_CROSS : i64 = 32515;
+
+/** `IDC_SIZENWSE` (32642) — the diagonal from top-left to bottom-right. */
+const IDC_SIZENWSE : i64 = 32642;
+
+/** `IDC_SIZENESW` (32643) — the diagonal from top-right to bottom-left. */
+const IDC_SIZENESW : i64 = 32643;
+
+/** `IDC_SIZEWE` (32644) — left-right. */
+const IDC_SIZEWE : i64 = 32644;
+
+/** `IDC_SIZENS` (32645) — up-down. */
+const IDC_SIZENS : i64 = 32645;
+
+/** `IDC_SIZEALL` (32646) — four arrows. */
+const IDC_SIZEALL : i64 = 32646;
+
+/** `IDC_NO` (32648) — the slashed circle. */
+const IDC_NO : i64 = 32648;
+
+/** `IDC_HAND` (32649) — the pointing hand. */
+const IDC_HAND : i64 = 32649;
+
+/** `IDC_HELP` (32651) — the arrow with a question mark. */
+const IDC_HELP : i64 = 32651;
+
 // ─── ShowWindow commands (`SW_*`) ────────────────────────────
 
 /** `SW_HIDE`. */
@@ -108,6 +141,12 @@ const WM_SYSKEYUP : i32 = 261;
 
 /** `WM_MOUSEMOVE` (0x0200). */
 const WM_MOUSEMOVE : i32 = 512;
+
+/** `WM_SETCURSOR` (0x0020) — the system asking which cursor to show. */
+const WM_SETCURSOR : i32 = 32;
+
+/** `HTCLIENT` (1) — the low word of a `WM_SETCURSOR`'s `lParam` over the client area. */
+const HTCLIENT : i32 = 1;
 
 /** `WM_LBUTTONDOWN` (0x0201). */
 const WM_LBUTTONDOWN : i32 = 513;

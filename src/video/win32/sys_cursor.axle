@@ -5,6 +5,9 @@
 //   recentre(win, x, y)        put the pointer at the client-area point
 //                              (x, y) of `win`
 //   showCursor(win, visible)   show or hide the pointer over that window
+//                              (relative-mouse mode's half)
+//   setShape(win, shape)       the shape the pointer takes over that window,
+//                              a `CursorShape`'s number
 //
 // Windows: `ClientToScreen` + `SetCursorPos`, and `ShowCursor`'s
 // balanced counter.
@@ -27,11 +30,53 @@
 // size.
 
 use crate::kernel::blob::Blob;
-use crate::sys::win32_types::POINT;
-use crate::sys::win32_user::{ClientToScreen, SetCursorPos, ShowCursor};
+use crate::kernel::raw::Raw;
+use crate::sys::win32_types::{POINT, RECT};
+use crate::sys::win32_user::{ClientToScreen, GetClientRect, GetCursorPos, LoadCursorW, ScreenToClient, SetCursor, SetCursorPos, ShowCursor};
+use crate::video::cursor::CURSOR_HIDDEN;
 use crate::video::sys_window::SysWindow;
+use crate::video::win_const::{IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_HELP, IDC_IBEAM, IDC_NO, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IDC_WAIT};
+use crate::video::win_proc::recordCursor;
 
-/** Pointer confinement and visibility. */
+/** The `IDC_*` atom of the system cursor that draws shape `shape`. */
+fn atomOf(shape : i32) : i64 {
+    return match shape {
+        1 => IDC_HAND,
+        2 => IDC_IBEAM,
+        3 => IDC_CROSS,
+        4 => IDC_SIZEWE,
+        5 => IDC_SIZENS,
+        6 => IDC_SIZENWSE,
+        7 => IDC_SIZENESW,
+        8 => IDC_SIZEALL,
+        9 => IDC_WAIT,
+        10 => IDC_NO,
+        11 => IDC_HELP,
+        _ => IDC_ARROW,
+    };
+}
+
+/** Whether the pointer is over `hwnd`'s client area right now. */
+fn pointerInClient(hwnd : ptr) : bool {
+    let pointBlock = new Blob(sizeof<POINT>());
+    defer pointBlock.close();
+    let rectBlock = new Blob(sizeof<RECT>());
+    defer rectBlock.close();
+    unsafe {
+        let point : ptr<POINT> = pointBlock.at() as ptr<POINT>;
+        let rect : ptr<RECT> = rectBlock.at() as ptr<RECT>;
+        if (GetCursorPos(point) == 0) {
+            return false;
+        }
+        if (ScreenToClient(hwnd, point) == 0 || GetClientRect(hwnd, rect) == 0) {
+            return false;
+        }
+        return (*point).x >= (*rect).left && (*point).x < (*rect).right
+            && (*point).y >= (*rect).top && (*point).y < (*rect).bottom;
+    }
+}
+
+/** Pointer confinement, visibility and shape. */
 class SysCursor {
     /**
      * Move the pointer to the client-area point (`x`, `y`).
@@ -55,7 +100,7 @@ class SysCursor {
     }
 
     /**
-     * Show or hide the pointer.
+     * Show or hide the pointer, for relative-mouse mode.
      *
      * `ShowCursor` keeps an internal counter rather than a flag, so the
      * calls must balance — one hide needs exactly one show. `Events`
@@ -67,6 +112,26 @@ class SysCursor {
             ShowCursor(1);
         } else {
             ShowCursor(0);
+        }
+    }
+
+    /**
+     * Set the shape the pointer takes over `win` — a `CursorShape`'s number.
+     *
+     * The system cursors are shared and owned by the system, so there is
+     * nothing to release; what lasts is the handle recorded for the window
+     * procedure to answer `WM_SETCURSOR` with. The request is applied at
+     * once only if the pointer is over this window's client area, because
+     * the system does not ask again until the pointer next moves.
+     */
+    pub(crate) static fn setShape(win : SysWindow, shape : i32) : void {
+        let mut handle : ptr = Raw::nil();
+        if (shape != CURSOR_HIDDEN) {
+            handle = LoadCursorW(Raw::nil(), Raw::at(atomOf(shape)));
+        }
+        recordCursor(win.handle(), handle);
+        if (pointerInClient(win.handle())) {
+            SetCursor(handle);
         }
     }
 }

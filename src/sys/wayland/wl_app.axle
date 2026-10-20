@@ -29,6 +29,7 @@ use crate::sys::wl_request::{
     WL_BIND_VERSION, WL_DISPLAY_GET_REGISTRY, WL_SEAT_CAPABILITY_KEYBOARD,
     WL_SEAT_CAPABILITY_POINTER, WL_SEAT_GET_KEYBOARD, WL_SEAT_GET_POINTER,
 };
+use crate::sys::cursor_shape::{buildCursorShapeTables, CursorShapeTables, WP_CURSOR_SHAPE_MANAGER_GET_POINTER};
 use crate::sys::xdg_decoration::{buildDecorationTables, XdgDecorationTables};
 use crate::sys::xdg_shell::{buildXdgTables, XdgTables};
 
@@ -54,6 +55,7 @@ pub(crate) fn connect() : ptr {
         (*app).core = Raw::take(sizeof<WlCore>());
         (*app).xdg = Raw::take(sizeof<XdgTables>());
         (*app).decor = Raw::take(sizeof<XdgDecorationTables>());
+        (*app).cshape = Raw::take(sizeof<CursorShapeTables>());
         (*app).listeners = Raw::take(sizeof<WlAppListeners>());
 
         let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
@@ -63,6 +65,7 @@ pub(crate) fn connect() : ptr {
         let xdg : ptr<XdgTables> = (*app).xdg as ptr<XdgTables>;
         buildXdgTables(xdg, (*core).surface, (*core).seat, (*core).output);
         buildDecorationTables((*app).decor as ptr<XdgDecorationTables>, (*xdg).toplevel);
+        buildCursorShapeTables((*app).cshape as ptr<CursorShapeTables>, (*core).pointer);
 
         let args = new WlArgs();
         defer args.close();
@@ -76,6 +79,7 @@ pub(crate) fn connect() : ptr {
         bindSeat(app, args);
         bindOutput(app, args);
         bindDecorations(app, args);
+        bindCursorShape(app, args);
 
         // A second round trip, so the answers to the binds — the
         // output's mode, the seat's capabilities — have arrived before
@@ -85,6 +89,7 @@ pub(crate) fn connect() : ptr {
         // And only now the devices: a seat is asked for a keyboard it
         // reported having, never before the answer.
         openSeatDevices(app, args);
+        openCursorDevice(app, args);
         return app as ptr;
     }
 }
@@ -258,6 +263,47 @@ fn bindDecorations(app : ptr<WlApp>, args : WlArgs) : void {
 }
 
 /**
+ * The cursor-shape manager, where there is one.
+ *
+ * Optional like the decoration manager: a compositor that has it draws
+ * the pointer a program asks for from the user's theme; one that does not
+ * is served the built-in pointers of `video::wayland::wl_cursor`.
+ */
+fn bindCursorShape(app : ptr<WlApp>, args : WlArgs) : void {
+    unsafe {
+        if ((*app).cursorShapeName == 0) {
+            return;
+        }
+        let tables : ptr<CursorShapeTables> = (*app).cshape as ptr<CursorShapeTables>;
+        (*app).cursorShapeManager = bindGlobal(
+            args,
+            (*app).registry,
+            (*app).cursorShapeName,
+            (*tables).manager,
+            "wp_cursor_shape_manager_v1"
+        );
+    }
+}
+
+/** The pointer's cursor-shape device, once there is a pointer to make one for. */
+fn openCursorDevice(app : ptr<WlApp>, args : WlArgs) : void {
+    unsafe {
+        if (Raw::isNil((*app).cursorShapeManager) || Raw::isNil((*app).pointer)) {
+            return;
+        }
+        let tables : ptr<CursorShapeTables> = (*app).cshape as ptr<CursorShapeTables>;
+        args.set(0, 0);
+        args.setObject(1, (*app).pointer);
+        (*app).cursorDevice = args.send(
+            (*app).cursorShapeManager,
+            WP_CURSOR_SHAPE_MANAGER_GET_POINTER,
+            (*tables).device,
+            1
+        );
+    }
+}
+
+/**
  * The address `wl_proxy_add_listener` is given for the seat.
  *
  * A listener is an array of function pointers and the library reads it
@@ -289,10 +335,11 @@ fn abandon(app : ptr<WlApp>) : ptr {
     }
 }
 
-/** The four blocks the token owns. */
+/** The five blocks the token owns. */
 fn releaseBlocks(app : ptr<WlApp>) : void {
     unsafe {
         Raw::release((*app).listeners);
+        Raw::release((*app).cshape);
         Raw::release((*app).decor);
         Raw::release((*app).xdg);
         Raw::release((*app).core);

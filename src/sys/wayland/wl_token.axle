@@ -75,6 +75,10 @@ pub extern "C" struct WlApp {
     pub output : ptr;
     pub decorationManager : ptr;
 
+    /** `wp_cursor_shape_manager_v1`, where the compositor offers it, and the device it made for `pointer`. */
+    pub cursorShapeManager : ptr;
+    pub cursorDevice : ptr;
+
     /** Registry names, found by the sweep and consumed by the binds. */
     pub compositorName : u32;
     pub shmName : u32;
@@ -82,6 +86,7 @@ pub extern "C" struct WlApp {
     pub seatName : u32;
     pub outputName : u32;
     pub decorationName : u32;
+    pub cursorShapeName : u32;
 
     /** What the seat reports having: bit 0 a pointer, bit 1 a keyboard. */
     pub seatCaps : u32;
@@ -98,6 +103,9 @@ pub extern "C" struct WlApp {
 
     /** `XdgDecorationTables` — xdg-decoration's two. */
     pub decor : ptr;
+
+    /** `CursorShapeTables` — cursor-shape's two. */
+    pub cshape : ptr;
 
     /** [`WlAppListeners`] — the subscriptions this connection installed. */
     pub listeners : ptr;

@@ -108,6 +108,17 @@ extern "C" from "user32" {
     /** `HCURSOR LoadCursorW(HINSTANCE, LPCWSTR)` — NULL instance for `IDC_*`. */
     fn LoadCursorW(instance : ptr, name : ptr) : ptr;
 
+    /**
+     * `HCURSOR SetCursor(HCURSOR)` — makes this the cursor now, and NULL hides it.
+     *
+     * Only the *current* image: the system asks again with `WM_SETCURSOR` at
+     * every mouse move, so what lasts is what the window procedure answers.
+     */
+    fn SetCursor(cursor : ptr) : ptr;
+
+    /** `BOOL GetClientRect(HWND, LPRECT)` — the client area, with the origin at (0, 0). */
+    fn GetClientRect(hwnd : ptr, rect : ptr<RECT>) : i32;
+
     /** `SHORT GetAsyncKeyState(int)` — the polled key state, by virtual key. */
     fn GetAsyncKeyState(vk : i32) : i32;
 

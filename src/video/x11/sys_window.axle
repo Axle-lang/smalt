@@ -43,6 +43,7 @@
 use crate::core::error::PlatformError;
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
+use crate::video::cursor::CURSOR_SHAPE_COUNT;
 use crate::platform::x_surface::XSurface;
 use crate::sys::x11_lib::{
     XChangeProperty, XCreateGC, XCreateSimpleWindow, XDestroyWindow, XBlackPixel,
@@ -61,6 +62,7 @@ use crate::sys::x11_const::{
     X_EVENT_BYTES, X_MOTIF_HINTS_WORDS, X_NONE, X_PROP_MODE_REPLACE, X_SIZE_HINT_MIN_MAX,
     X_TRUE, X_UNMAP_NOTIFY,
 };
+use crate::video::x11::shape_cursor::freeShapeCursors;
 use crate::video::x11::x_window_ops::{pinSize, registerCloseProtocol, removeDecorations, roundTrip};
 
 /** No border on the window itself; the manager draws the frame. */
@@ -84,6 +86,19 @@ pub(crate) class SysWindow : Closeable {
      * because it is the window it is defined on that outlives the call.
      */
     pub(crate) blank           : i64 = X_NONE;
+    /**
+     * The server cursors made for the shapes this window has shown, one
+     * eight-byte slot per `CursorShape`; zero means not made yet.
+     *
+     * Each is a resource of the server's, made on the first request for
+     * its shape and released with the window — `video::x11::shape_cursor`
+     * writes the slots and `close` below gives every one of them back.
+     */
+    pub(crate) shapes          : Blob = new Blob((CURSOR_SHAPE_COUNT as i64) * 8);
+    /** The `CursorShape` asked for last, as its number. */
+    pub(crate) shape           : i32 = 0;
+    /** Whether relative-mouse mode has the pointer hidden. */
+    pub(crate) pointerHidden   : bool = false;
     w                          : i32;
     h                          : i32;
     pub(crate) closePending    : bool = false;
@@ -141,6 +156,7 @@ pub(crate) class SysWindow : Closeable {
         );
         if (self.window == 0) {
             self.token.close();
+            self.shapes.close();
             throw PlatformError("XCreateSimpleWindow refused a ${w}x${h} window");
         }
 
@@ -369,6 +385,7 @@ pub(crate) class SysWindow : Closeable {
 
     /** Destroy the window and release what it holds. */
     pub(crate) fn close(self) : void {
+        freeShapeCursors(self);
         if (self.blank != X_NONE) {
             XFreeCursor(self.display, self.blank);
         }

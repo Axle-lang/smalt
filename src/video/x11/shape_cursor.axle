@@ -1,0 +1,91 @@
+// shape_cursor — the pointer shapes X11 draws for a window.
+//
+// The server has a font of standard pointers, and `XCreateFontCursor` turns one glyph of it into a
+// `Cursor` the window can wear. Nothing is drawn here and nothing is shipped: the glyph numbers
+// below are `X11/cursorfont.h`'s, and the server — or the client library, where it finds the user's
+// theme — supplies the picture.
+//
+// A cursor is a server resource with a lifetime, so the window keeps what it made: one slot per
+// shape, filled on the first request for that shape and emptied by `freeShapeCursors` when the
+// window closes. Asking for a shape twice is a table read, not a round trip.
+//
+// `Arrow` is the exception: it is the absence of a cursor definition, so the window inherits its
+// parent's — which is the pointer the user's desktop chose, theme and all, and the one a program
+// that never calls `setCursor` already shows.
+
+use crate::kernel::raw::Raw;
+use crate::sys::x11_const::X_NONE;
+use crate::sys::x11_lib::{XCreateFontCursor, XDefineCursor, XFlush, XFreeCursor, XUndefineCursor};
+use crate::video::cursor::{CURSOR_HIDDEN, CURSOR_SHAPE_COUNT};
+use crate::video::sys_window::SysWindow;
+use crate::video::x11::blank_cursor::blankCursor;
+use crate::video::x11::x_window_ops::{connection, id};
+
+/** Bytes in one slot of the window's table. */
+const SLOT_BYTES : i64 = 8;
+
+/** The glyph of the standard cursor font that draws shape `shape`. */
+fn glyphOf(shape : i32) : i32 {
+    return match shape {
+        1 => 60,     // hand2
+        2 => 152,    // xterm
+        3 => 34,     // crosshair
+        4 => 108,    // sb_h_double_arrow
+        5 => 116,    // sb_v_double_arrow
+        6 => 14,     // bottom_right_corner
+        7 => 12,     // bottom_left_corner
+        8 => 52,     // fleur
+        9 => 150,    // watch
+        10 => 0,     // X_cursor
+        11 => 92,    // question_arrow
+        _ => 68,     // left_ptr
+    };
+}
+
+/** The cursor for `shape`, made on first use; `X_NONE` when the server refuses. */
+fn cursorFor(win : SysWindow, shape : i32) : i64 {
+    let slot : i64 = (shape as i64) * SLOT_BYTES;
+    let made : i64 = Raw::i64At(win.shapes.at(), slot);
+    if (made != X_NONE) {
+        return made;
+    }
+    let fresh : i64 = XCreateFontCursor(connection(win), glyphOf(shape));
+    if (fresh != X_NONE) {
+        Raw::putI64(win.shapes.at(), slot, fresh);
+    }
+    return fresh;
+}
+
+/**
+ * Put on the window the cursor its state calls for: nothing when the pointer
+ * is hidden (by the program or by relative mode), the desktop's own for `Arrow`,
+ * the shape's otherwise.
+ */
+pub(crate) fn applyCursor(win : SysWindow) : void {
+    if (win.pointerHidden || win.shape == CURSOR_HIDDEN) {
+        XDefineCursor(connection(win), id(win), blankCursor(win));
+    } else if (win.shape == 0) {
+        XUndefineCursor(connection(win), id(win));
+    } else {
+        let c : i64 = cursorFor(win, win.shape);
+        if (c == X_NONE) {
+            XUndefineCursor(connection(win), id(win));
+        } else {
+            XDefineCursor(connection(win), id(win), c);
+        }
+    }
+    XFlush(connection(win));
+}
+
+/** Give every cursor the window made back to the server, and empty the table. */
+pub(crate) fn freeShapeCursors(win : SysWindow) : void {
+    for (i of 0..CURSOR_SHAPE_COUNT) {
+        let slot : i64 = (i as i64) * SLOT_BYTES;
+        let made : i64 = Raw::i64At(win.shapes.at(), slot);
+        if (made != X_NONE) {
+            XFreeCursor(connection(win), made);
+            Raw::putI64(win.shapes.at(), slot, X_NONE);
+        }
+    }
+    win.shapes.close();
+}

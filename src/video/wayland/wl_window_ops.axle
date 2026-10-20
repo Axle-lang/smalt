@@ -37,6 +37,7 @@ use crate::sys::xdg_shell::{
     XDG_TOPLEVEL_SET_TITLE, XDG_WM_BASE_GET_XDG_SURFACE,
 };
 use crate::video::sys_window::SysWindow;
+use crate::video::wayland::wl_cursor::releaseKit;
 use crate::video::wayland::wl_win_events::{
     onDecorationConfigure, onSurfaceConfigure, onSyncDone, onToplevelClose, onToplevelConfigure,
 };
@@ -153,6 +154,7 @@ pub(crate) fn createWindow(
  */
 pub(crate) fn destroyWindow(st : ptr<WlWinState>, args : WlArgs) : void {
     unsafe {
+        releaseKit(st, args);
         args.sendDestroy((*st).decoration, ZXDG_TOPLEVEL_DECORATION_DESTROY);
         (*st).decoration = Raw::nil();
         args.sendDestroy((*st).toplevel, XDG_TOPLEVEL_DESTROY);

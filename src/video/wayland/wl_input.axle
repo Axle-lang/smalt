@@ -175,6 +175,8 @@ pub(crate) fn onPointerEnter(
     unsafe {
         let st : ptr<WlWinState> = data as ptr<WlWinState>;
         (*st).pointerSerial = serial;
+        // The compositor shows no cursor of ours until we say which, once per enter.
+        (*st).cursorDirty = 1;
         push(st, RING_MOTION, x >> FIXED_SHIFT, y >> FIXED_SHIFT);
     }
 }

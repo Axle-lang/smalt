@@ -19,6 +19,8 @@
 // refuses a path that drops one without `close()`.
 
 use crate::core::error::PlatformError;
+use crate::video::cursor::CursorShape;
+use crate::video::sys_cursor::SysCursor;
 use crate::video::sys_window::SysWindow;
 
 /**
@@ -118,6 +120,9 @@ pub class Window : Closeable {
      */
     pub(crate) sys : SysWindow;
 
+    /** The shape asked for last, so a repeated request costs nothing. */
+    cursorNow : CursorShape = CursorShape::Arrow;
+
     /**
      * Create a window with a `w` by `h` **client** area.
      *
@@ -209,6 +214,28 @@ pub class Window : Closeable {
     /** Replace the title bar text. */
     pub fn setTitle(mut self, title : string) : void {
         self.sys.setTitle(title);
+    }
+
+    /**
+     * Change what the pointer looks like over this window's client area.
+     *
+     * Cheap to call every frame with the shape the widget under the
+     * pointer wants: a request for the shape already shown does nothing,
+     * and a change is one call to the window system. `CursorShape::Hidden`
+     * hides the pointer there. The relative-mouse mode of `Events` hides
+     * it too, and takes precedence while it is on.
+     */
+    pub fn setCursor(mut self, shape : CursorShape) : void {
+        if (shape == self.cursorNow) {
+            return;
+        }
+        self.cursorNow = shape;
+        SysCursor::setShape(self.sys, shape as i32);
+    }
+
+    /** The shape the pointer was last asked to take over this window. */
+    pub fn cursor(self) : CursorShape {
+        return self.cursorNow;
     }
 
     /**

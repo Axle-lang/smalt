@@ -1,0 +1,262 @@
+// cursor_art — the built-in pointers, drawn from shapes.
+//
+// A port whose window system will not draw a pointer for a name — a Wayland compositor without
+// `wp_cursor_shape_v1` — is handed an image instead, and this makes it: one square of premultiplied
+// ARGB pixels per `CursorShape`, white with a black outline, soft at the edges.
+//
+// Nothing is shipped. Each pointer is a handful of shapes — capsules, rounded boxes, a polygon —
+// and a pixel's colour comes from its signed distance to their union: inside is white, a band
+// around it is black, and the half-pixel at each edge is blended, so the pictures are as clean at
+// 32 pixels as the rest of the library's drawing and are made once, when a window first asks.
+//
+// The art is portable and names no platform; only a port that needs it calls it.
+
+use crate::kernel::mem::Mem;
+use crate::video::cursor::CURSOR_SHAPE_COUNT;
+
+/** Side of the square every built-in pointer is drawn in, in pixels. */
+pub const CURSOR_ART_SIDE : i32 = 32;
+
+/** Bytes one pointer's pixels occupy. */
+pub const CURSOR_ART_BYTES : i64 = 4096;
+
+/** The black band around the white, in pixels. */
+const OUTLINE : f64 = 1.5;
+
+/** `v` held to 0..1. */
+fn coverage(v : f64) : f64 {
+    if (v < 0.0) {
+        return 0.0;
+    }
+    if (v > 1.0) {
+        return 1.0;
+    }
+    return v;
+}
+
+/** The smaller of two. */
+fn lesser(a : f64, b : f64) : f64 {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+/** The larger of two. */
+fn greater(a : f64, b : f64) : f64 {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+/** Distance from (`px`, `py`) to the segment (`ax`, `ay`)–(`bx`, `by`). */
+fn segment(px : f64, py : f64, ax : f64, ay : f64, bx : f64, by : f64) : f64 {
+    let dx : f64 = bx - ax;
+    let dy : f64 = by - ay;
+    let len2 : f64 = dx * dx + dy * dy;
+    let mut t : f64 = 0.0;
+    if (len2 > 0.0) {
+        t = coverage(((px - ax) * dx + (py - ay) * dy) / len2);
+    }
+    let ex : f64 = px - (ax + t * dx);
+    let ey : f64 = py - (ay + t * dy);
+    return (ex * ex + ey * ey).sqrt();
+}
+
+/** Signed distance to a capsule: the segment, thickened by `r`. */
+fn capsule(px : f64, py : f64, ax : f64, ay : f64, bx : f64, by : f64, r : f64) : f64 {
+    return segment(px, py, ax, ay, bx, by) - r;
+}
+
+/** Signed distance to a box centred on (`cx`, `cy`) with half-extents (`hx`, `hy`) and corner radius `r`. */
+fn roundedBox(px : f64, py : f64, cx : f64, cy : f64, hx : f64, hy : f64, r : f64) : f64 {
+    let qx : f64 = (px - cx).abs() - (hx - r);
+    let qy : f64 = (py - cy).abs() - (hy - r);
+    let ox : f64 = greater(qx, 0.0);
+    let oy : f64 = greater(qy, 0.0);
+    return (ox * ox + oy * oy).sqrt() + lesser(greater(qx, qy), 0.0) - r;
+}
+
+/** Signed distance to a ring of radius `radius` and half-thickness `half`. */
+fn ring(px : f64, py : f64, cx : f64, cy : f64, radius : f64, half : f64) : f64 {
+    let dx : f64 = px - cx;
+    let dy : f64 = py - cy;
+    return ((dx * dx + dy * dy).sqrt() - radius).abs() - half;
+}
+
+/**
+ * Signed distance to the polygon whose corners are the pairs in `pts` — negative inside.
+ * The sign comes from counting the edges a ray to the right crosses.
+ */
+fn polygon(px : f64, py : f64, pts : f64[]) : f64 {
+    let n : i32 = (pts.length as i32) / 2;
+    let mut best : f64 = 1.0e9;
+    let mut inside : bool = false;
+    let mut j : i32 = n - 1;
+    for (i of 0..n) {
+        let ax : f64 = pts[(i * 2) as i64];
+        let ay : f64 = pts[(i * 2 + 1) as i64];
+        let bx : f64 = pts[(j * 2) as i64];
+        let by : f64 = pts[(j * 2 + 1) as i64];
+        best = lesser(best, segment(px, py, ax, ay, bx, by));
+        if ((ay > py) != (by > py)) {
+            let cross : f64 = (bx - ax) * (py - ay) / (by - ay) + ax;
+            if (px < cross) {
+                inside = !inside;
+            }
+        }
+        j = i;
+    }
+    if (inside) {
+        return 0.0 - best;
+    }
+    return best;
+}
+
+/** A double-headed arrow along the horizontal through the centre. */
+fn doubleArrow(px : f64, py : f64, headL : f64[], headR : f64[]) : f64 {
+    let shaft : f64 = capsule(px, py, 9.0, 16.0, 23.0, 16.0, 1.2);
+    let left : f64 = polygon(px, py, headL);
+    let right : f64 = polygon(px, py, headR);
+    return lesser(shaft, lesser(left, right));
+}
+
+/** The signed distance from (`px`, `py`) to the pointer for `shape`. */
+fn distance(
+    shape : i32,
+    px : f64,
+    py : f64,
+    arrow : f64[],
+    headL : f64[],
+    headR : f64[],
+    moveL : f64[],
+    moveR : f64[],
+    sandTop : f64[],
+    sandBottom : f64[]
+) : f64 {
+    if (shape == 1) {
+        // A hand with one finger raised: the finger, the palm, three knuckles and a thumb.
+        let finger : f64 = capsule(px, py, 13.5, 6.5, 13.5, 17.0, 2.7);
+        let palm : f64 = roundedBox(px, py, 18.0, 21.5, 8.4, 6.2, 4.2);
+        let k1 : f64 = capsule(px, py, 17.5, 15.5, 17.5, 19.0, 2.4);
+        let k2 : f64 = capsule(px, py, 21.5, 16.5, 21.5, 19.0, 2.2);
+        let k3 : f64 = capsule(px, py, 25.0, 18.0, 25.0, 20.0, 2.0);
+        let thumb : f64 = capsule(px, py, 10.5, 17.5, 11.5, 23.0, 2.4);
+        return lesser(lesser(lesser(finger, palm), lesser(k1, k2)), lesser(k3, thumb));
+    }
+    if (shape == 2) {
+        // An I-beam.
+        let stem : f64 = capsule(px, py, 16.0, 6.0, 16.0, 26.0, 1.1);
+        let top : f64 = capsule(px, py, 12.0, 6.0, 20.0, 6.0, 1.1);
+        let bottom : f64 = capsule(px, py, 12.0, 26.0, 20.0, 26.0, 1.1);
+        return lesser(stem, lesser(top, bottom));
+    }
+    if (shape == 3) {
+        // A crosshair with a gap at the centre.
+        let up : f64 = capsule(px, py, 16.0, 5.0, 16.0, 13.0, 1.0);
+        let down : f64 = capsule(px, py, 16.0, 19.0, 16.0, 27.0, 1.0);
+        let left : f64 = capsule(px, py, 5.0, 16.0, 13.0, 16.0, 1.0);
+        let right : f64 = capsule(px, py, 19.0, 16.0, 27.0, 16.0, 1.0);
+        return lesser(lesser(up, down), lesser(left, right));
+    }
+    if (shape == 4) {
+        return doubleArrow(px, py, headL, headR);
+    }
+    if (shape == 5) {
+        return doubleArrow(py, px, headL, headR);
+    }
+    if (shape == 6 || shape == 7) {
+        // The horizontal arrow turned a quarter of the way round, about the centre.
+        let s : f64 = 0.7071067811865476;
+        let dx : f64 = px - 16.0;
+        let dy : f64 = py - 16.0;
+        if (shape == 6) {
+            return doubleArrow(16.0 + (dx + dy) * s, 16.0 + (dy - dx) * s, headL, headR);
+        }
+        return doubleArrow(16.0 + (dx - dy) * s, 16.0 + (dy + dx) * s, headL, headR);
+    }
+    if (shape == 8) {
+        return lesser(doubleArrow(px, py, moveL, moveR), doubleArrow(py, px, moveL, moveR));
+    }
+    if (shape == 9) {
+        // An hourglass.
+        let top : f64 = polygon(px, py, sandTop);
+        let bottom : f64 = polygon(px, py, sandBottom);
+        let lidTop : f64 = capsule(px, py, 8.0, 5.0, 24.0, 5.0, 0.9);
+        let lidBottom : f64 = capsule(px, py, 8.0, 27.0, 24.0, 27.0, 0.9);
+        return lesser(lesser(top, bottom), lesser(lidTop, lidBottom));
+    }
+    if (shape == 10) {
+        // A circle with a bar across it.
+        let circle : f64 = ring(px, py, 16.0, 16.0, 9.0, 1.7);
+        let bar : f64 = capsule(px, py, 10.0, 22.0, 22.0, 10.0, 1.4);
+        return lesser(circle, bar);
+    }
+    if (shape == 11) {
+        // The arrow, and a question mark beside it.
+        let a : f64 = polygon(px, py, arrow);
+        let h1 : f64 = capsule(px, py, 21.5, 18.5, 22.5, 16.5, 1.0);
+        let h2 : f64 = capsule(px, py, 22.5, 16.5, 25.0, 15.5, 1.0);
+        let h3 : f64 = capsule(px, py, 25.0, 15.5, 27.5, 17.0, 1.0);
+        let h4 : f64 = capsule(px, py, 27.5, 17.0, 27.0, 19.5, 1.0);
+        let h5 : f64 = capsule(px, py, 27.0, 19.5, 24.5, 21.5, 1.0);
+        let h6 : f64 = capsule(px, py, 24.5, 21.5, 24.5, 23.0, 1.0);
+        let dot : f64 = capsule(px, py, 24.5, 26.0, 24.5, 26.0, 1.1);
+        return lesser(lesser(a, lesser(h1, h2)), lesser(lesser(h3, h4), lesser(h5, lesser(h6, dot))));
+    }
+    return polygon(px, py, arrow);
+}
+
+/** Drawing the built-in pointers. */
+class CursorArt {
+    /** The pixel of the pointer that points: the x of shape `shape`'s hotspot. */
+    pub static fn hotX(shape : i32) : i32 {
+        return match shape {
+            0 => 4,
+            1 => 14,
+            11 => 4,
+            _ => 16,
+        };
+    }
+
+    /** The y of shape `shape`'s hotspot. */
+    pub static fn hotY(shape : i32) : i32 {
+        return match shape {
+            0 => 3,
+            1 => 5,
+            11 => 3,
+            _ => 16,
+        };
+    }
+
+    /**
+     * Draw shape `shape` into the `CURSOR_ART_BYTES` bytes at `base`, as premultiplied
+     * little-endian ARGB: the order bytes are stored in is blue, green, red, alpha.
+     */
+    pub static fn draw(base : i64, shape : i32) : void {
+        // The polygons are built once, outside the pixel loop.
+        let arrow : f64[] = [4.0, 3.0, 4.0, 25.0, 10.0, 19.5, 14.5, 28.0, 18.0, 26.5, 13.5, 18.0, 21.0, 18.0];
+        let headL : f64[] = [3.0, 16.0, 10.5, 10.0, 10.5, 22.0];
+        let headR : f64[] = [29.0, 16.0, 21.5, 10.0, 21.5, 22.0];
+        let moveL : f64[] = [3.0, 16.0, 9.0, 11.5, 9.0, 20.5];
+        let moveR : f64[] = [29.0, 16.0, 23.0, 11.5, 23.0, 20.5];
+        let sandTop : f64[] = [9.0, 5.0, 23.0, 5.0, 16.0, 15.5];
+        let sandBottom : f64[] = [16.0, 16.5, 9.0, 27.0, 23.0, 27.0];
+
+        for (y of 0..CURSOR_ART_SIDE) {
+            for (x of 0..CURSOR_ART_SIDE) {
+                let d : f64 = distance(shape, (x as f64) + 0.5, (y as f64) + 0.5, arrow, headL, headR, moveL, moveR, sandTop, sandBottom);
+                let fill : f64 = coverage(0.5 - d);
+                let edge : f64 = coverage(0.5 - (d - OUTLINE));
+                let at : i64 = ((y * CURSOR_ART_SIDE + x) as i64) * 4;
+                let c : i32 = (fill * 255.0 + 0.5).floorToInt() as i32;
+                let a : i32 = (edge * 255.0 + 0.5).floorToInt() as i32;
+                Mem::putByte(base, at, c);
+                Mem::putByte(base, at + 1, c);
+                Mem::putByte(base, at + 2, c);
+                Mem::putByte(base, at + 3, a);
+            }
+        }
+    }
+}

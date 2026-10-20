@@ -66,6 +66,16 @@ pub extern "C" struct WlWinState {
      */
     pub pointerSerial : u32;
 
+    /**
+     * What the window has asked the pointer to look like: a `CursorShape`'s number, whether
+     * relative-mouse mode has it hidden, and whether the compositor must be told again — it
+     * forgets the cursor at every `wl_pointer.enter`, so each enter sets this.
+     */
+    pub cursorShape : i32;
+    pub cursorHidden : i32;
+    pub cursorDirty : i32;
+    pub cursorSpare : i32;
+
     // ── The proxies a callback answers on ─────────────────────────
     pub display : ptr;
     pub wmBase : ptr;
@@ -73,6 +83,9 @@ pub extern "C" struct WlWinState {
     pub xdgSurface : ptr;
     pub toplevel : ptr;
     pub decoration : ptr;
+
+    /** The built-in pointers' surface and buffers — made on the first need, released with the window. */
+    pub cursorKit : ptr;
 
     /** Eight words the configure acknowledgement is marshalled from. */
     pub ackArgs : ptr;

@@ -28,6 +28,7 @@ use crate::kernel::blob::Blob;
 use crate::sys::wl_token::WlApp;
 use crate::sys::wl_libc::PollFd;
 use crate::video::sys_window::SysWindow;
+use crate::video::wayland::wl_cursor::applyCursor;
 use crate::video::wayland::wl_input::{bindInput, drainRing, readAvailable};
 use crate::video::wayland::wl_win_state::WlWinState;
 use crate::video::wayland::wl_window_ops::{winApp, winState};
@@ -79,6 +80,9 @@ class SysDrain {
             bindInput(winApp(win) as ptr<WlApp>, st);
             readAvailable(scratch, st, 0);
             drainRing(st, stamp, queue, keys, mouse);
+            if ((*st).cursorDirty != 0) {
+                applyCursor(winApp(win) as ptr<WlApp>, st);
+            }
         }
     }
 }

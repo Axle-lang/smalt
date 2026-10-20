@@ -1,0 +1,59 @@
+// cursor — the shapes a pointer takes over a window.
+//
+// A program names what the pointer is *for* — a hand over something that answers a click, an
+// I-beam over text, a resize arrow over an edge — and the platform draws the pointer its user chose
+// for that purpose. Nothing here carries an image; each port maps a shape onto what its desktop
+// has (X11's cursor font, Win32's `IDC_*` set, Wayland's cursor-shape protocol), and a desktop that
+// has none of those is served a built-in pointer drawn from the same names.
+//
+// A shape belongs to a window and lasts until the next `Window::setCursor`; it is shown while the
+// pointer is over that window's client area. `Hidden` hides the pointer there, which is what a
+// game wants while the player types and an editor wants while the user does.
+
+/** What the pointer looks like over a window. */
+pub enum CursorShape : i8 {
+    /** The desktop's ordinary pointer. */
+    Arrow = 0,
+
+    /** A hand: this answers a click. */
+    Hand = 1,
+
+    /** An I-beam: this takes text. */
+    Beam = 2,
+
+    /** A crosshair: pick a point. */
+    Crosshair = 3,
+
+    /** A left-right arrow: drag to resize horizontally. */
+    ResizeH = 4,
+
+    /** An up-down arrow: drag to resize vertically. */
+    ResizeV = 5,
+
+    /** A diagonal arrow from top-left to bottom-right. */
+    ResizeNwse = 6,
+
+    /** A diagonal arrow from top-right to bottom-left. */
+    ResizeNesw = 7,
+
+    /** Four arrows: drag to move. */
+    Move = 8,
+
+    /** Busy: the program is not answering input. */
+    Wait = 9,
+
+    /** This cannot be done here. */
+    NotAllowed = 10,
+
+    /** A question mark: help is available. */
+    Help = 11,
+
+    /** No pointer at all. */
+    Hidden = 12,
+}
+
+/** How many shapes there are — the size of a table indexed by one. */
+pub const CURSOR_SHAPE_COUNT : i32 = 13;
+
+/** The number of `CursorShape::Hidden`, which every port tests against. */
+pub const CURSOR_HIDDEN : i32 = 12;

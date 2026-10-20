@@ -58,6 +58,9 @@ pub(crate) const WL_POINTER_SET_CURSOR : i32 = 0;
 /** `WL_SHM_FORMAT_XRGB8888` — the one format every compositor supports. */
 pub(crate) const WL_SHM_FORMAT_XRGB8888 : i64 = 1;
 
+/** `WL_SHM_FORMAT_ARGB8888` — with alpha, which a cursor needs; every compositor supports it too. */
+pub(crate) const WL_SHM_FORMAT_ARGB8888 : i64 = 0;
+
 /** The version of every global this port binds. */
 pub(crate) const WL_BIND_VERSION : i32 = 1;
 

@@ -44,6 +44,9 @@ pub(crate) fn onGlobal(data : ptr, registry : ptr, name : u32, iface : ptr, vers
         if (cstrcmp(iface, "zxdg_decoration_manager_v1") == 0) {
             (*app).decorationName = name;
         }
+        if (cstrcmp(iface, "wp_cursor_shape_manager_v1") == 0) {
+            (*app).cursorShapeName = name;
+        }
     }
 }
 

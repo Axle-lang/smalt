@@ -1,0 +1,225 @@
+// wl_cursor — telling the compositor what the pointer should look like.
+//
+// A Wayland client does not own the pointer's picture: the compositor forgets it every time the
+// pointer enters a surface, and the client must say again, quoting the serial of that enter. There
+// are three ways to say it, and this file picks the best one the compositor has:
+//
+//   * hidden — `set_cursor` with no surface. Exact, and free.
+//   * cursor-shape — `wp_cursor_shape_device_v1.set_shape`, where the compositor offers it: it
+//     draws the pointer for the name from the user's theme, at the monitor's scale.
+//   * built-in — the surface and the pointers of `video::cursor_art`, for a compositor with
+//     neither. One `wl_surface`, one shared-memory pool, one buffer per shape; made the first time
+//     a window needs them and given back with it.
+//
+// **Everything made here is released.** The kit holds a surface, a pool, thirteen buffers, a
+// mapping and a file descriptor; `releaseKit` returns each, innermost first, and is called by the
+// window's teardown while the connection is still open. A window that never needed the kit never
+// made one, and a failure part-way through making it takes back what it made.
+
+use crate::kernel::raw::Raw;
+use crate::sys::cursor_shape::{protocolShape, WP_CURSOR_SHAPE_DEVICE_SET_SHAPE};
+use crate::sys::wl_args::WlArgs;
+use crate::sys::wl_core::WlCore;
+use crate::sys::wl_libc::{closeFd, ftruncate, memfdCreate, mmap, munmap, MAP_SHARED, MFD_CLOEXEC, PROT_READ_WRITE};
+use crate::sys::wl_request::{
+    WL_BUFFER_DESTROY, WL_COMPOSITOR_CREATE_SURFACE, WL_POINTER_SET_CURSOR, WL_SHM_CREATE_POOL,
+    WL_SHM_FORMAT_ARGB8888, WL_SHM_POOL_CREATE_BUFFER, WL_SHM_POOL_DESTROY, WL_SURFACE_ATTACH,
+    WL_SURFACE_COMMIT, WL_SURFACE_DAMAGE, WL_SURFACE_DESTROY,
+};
+use crate::sys::wl_token::WlApp;
+use crate::video::cursor::{CURSOR_HIDDEN, CURSOR_SHAPE_COUNT};
+use crate::video::cursor_art::{CursorArt, CURSOR_ART_BYTES, CURSOR_ART_SIDE};
+use crate::video::wayland::wl_win_state::WlWinState;
+
+/** Bytes per pixel, `ARGB8888`. */
+const KIT_PIXEL_BYTES : i64 = 4;
+
+/** Bytes in a proxy slot of the buffer table. */
+const KIT_SLOT_BYTES : i64 = 8;
+
+/** What a window made to draw the built-in pointers with. */
+pub extern "C" struct WlCursorKit {
+    pub surface : ptr;
+    pub pool : ptr;
+    pub mapping : ptr;
+
+    /** `CURSOR_SHAPE_COUNT` `wl_buffer` proxies, one per shape. */
+    pub buffers : ptr;
+    pub fd : i32;
+    pub spare : i32;
+    pub mapBytes : i64;
+}
+
+/** Give the kit back — every proxy, the mapping, the descriptor, the blocks — and forget it. */
+pub(crate) fn releaseKit(st : ptr<WlWinState>, args : WlArgs) : void {
+    unsafe {
+        if (Raw::isNil((*st).cursorKit)) {
+            return;
+        }
+        let kit : ptr<WlCursorKit> = (*st).cursorKit as ptr<WlCursorKit>;
+        if (!Raw::isNil((*kit).buffers)) {
+            for (i of 0..CURSOR_SHAPE_COUNT) {
+                let proxy : ptr = Raw::at(Raw::i64At((*kit).buffers, (i as i64) * KIT_SLOT_BYTES));
+                args.sendDestroy(proxy, WL_BUFFER_DESTROY);
+            }
+            Raw::release((*kit).buffers);
+            (*kit).buffers = Raw::nil();
+        }
+        if (!Raw::isNil((*kit).pool)) {
+            args.sendDestroy((*kit).pool, WL_SHM_POOL_DESTROY);
+            (*kit).pool = Raw::nil();
+        }
+        if (!Raw::isNil((*kit).surface)) {
+            args.sendDestroy((*kit).surface, WL_SURFACE_DESTROY);
+            (*kit).surface = Raw::nil();
+        }
+        if (!Raw::isNil((*kit).mapping)) {
+            munmap((*kit).mapping, (*kit).mapBytes);
+            (*kit).mapping = Raw::nil();
+        }
+        if ((*kit).fd >= 0) {
+            closeFd((*kit).fd);
+            (*kit).fd = -1;
+        }
+        Raw::release((*st).cursorKit);
+        (*st).cursorKit = Raw::nil();
+    }
+}
+
+/**
+ * Make the kit: the surface, the pool of shared memory, and a buffer drawn for each shape.
+ * Answers it, or nil after giving back whatever it had made.
+ */
+fn makeKit(app : ptr<WlApp>, st : ptr<WlWinState>, args : WlArgs) : ptr<WlCursorKit> {
+    unsafe {
+        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        let kit : ptr<WlCursorKit> = Raw::take(sizeof<WlCursorKit>()) as ptr<WlCursorKit>;
+        Raw::clear(kit as ptr, sizeof<WlCursorKit>());
+        (*kit).fd = -1;
+        (*st).cursorKit = kit as ptr;
+
+        (*kit).buffers = Raw::take((CURSOR_SHAPE_COUNT as i64) * KIT_SLOT_BYTES);
+        Raw::clear((*kit).buffers, (CURSOR_SHAPE_COUNT as i64) * KIT_SLOT_BYTES);
+
+        args.set(0, 0);
+        (*kit).surface = args.send((*app).compositor, WL_COMPOSITOR_CREATE_SURFACE, (*core).surface, 1);
+        if (Raw::isNil((*kit).surface)) {
+            return refuse(st, args);
+        }
+
+        let bytes : i64 = (CURSOR_SHAPE_COUNT as i64) * CURSOR_ART_BYTES;
+        let fd : i32 = memfdCreate("smalt-cursor", MFD_CLOEXEC);
+        if (fd < 0) {
+            return refuse(st, args);
+        }
+        (*kit).fd = fd;
+        if (ftruncate(fd, bytes) != 0) {
+            return refuse(st, args);
+        }
+        let mapping : ptr = mmap(Raw::nil(), bytes, PROT_READ_WRITE, MAP_SHARED, fd, 0);
+        if (Raw::isNil(mapping)) {
+            return refuse(st, args);
+        }
+        (*kit).mapping = mapping;
+        (*kit).mapBytes = bytes;
+
+        // `wl_shm.create_pool` — "nhi": the new pool, the descriptor, the size.
+        args.set(0, 0);
+        args.set(1, fd as i64);
+        args.set(2, bytes);
+        (*kit).pool = args.send((*app).shm, WL_SHM_CREATE_POOL, (*core).shmPool, 1);
+        if (Raw::isNil((*kit).pool)) {
+            return refuse(st, args);
+        }
+
+        let stride : i64 = (CURSOR_ART_SIDE as i64) * KIT_PIXEL_BYTES;
+        for (i of 0..CURSOR_SHAPE_COUNT) {
+            let offset : i64 = (i as i64) * CURSOR_ART_BYTES;
+            CursorArt::draw(Raw::addr(mapping) + offset, i);
+            // `wl_shm_pool.create_buffer` — "niiiiu": offset, width, height, stride, format.
+            args.set(0, 0);
+            args.set(1, offset);
+            args.set(2, CURSOR_ART_SIDE as i64);
+            args.set(3, CURSOR_ART_SIDE as i64);
+            args.set(4, stride);
+            args.set(5, WL_SHM_FORMAT_ARGB8888);
+            let proxy : ptr = args.send((*kit).pool, WL_SHM_POOL_CREATE_BUFFER, (*core).buffer, 1);
+            if (Raw::isNil(proxy)) {
+                return refuse(st, args);
+            }
+            Raw::putI64((*kit).buffers, (i as i64) * KIT_SLOT_BYTES, Raw::addr(proxy));
+        }
+        return kit;
+    }
+}
+
+/** Take back a half-made kit and answer nil. */
+fn refuse(st : ptr<WlWinState>, args : WlArgs) : ptr<WlCursorKit> {
+    releaseKit(st, args);
+    unsafe {
+        return Raw::nil() as ptr<WlCursorKit>;
+    }
+}
+
+/**
+ * Tell the compositor the pointer this window wants, if it can be told yet.
+ *
+ * It can be once the pointer has entered the window — the serial of that enter is what the
+ * compositor wants quoted — and again after every later enter. Called when the shape changes and
+ * when a drain finds the enter flag set.
+ */
+pub(crate) fn applyCursor(app : ptr<WlApp>, st : ptr<WlWinState>) : void {
+    unsafe {
+        if (Raw::isNil((*app).pointer) || (*st).pointerSerial == 0) {
+            return;
+        }
+        (*st).cursorDirty = 0;
+        let args = new WlArgs();
+        defer args.close();
+        let serial : i64 = (*st).pointerSerial as i64;
+        let shape : i32 = (*st).cursorShape;
+
+        if ((*st).cursorHidden != 0 || shape == CURSOR_HIDDEN) {
+            // `wl_pointer.set_cursor` — "u?oii": the enter's serial, no surface, no hotspot.
+            args.set(0, serial);
+            args.setObject(1, Raw::nil());
+            args.set(2, 0);
+            args.set(3, 0);
+            args.send((*app).pointer, WL_POINTER_SET_CURSOR, Raw::nil(), 0);
+            return;
+        }
+        if (!Raw::isNil((*app).cursorDevice)) {
+            // `wp_cursor_shape_device_v1.set_shape` — "uu": the serial, the shape.
+            args.set(0, serial);
+            args.set(1, protocolShape(shape));
+            args.send((*app).cursorDevice, WP_CURSOR_SHAPE_DEVICE_SET_SHAPE, Raw::nil(), 0);
+            return;
+        }
+
+        let mut kit : ptr<WlCursorKit> = (*st).cursorKit as ptr<WlCursorKit>;
+        if (Raw::isNil((*st).cursorKit)) {
+            kit = makeKit(app, st, args);
+            if (Raw::isNil(kit as ptr)) {
+                return;
+            }
+        }
+        let buffer : ptr = Raw::at(Raw::i64At((*kit).buffers, (shape as i64) * KIT_SLOT_BYTES));
+        // The shape's picture on the kit's surface: attach, damage, commit.
+        args.setObject(0, buffer);
+        args.set(1, 0);
+        args.set(2, 0);
+        args.send((*kit).surface, WL_SURFACE_ATTACH, Raw::nil(), 0);
+        args.set(0, 0);
+        args.set(1, 0);
+        args.set(2, CURSOR_ART_SIDE as i64);
+        args.set(3, CURSOR_ART_SIDE as i64);
+        args.send((*kit).surface, WL_SURFACE_DAMAGE, Raw::nil(), 0);
+        args.send((*kit).surface, WL_SURFACE_COMMIT, Raw::nil(), 0);
+
+        args.set(0, serial);
+        args.setObject(1, (*kit).surface);
+        args.set(2, CursorArt::hotX(shape) as i64);
+        args.set(3, CursorArt::hotY(shape) as i64);
+        args.send((*app).pointer, WL_POINTER_SET_CURSOR, Raw::nil(), 0);
+    }
+}
