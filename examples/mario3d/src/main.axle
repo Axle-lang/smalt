@@ -48,7 +48,7 @@ fn run() : i32 ! PlatformError {
     println("Axle Mario — arrows/A-D move, Space jump, Esc quit.");
 
     let world : World = new World();
-    let running : bool = true;
+    let mut running : bool = true;
     let pacer = new FramePacer(frameRate);
 
     while (running && win.isOpen()) {

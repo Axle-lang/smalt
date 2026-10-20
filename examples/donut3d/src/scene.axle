@@ -25,7 +25,7 @@ const twoPi : f64 = 6.283185307;
 
 /** Warm glow colour from Lambert brightness (0 .. ~1.4). */
 fn shade(lum : f64) : i32 {
-    let l : f64 = lum;
+    let mut l : f64 = lum;
     if (l > 1.0) { l = 1.0; }
     let r : i32 = (40.0 + 215.0 * l).floorToInt() as i32;
     let g : i32 = (20.0 + 180.0 * l * l).floorToInt() as i32;
@@ -43,7 +43,7 @@ fn shade(lum : f64) : i32 {
 fn clearFrame(px : i32[], zb : f64[], w : i32, h : i32) : void {
     let bg : i32 = Color::packBytes(8, 12, 28);
     let n : i32 = w * h;
-    let i : i32 = 0;
+    let mut i : i32 = 0;
     while (i < n) {
         px[i] = bg;
         zb[i] = 0.0;
@@ -67,14 +67,14 @@ fn renderTorus(px : i32[], zb : f64[], w : i32, h : i32, a : f64, b : f64) : voi
     let cx : f64 = halfW;
     let cy : f64 = halfH;
 
-    let theta : f64 = 0.0;
+    let mut theta : f64 = 0.0;
     while (theta < twoPi) {
         let ct : f64 = theta.cos();
         let st : f64 = theta.sin();
         let circleX : f64 = r2 + r1 * ct;
         let circleY : f64 = r1 * st;
 
-        let phi : f64 = 0.0;
+        let mut phi : f64 = 0.0;
         while (phi < twoPi) {
             let cp : f64 = phi.cos();
             let sp : f64 = phi.sin();

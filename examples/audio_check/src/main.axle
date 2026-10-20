@@ -30,7 +30,7 @@ const PUMP_MS : i64 = 2000;
 const BLOCKS_IN_FLIGHT : i32 = 4;
 
 fn main() : i32 {
-    let failures = 0;
+    let mut failures = 0;
 
     // 1. The clip decodes, and to exactly the length the file holds.
     let clip = Clip::load("tone.wav");
@@ -74,7 +74,7 @@ fn main() : i32 {
         // Strictly more than the blocks in flight: exactly four would mean
         // the device took what was free and never gave one back, which is
         // the shape of a queue that has stalled.
-        let submitted = 0;
+        let mut submitted = 0;
         let deadline = clock.ticks() + PUMP_MS;
         while (clock.ticks() < deadline) {
             if (mixer.pump()) {
