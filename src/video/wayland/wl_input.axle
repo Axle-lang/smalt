@@ -218,7 +218,7 @@ pub(crate) fn onPointerAxis(data : ptr, pointer : ptr, time : u32, axis : u32, v
         if ((axis as i32) != AXIS_VERTICAL || value == 0) {
             return;
         }
-        let notches = 0 - WHEEL_NOTCH;
+        let mut notches = 0 - WHEEL_NOTCH;
         if (value < 0) {
             notches = WHEEL_NOTCH;
         }

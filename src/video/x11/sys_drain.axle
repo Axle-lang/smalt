@@ -48,7 +48,7 @@ use crate::sys::x11_lib::{poll, PollFd, POLL_IN, XConnectionNumber, XFlush, XNex
 use crate::sys::x11_types::{XAnyEvent, XButtonEvent, XKeyEvent, XMotionEvent};
 use crate::sys::x11_const::{X_BUTTON_MIDDLE, X_BUTTON_PRESS, X_BUTTON_RELEASE, X_BUTTON_RIGHT, X_BUTTON_WHEEL_DOWN, X_BUTTON_WHEEL_UP, X_EVENT_BYTES, X_KEY_PRESS, X_KEY_RELEASE, X_MOTION_NOTIFY};
 use crate::video::sys_window::SysWindow;
-use crate::video::x11::x_decode::{handleButton, handleKey, handleMotion};
+use crate::video::x11::x_decode::{handleButton, handleKey, handleMotion, X_TEXT_BYTES};
 use crate::video::x11::x_window_ops::{absorb, connection};
 
 /** Decoding of the `XEvent` members, and the drain loop over the queue. */

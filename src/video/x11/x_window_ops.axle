@@ -11,9 +11,25 @@
 
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
-use crate::sys::x11_lib::{XChangeProperty, XDeleteProperty, XFlush, XFree, XGetWindowProperty, XInternAtom, XSetWMProtocols, XSetWMNormalHints, XAllocSizeHints, XResizeWindow, XSync};
-use crate::sys::x11_const::X_NONE;
+use crate::sys::x11_lib::{XChangeProperty, XInternAtom, XNextEvent, XPending, XSendEvent, XSetWMNormalHints, XSetWMProtocols, XSync};
+use crate::sys::x11_types::{MotifWmHints, XAnyEvent, XClientMessageEvent, XConfigureEvent, XSizeHints};
+use crate::sys::x11_const::{
+    X_CLIENT_MESSAGE, X_CONFIGURE_NOTIFY, X_DESTROY_NOTIFY, X_EVENT_BYTES, X_FALSE, X_FOCUS_IN,
+    X_FOCUS_OUT, X_MAP_NOTIFY, X_MOTIF_HINTS_FORMAT, X_MOTIF_HINTS_WORDS, X_MOTIF_HINT_DECORATIONS,
+    X_PROP_MODE_REPLACE, X_SIZE_HINT_MIN_MAX, X_TRUE, X_UNMAP_NOTIFY,
+};
 use crate::video::sys_window::SysWindow;
+
+/** The property that carries a close request. */
+const WM_PROTOCOLS_ATOM : string = "WM_PROTOCOLS";
+/** The one protocol this library takes part in. */
+const WM_DELETE_ATOM : string = "WM_DELETE_WINDOW";
+/** The property a borderless window sets. */
+const MOTIF_HINTS_ATOM : string = "_MOTIF_WM_HINTS";
+/** No decorations at all. */
+const MOTIF_NO_DECORATIONS : i64 = 0;
+/** How many `WM_PROTOCOLS` atoms are registered. */
+const WM_PROTOCOL_COUNT : i32 = 1;
 
 /**
  * Ask the window manager to send a close *message* rather than

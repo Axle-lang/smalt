@@ -6,7 +6,8 @@
 // the others would have to grow for no reason.
 
 use crate::kernel::raw::Raw;
-use crate::sys::wl_app::{connect, disconnect, WlApp};
+use crate::sys::wl_app::{connect, disconnect};
+use crate::sys::wl_token::WlApp;
 
 /**
  * The first output's current mode, as a width or a height.

@@ -14,11 +14,12 @@ use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
 use crate::sys::x11_lib::XLookupString;
 use crate::sys::x11_types::{XButtonEvent, XKeyEvent, XMotionEvent};
+use crate::sys::x11_const::{X_BUTTON_MIDDLE, X_BUTTON_RIGHT, X_BUTTON_WHEEL_DOWN, X_BUTTON_WHEEL_UP};
 use crate::video::sys_window::SysWindow;
 use crate::video::x_keymap::XKeymap;
 
 /** Bytes of the scratch `XLookupString` writes a translation into. */
-const X_TEXT_BYTES : i64 = 8;
+pub(crate) const X_TEXT_BYTES : i64 = 8;
 
 /** The largest byte a Latin-1 translation may carry. */
 const X_TEXT_MAX : i32 = 255;
@@ -130,7 +131,7 @@ pub(crate) fn handleButton(
             if (!press) {
                 return;
             }
-            let notches = X_WHEEL_NOTCH;
+            let mut notches = X_WHEEL_NOTCH;
             if (number == X_BUTTON_WHEEL_DOWN) {
                 notches = 0 - X_WHEEL_NOTCH;
             }
@@ -179,7 +180,7 @@ pub(crate) fn handleMotion(event : ptr, stamp : i64, queue : EventQueue, mouse :
         // The very first motion has no previous position to subtract,
         // so the delta stays at the field's own default rather than
         // being a jump from wherever the pointer happened to enter.
-        let e = Event { kind: EventKind::MouseMotion, timestamp: stamp, x: nx, y: ny };
+        let mut e = Event { kind: EventKind::MouseMotion, timestamp: stamp, x: nx, y: ny };
         if (known) {
             e.dx = nx - px;
             e.dy = ny - py;

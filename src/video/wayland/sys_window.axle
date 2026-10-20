@@ -49,7 +49,7 @@ use crate::sys::wl_request::{WL_DISPLAY_SYNC, WL_SURFACE_COMMIT};
 use crate::sys::xdg_shell::XDG_TOPLEVEL_SET_TITLE;
 use crate::video::wayland::wl_win_events::onSyncDone;
 use crate::video::wayland::wl_win_state::{WlCallbackListener, WlWinState};
-use crate::video::wayland::wl_window_ops::{createWindow, destroyWindow, initState};
+use crate::video::wayland::wl_window_ops::{createWindow, destroyWindow, initState, syncRoundTrip};
 
 pub(crate) class SysWindow : Closeable {
     /** The state block both sides address. */

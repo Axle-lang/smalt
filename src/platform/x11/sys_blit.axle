@@ -143,9 +143,9 @@ pub(crate) class SysBlit : Closeable {
                 return;
             }
 
-            let putW = srcW;
-            let putH = srcH;
-            let source = Raw::pixelsOf(pixels);
+            let mut putW = srcW;
+            let mut putH = srcH;
+            let mut source = Raw::pixelsOf(pixels);
             if (srcW != dstW || srcH != dstH) {
                 self.scaled.reserve((dstW as i64) * (dstH as i64));
                 self.scaled.resample(pixels, srcW, srcH, dstW, dstH);
