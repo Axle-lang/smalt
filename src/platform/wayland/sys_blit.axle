@@ -8,6 +8,14 @@
 //       scaling when the two differ. `surface` is whatever the window
 //       layer calls a drawable — this file is the only one that knows.
 //
+//   presentRegion(surface, pixels, srcW, srcH, dstW, dstH, rx, ry, rw, rh)
+//       the same picture as `present`, for a caller that knows only the
+//       rectangle (`rx`, `ry`, `rw`, `rh`) of the frame has changed since
+//       its previous present: the port may move just that. It must still
+//       leave the whole window showing `pixels`, so a port that cannot do
+//       better answers with a full `present` — and does when the frame is
+//       scaled, because a scaled pixel depends on its neighbours' sizes.
+//
 // The scaling is not a nicety: it is what lets a resized window keep
 // drawing at the old framebuffer resolution for the frame between the
 // resize event and the target's reallocation, instead of showing garbage.
@@ -37,7 +45,8 @@ use crate::kernel::raw::Raw;
 use crate::platform::blit_scale::ScaleScratch;
 use crate::platform::wayland::wl_blit_header::WlBlitHeader;
 use crate::platform::wayland::wl_drawable::{
-    commitFrame, ensureBuffers, freeSlot, slotAt, WlDrawable, WL_NO_SLOT, WL_PIXEL_BYTES,
+    commitFrame, commitRegion, dropFrame, ensureBuffers, freeSlot, slotAt, staleAdd, staleClear, WlDrawable,
+    WL_BUFFER_COUNT, WL_NO_SLOT, WL_PIXEL_BYTES, WlSlot,
 };
 use crate::sys::wl_args::WlArgs;
 
@@ -118,6 +127,8 @@ pub(crate) class SysBlit : Closeable {
 
             let index = freeSlot(target);
             if (index == WL_NO_SLOT) {
+                // A frame nobody saw: the screen and both buffers are behind by all of it.
+                dropFrame(target, 0, 0, dstW, dstH);
                 return;
             }
             let into = (*slotAt(target, index)).pixels;
@@ -129,7 +140,105 @@ pub(crate) class SysBlit : Closeable {
                 self.scale.resample(pixels, srcW, srcH, dstW, dstH);
                 Raw::copy(into, self.scale.at(), bytes);
             }
+            for (i of 0..WL_BUFFER_COUNT) {
+                if (i != index) {
+                    staleAdd(target, i, 0, 0, dstW, dstH);
+                }
+            }
+            staleClear(target, index);
             commitFrame(target, self.args, index);
+        }
+    }
+
+    /**
+     * Copy the changed rectangle of a frame into a free buffer and commit it.
+     *
+     * Two buffers alternate, so the one written now last held the frame
+     * *before* the previous one. It is current except for what changed in
+     * between: the previous frame's damage, which this buffer never saw,
+     * and this frame's. Each buffer therefore carries a stale rectangle
+     * (`WlSlot::dirty*`), widened by every frame committed to the other one
+     * and by every frame dropped for want of a free buffer — a dropped
+     * frame's pixels reached neither — and emptied by a write. The copy is
+     * this frame's rectangle and the buffer's stale one, which together are
+     * everything that differs; the compositor is told only about this frame's,
+     * which is all that differs on screen.
+     */
+    pub(crate) fn presentRegion(
+        mut self,
+        surface : ptr,
+        pixels : i32[],
+        srcW : i32,
+        srcH : i32,
+        dstW : i32,
+        dstH : i32,
+        rx : i32,
+        ry : i32,
+        rw : i32,
+        rh : i32
+    ) : void {
+        if (srcW != dstW || srcH != dstH) {
+            self.present(surface, pixels, srcW, srcH, dstW, dstH);
+            return;
+        }
+        if (Raw::isNil(surface) || dstW <= 0 || dstH <= 0) {
+            return;
+        }
+        // Held to the frame: a region that spills over is a copy that overruns.
+        let x0 : i32 = rx.max(0);
+        let y0 : i32 = ry.max(0);
+        let x1 : i32 = (rx + rw).min(dstW);
+        let y1 : i32 = (ry + rh).min(dstH);
+        if (x1 <= x0 || y1 <= y0) {
+            return;
+        }
+        unsafe {
+            let target : ptr<WlDrawable> = surface as ptr<WlDrawable>;
+            if (!ensureBuffers(target, self.args, dstW, dstH)) {
+                return;
+            }
+            self.describe(dstW, dstH);
+
+            let index = freeSlot(target);
+            if (index == WL_NO_SLOT) {
+                // Nothing was shown: the screen and every buffer are now behind by this much.
+                dropFrame(target, x0, y0, x1 - x0, y1 - y0);
+                return;
+            }
+            let slot : ptr<WlSlot> = slotAt(target, index);
+
+            // The rectangle to copy: this frame's, and what the buffer is behind by.
+            let mut cx0 : i32 = x0;
+            let mut cy0 : i32 = y0;
+            let mut cx1 : i32 = x1;
+            let mut cy1 : i32 = y1;
+            if ((*slot).dirtyW > 0 && (*slot).dirtyH > 0) {
+                cx0 = cx0.min((*slot).dirtyX);
+                cy0 = cy0.min((*slot).dirtyY);
+                cx1 = cx1.max((*slot).dirtyX + (*slot).dirtyW);
+                cy1 = cy1.max((*slot).dirtyY + (*slot).dirtyH);
+            }
+            cx0 = cx0.max(0);
+            cy0 = cy0.max(0);
+            cx1 = cx1.min(dstW);
+            cy1 = cy1.min(dstH);
+
+            let rowBytes : i64 = ((cx1 - cx0) as i64) * WL_PIXEL_BYTES;
+            let into = (*slot).pixels;
+            let from = pixels as ptr;
+            for (yy of cy0..cy1) {
+                let at : i64 = (((yy as i64) * (dstW as i64)) + (cx0 as i64)) * WL_PIXEL_BYTES;
+                Raw::copy(Raw::at(Raw::addr(into) + at), Raw::at(Raw::addr(from) + at), rowBytes);
+            }
+
+            // The other buffer has not seen this frame's change; this one is now whole.
+            for (i of 0..WL_BUFFER_COUNT) {
+                if (i != index) {
+                    staleAdd(target, i, x0, y0, x1 - x0, y1 - y0);
+                }
+            }
+            staleClear(target, index);
+            commitRegion(target, self.args, index, x0, y0, x1 - x0, y1 - y0);
         }
     }
 

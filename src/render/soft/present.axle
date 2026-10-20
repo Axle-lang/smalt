@@ -52,6 +52,30 @@ pub class Presenter : Closeable {
         self.blit.present(surface, pixels, srcW, srcH, dstW, dstH);
     }
 
+    /**
+     * The same blit, for a caller that knows only (`rx`, `ry`, `rw`, `rh`)
+     * has changed since its previous present.
+     *
+     * The window shows the same picture either way; a platform that can
+     * moves only the rectangle. When the frame is scaled to the window the
+     * whole of it goes, because a scaled pixel depends on the frame's size.
+     */
+    pub(crate) fn presentPixelsRegion(
+        mut self,
+        surface : ptr,
+        pixels : i32[],
+        srcW : i32,
+        srcH : i32,
+        dstW : i32,
+        dstH : i32,
+        rx : i32,
+        ry : i32,
+        rw : i32,
+        rh : i32
+    ) : void {
+        self.blit.presentRegion(surface, pixels, srcW, srcH, dstW, dstH, rx, ry, rw, rh);
+    }
+
     /** Release the platform blit. */
     pub(crate) fn close(self) : void {
         self.blit.close();

@@ -1,0 +1,86 @@
+// damage — the part of a frame that changed.
+//
+// A tool that repaints on change redraws little: a hovered button, a blinking caret, a progress bar.
+// Copying the whole window to the screen for that is most of what such a frame costs, so the
+// present calls take a rectangle — `Surface::presentRegion` — and a `Damage` is how a program
+// accumulates one: add the rectangle of everything touched while drawing, then present, then start
+// again.
+//
+// It holds one rectangle, the smallest that contains everything added. Two distant changes make a
+// big rectangle, which costs only what presenting that rectangle costs — never a wrong picture — and
+// one rectangle is what the platform calls take. A program that wants several can keep several.
+
+/** The bounding rectangle of what has changed since it was last cleared. */
+pub class Damage {
+    left   : i32 = 0;
+    top    : i32 = 0;
+    right  : i32 = 0;
+    bottom : i32 = 0;
+
+    /** Whether nothing has been added. */
+    pub fn isEmpty(self) : bool {
+        return self.right <= self.left || self.bottom <= self.top;
+    }
+
+    /** The left edge of the damaged rectangle; meaningless while empty. */
+    pub fn x(self) : i32 {
+        return self.left;
+    }
+
+    /** The top edge. */
+    pub fn y(self) : i32 {
+        return self.top;
+    }
+
+    /** The rectangle's width. */
+    pub fn width(self) : i32 {
+        return self.right - self.left;
+    }
+
+    /** The rectangle's height. */
+    pub fn height(self) : i32 {
+        return self.bottom - self.top;
+    }
+
+    /** Take in the rectangle (`x`, `y`, `w`, `h`); an empty one adds nothing. */
+    pub fn add(mut self, x : i32, y : i32, w : i32, h : i32) : void {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        if (self.isEmpty()) {
+            self.left = x;
+            self.top = y;
+            self.right = x + w;
+            self.bottom = y + h;
+            return;
+        }
+        self.left = self.left.min(x);
+        self.top = self.top.min(y);
+        self.right = self.right.max(x + w);
+        self.bottom = self.bottom.max(y + h);
+    }
+
+    /** Take in the whole of a `w` by `h` frame — a resize, a theme change, a first frame. */
+    pub fn addAll(mut self, w : i32, h : i32) : void {
+        self.add(0, 0, w, h);
+    }
+
+    /** Hold the rectangle to a `w` by `h` frame, dropping what falls outside. */
+    pub fn clipTo(mut self, w : i32, h : i32) : void {
+        self.left = self.left.max(0);
+        self.top = self.top.max(0);
+        self.right = self.right.min(w);
+        self.bottom = self.bottom.min(h);
+        if (self.isEmpty()) {
+            self.clear();
+        }
+    }
+
+    /** Forget everything: nothing has changed. */
+    pub fn clear(mut self) : void {
+        self.left = 0;
+        self.top = 0;
+        self.right = 0;
+        self.bottom = 0;
+    }
+}

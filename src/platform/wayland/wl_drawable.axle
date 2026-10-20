@@ -67,6 +67,17 @@ pub extern "C" struct WlSlot {
 
     /** Non-zero while the compositor may still be reading these pages. */
     pub busy : i32;
+
+    /**
+     * The rectangle of these pages that is stale: what has changed in frames
+     * committed to the *other* buffer since this one was last written. A frame
+     * written here need only copy its own damage and this, because the rest
+     * already matches. Empty (width 0) when nothing is stale.
+     */
+    pub dirtyX : i32;
+    pub dirtyY : i32;
+    pub dirtyW : i32;
+    pub dirtyH : i32;
     pub reserved : i32;
 }
 
@@ -95,8 +106,19 @@ pub extern "C" struct WlDrawable {
     pub fd : i32;
     pub width : i32;
     pub height : i32;
-    pub reserved : i32;
+
+    /** Non-zero until a frame has been committed to buffers of this size: its damage is the whole of it. */
+    pub fresh : i32;
     pub mapBytes : i64;
+
+    /**
+     * What changed in frames dropped for want of a free buffer: the screen has not seen it, so
+     * the next commit's damage must include it. Empty when its width is 0.
+     */
+    pub lostX : i32;
+    pub lostY : i32;
+    pub lostW : i32;
+    pub lostH : i32;
 }
 
 /**
@@ -179,7 +201,13 @@ pub(crate) fn ensureBuffers(target : ptr<WlDrawable>, args : WlArgs, w : i32, h 
                 releaseBuffers(target, args);
                 return false;
             }
+            let slot : ptr<WlSlot> = slotAt(target, i);
+            (*slot).dirtyX = 0;
+            (*slot).dirtyY = 0;
+            (*slot).dirtyW = w;
+            (*slot).dirtyH = h;
         }
+        (*target).fresh = 1;
         return true;
     }
 }
@@ -204,6 +232,80 @@ pub(crate) fn freeSlot(target : ptr<WlDrawable>) : i64 {
 }
 
 /**
+ * Widen slot `index`'s stale rectangle to take in (`x`, `y`, `w`, `h`).
+ *
+ * The rectangle is the smallest one holding both, which may be more than
+ * the two together: a copy that is a little too large is correct, one that
+ * is too small is a smear on the screen.
+ */
+pub(crate) fn staleAdd(target : ptr<WlDrawable>, index : i64, x : i32, y : i32, w : i32, h : i32) : void {
+    unsafe {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        let slot : ptr<WlSlot> = slotAt(target, index);
+        if ((*slot).dirtyW <= 0 || (*slot).dirtyH <= 0) {
+            (*slot).dirtyX = x;
+            (*slot).dirtyY = y;
+            (*slot).dirtyW = w;
+            (*slot).dirtyH = h;
+            return;
+        }
+        let x1 : i32 = (*slot).dirtyX + (*slot).dirtyW;
+        let y1 : i32 = (*slot).dirtyY + (*slot).dirtyH;
+        let nx0 : i32 = (*slot).dirtyX.min(x);
+        let ny0 : i32 = (*slot).dirtyY.min(y);
+        let nx1 : i32 = x1.max(x + w);
+        let ny1 : i32 = y1.max(y + h);
+        (*slot).dirtyX = nx0;
+        (*slot).dirtyY = ny0;
+        (*slot).dirtyW = nx1 - nx0;
+        (*slot).dirtyH = ny1 - ny0;
+    }
+}
+
+/**
+ * Record that a frame was dropped: the screen is behind by (`x`, `y`, `w`, `h`), and so is every
+ * buffer.
+ */
+pub(crate) fn dropFrame(target : ptr<WlDrawable>, x : i32, y : i32, w : i32, h : i32) : void {
+    unsafe {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        for (i of 0..WL_BUFFER_COUNT) {
+            staleAdd(target, i, x, y, w, h);
+        }
+        if ((*target).lostW <= 0 || (*target).lostH <= 0) {
+            (*target).lostX = x;
+            (*target).lostY = y;
+            (*target).lostW = w;
+            (*target).lostH = h;
+            return;
+        }
+        let nx0 : i32 = (*target).lostX.min(x);
+        let ny0 : i32 = (*target).lostY.min(y);
+        let nx1 : i32 = ((*target).lostX + (*target).lostW).max(x + w);
+        let ny1 : i32 = ((*target).lostY + (*target).lostH).max(y + h);
+        (*target).lostX = nx0;
+        (*target).lostY = ny0;
+        (*target).lostW = nx1 - nx0;
+        (*target).lostH = ny1 - ny0;
+    }
+}
+
+/** Slot `index` matches the frame just written into it: nothing is stale. */
+pub(crate) fn staleClear(target : ptr<WlDrawable>, index : i64) : void {
+    unsafe {
+        let slot : ptr<WlSlot> = slotAt(target, index);
+        (*slot).dirtyX = 0;
+        (*slot).dirtyY = 0;
+        (*slot).dirtyW = 0;
+        (*slot).dirtyH = 0;
+    }
+}
+
+/**
  * Attach slot `index`, mark the whole surface damaged, and commit — the
  * three requests that put what was written on screen.
  *
@@ -212,8 +314,48 @@ pub(crate) fn freeSlot(target : ptr<WlDrawable>) : i64 {
  */
 pub(crate) fn commitFrame(target : ptr<WlDrawable>, args : WlArgs, index : i64) : void {
     unsafe {
+        commitRegion(target, args, index, 0, 0, (*target).width, (*target).height);
+    }
+}
+
+/**
+ * Attach slot `index`, mark (`x`, `y`, `w`, `h`) damaged, and commit.
+ *
+ * The damage is what changed on the *screen* — against the buffer
+ * committed before — and may be smaller than what was copied into these
+ * pages to make them current. The first frame of a set of buffers damages
+ * all of it, whatever the caller said.
+ */
+pub(crate) fn commitRegion(target : ptr<WlDrawable>, args : WlArgs, index : i64, x : i32, y : i32, w : i32, h : i32) : void {
+    unsafe {
         if (index < 0) {
             return;
+        }
+        let mut dx : i32 = x;
+        let mut dy : i32 = y;
+        let mut dw : i32 = w;
+        let mut dh : i32 = h;
+        // What dropped frames left unshown goes out with this one.
+        if ((*target).lostW > 0 && (*target).lostH > 0 && dw > 0 && dh > 0) {
+            let nx0 : i32 = (*target).lostX.min(dx);
+            let ny0 : i32 = (*target).lostY.min(dy);
+            let nx1 : i32 = ((*target).lostX + (*target).lostW).max(dx + dw);
+            let ny1 : i32 = ((*target).lostY + (*target).lostH).max(dy + dh);
+            dx = nx0;
+            dy = ny0;
+            dw = nx1 - nx0;
+            dh = ny1 - ny0;
+        }
+        (*target).lostX = 0;
+        (*target).lostY = 0;
+        (*target).lostW = 0;
+        (*target).lostH = 0;
+        if ((*target).fresh != 0) {
+            dx = 0;
+            dy = 0;
+            dw = (*target).width;
+            dh = (*target).height;
+            (*target).fresh = 0;
         }
         let slot : ptr<WlSlot> = slotAt(target, index);
         if (Raw::isNil((*slot).proxy)) {
@@ -228,10 +370,10 @@ pub(crate) fn commitFrame(target : ptr<WlDrawable>, args : WlArgs, index : i64) 
         args.send((*target).surface, WL_SURFACE_ATTACH, Raw::nil(), 0);
 
         // `wl_surface.damage` — "iiii".
-        args.set(0, 0);
-        args.set(1, 0);
-        args.set(2, (*target).width as i64);
-        args.set(3, (*target).height as i64);
+        args.set(0, dx as i64);
+        args.set(1, dy as i64);
+        args.set(2, dw as i64);
+        args.set(3, dh as i64);
         args.send((*target).surface, WL_SURFACE_DAMAGE, Raw::nil(), 0);
 
         args.send((*target).surface, WL_SURFACE_COMMIT, Raw::nil(), 0);

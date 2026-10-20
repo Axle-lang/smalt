@@ -8,6 +8,14 @@
 //       scaling when the two differ. `surface` is whatever the window
 //       layer calls a drawable — this file is the only one that knows.
 //
+//   presentRegion(surface, pixels, srcW, srcH, dstW, dstH, rx, ry, rw, rh)
+//       the same picture as `present`, for a caller that knows only the
+//       rectangle (`rx`, `ry`, `rw`, `rh`) of the frame has changed since
+//       its previous present: the port may move just that. It must still
+//       leave the whole window showing `pixels`, so a port that cannot do
+//       better answers with a full `present` — and does when the frame is
+//       scaled, because a scaled pixel depends on its neighbours' sizes.
+//
 // The scaling is not a nicety: it is what lets a resized window keep
 // drawing at the old framebuffer resolution for the frame between the
 // resize event and the target's reallocation, instead of showing garbage.
@@ -116,6 +124,64 @@ pub(crate) class SysBlit : Closeable {
                 0,
                 srcW,
                 srcH,
+                Raw::pixelsOf(pixels),
+                self.header(),
+                DIB_RGB_COLORS,
+                SRCCOPY
+            );
+        }
+    }
+
+    /**
+     * Copy one rectangle of the frame onto the window, unscaled.
+     *
+     * `StretchDIBits` takes a source rectangle and a destination one, and
+     * with the two the same size and the frame the window's size it is a
+     * straight copy of that rectangle — GDI reads only the rows it needs,
+     * so a repaint of a button costs a button, not a screen. The frame is
+     * top-down (`biHeight` is negative), and for a top-down DIB the source
+     * origin is its top-left, so (`rx`, `ry`) is where the rectangle's
+     * first pixel is in both.
+     */
+    pub(crate) fn presentRegion(
+        mut self,
+        surface : ptr,
+        pixels : i32[],
+        srcW : i32,
+        srcH : i32,
+        dstW : i32,
+        dstH : i32,
+        rx : i32,
+        ry : i32,
+        rw : i32,
+        rh : i32
+    ) : void {
+        if (srcW != dstW || srcH != dstH) {
+            self.present(surface, pixels, srcW, srcH, dstW, dstH);
+            return;
+        }
+        if (Raw::isNil(surface) || dstW <= 0 || dstH <= 0) {
+            return;
+        }
+        let x0 : i32 = rx.max(0);
+        let y0 : i32 = ry.max(0);
+        let x1 : i32 = (rx + rw).min(dstW);
+        let y1 : i32 = (ry + rh).min(dstH);
+        if (x1 <= x0 || y1 <= y0) {
+            return;
+        }
+        self.describe(srcW, srcH);
+        unsafe {
+            StretchDIBits(
+                surface,
+                x0,
+                y0,
+                x1 - x0,
+                y1 - y0,
+                x0,
+                y0,
+                x1 - x0,
+                y1 - y0,
                 Raw::pixelsOf(pixels),
                 self.header(),
                 DIB_RGB_COLORS,

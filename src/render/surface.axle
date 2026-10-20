@@ -31,6 +31,7 @@
 // blit read is dead by the time this runs.
 
 use crate::kernel::mem::Mem;
+use crate::render::damage::Damage;
 use crate::render::frame::Frame;
 use crate::render::soft::present::Presenter;
 use crate::video::window::Window;
@@ -157,6 +158,44 @@ pub class Surface : Closeable {
             win.width(),
             win.height()
         );
+    }
+
+    /**
+     * Put one rectangle of the frame on `win` — the rest of the window keeps
+     * what it showed.
+     *
+     * For a program that repaints on change. The caller's promise is that
+     * everything that differs from what the previous present put on screen
+     * lies inside (`x`, `y`, `w`, `h`); the window then shows the same
+     * picture a full `present` would, having moved only the rectangle where
+     * the platform can. A frame that is scaled to the window goes whole.
+     */
+    pub fn presentRegion(mut self, win : Window, x : i32, y : i32, w : i32, h : i32) : void {
+        self.presenter.presentPixelsRegion(
+            win.surface(),
+            self.colour,
+            self.w,
+            self.h,
+            win.width(),
+            win.height(),
+            x,
+            y,
+            w,
+            h
+        );
+    }
+
+    /**
+     * Put what `damage` holds on `win`, then clear it — the end of a repaint
+     * that recorded what it touched. An empty damage presents nothing.
+     */
+    pub fn presentDamage(mut self, win : Window, damage : Damage) : void {
+        damage.clipTo(self.w, self.h);
+        if (damage.isEmpty()) {
+            return;
+        }
+        self.presentRegion(win, damage.x(), damage.y(), damage.width(), damage.height());
+        damage.clear();
     }
 
     /** Release the blit path. The pixels are the destructor's. */
