@@ -1,0 +1,201 @@
+// x_selection — the X11 clipboard protocol: owning the selection, and reading someone else's.
+//
+// X11 has no clipboard storage. A selection (`CLIPBOARD`) has an *owner* — a window — and whoever
+// wants its contents asks the owner, which answers by writing them into a property of the asker's
+// window and sending a notice. So a program that copies claims ownership and keeps the text
+// itself; one that pastes asks the current owner and waits for the notice.
+//
+// **Serving** is a reaction to events the drain already reads: `SelectionRequest` (somebody
+// wants the contents — answer it) and `SelectionClear` (somebody else took the selection —
+// forget the text). `answerRequest` and the clear are called from `absorb`.
+//
+// **Asking** is a wait: `XConvertSelection`, then the owner's `SelectionNotify`. The wait takes only
+// that one event off the queue with `XCheckTypedWindowEvent` and leaves everything else where it
+// is, so a paste never eats the program's input; it gives up after a second, because an owner that
+// has stopped answering must not hang a program that asked for a paste.
+//
+// What is not here: the `INCR` protocol, which owners use for text beyond what one property
+// carries. A request that would need it reads as empty text rather than as a partial one.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::codec::Codec;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::sys::x11_const::{
+    X_ANY_PROPERTY_TYPE, X_ATOM_ATOM, X_ATOM_STRING, X_CURRENT_TIME, X_EVENT_BYTES, X_FALSE,
+    X_NONE, X_PROP_MODE_REPLACE, X_SELECTION_NOTIFY, X_TRUE,
+};
+use crate::sys::x11_lib::{
+    poll, XChangeProperty, XCheckTypedWindowEvent, XConvertSelection, XFlush, XFree,
+    XGetSelectionOwner, XGetWindowProperty, XInternAtom, XSendEvent, XSetSelectionOwner,
+};
+use crate::sys::x11_types::{XSelectionEvent, XSelectionRequestEvent};
+use crate::video::sys_window::SysWindow;
+
+/** How long a paste waits for the owner, and the length of each pause while it does. */
+const PASTE_WAIT_MS : i32 = 1000;
+const PASTE_STEP_MS : i32 = 5;
+
+/** The most a paste reads, in 32-bit units — 256 KiB. */
+const PASTE_MAX_UNITS : i64 = 65536;
+
+/** The property of this window the owner writes its answer to. */
+const PASTE_PROPERTY : string = "SMALT_CLIPBOARD";
+
+/** The `CLIPBOARD` atom. */
+pub(crate) fn clipboardAtom(win : SysWindow) : i64 {
+    return XInternAtom(win.display, "CLIPBOARD", X_FALSE);
+}
+
+/** Whether `s` is all ASCII, the one text `STRING` (Latin-1) can carry without loss. */
+fn isAscii(s : string) : bool {
+    return (s.length as i64) == s.byteLength;
+}
+
+/**
+ * Answer a `SelectionRequest`: write the text, or the list of forms it comes in, to the property
+ * the requestor named, and tell it so. A request this window cannot meet is answered with a
+ * `None` property, which is how X11 says no.
+ */
+pub(crate) fn answerRequest(win : SysWindow, event : ptr) : void {
+    unsafe {
+        let req : ptr<XSelectionRequestEvent> = event as ptr<XSelectionRequestEvent>;
+        let display : ptr = win.display;
+        let targets : i64 = XInternAtom(display, "TARGETS", X_FALSE);
+        let utf8 : i64 = XInternAtom(display, "UTF8_STRING", X_FALSE);
+        let plain : i64 = XInternAtom(display, "TEXT", X_FALSE);
+        let mut property : i64 = (*req).property;
+        if (property == X_NONE) {
+            // An old client that names no property means "the one named after the target".
+            property = (*req).target;
+        }
+
+        let mut served : bool = false;
+        if ((*req).selection == clipboardAtom(win) && win.ownedText.byteLength > 0) {
+            let target : i64 = (*req).target;
+            if (target == targets) {
+                let list = new Blob(32);
+                defer list.close();
+                Raw::putI64(list.at(), 0, targets);
+                Raw::putI64(list.at(), 8, utf8);
+                Raw::putI64(list.at(), 16, X_ATOM_STRING);
+                Raw::putI64(list.at(), 24, plain);
+                XChangeProperty((*req).display, (*req).requestor, property, X_ATOM_ATOM, 32, X_PROP_MODE_REPLACE, list.at(), 4);
+                served = true;
+            } else if (target == utf8 || target == plain || (target == X_ATOM_STRING && isAscii(win.ownedText))) {
+                let bytes : i64 = win.ownedText.byteLength;
+                let data = new Blob(bytes);
+                defer data.close();
+                Mem::internString(Raw::addr(data.at()), 0, win.ownedText, bytes as i32);
+                let mut kind : i64 = utf8;
+                if (target == X_ATOM_STRING) {
+                    kind = X_ATOM_STRING;
+                }
+                XChangeProperty((*req).display, (*req).requestor, property, kind, 8, X_PROP_MODE_REPLACE, data.at(), bytes as i32);
+                served = true;
+            }
+        }
+
+        let reply = new Blob(X_EVENT_BYTES);
+        defer reply.close();
+        let note : ptr<XSelectionEvent> = reply.at() as ptr<XSelectionEvent>;
+        (*note).type_ = X_SELECTION_NOTIFY;
+        (*note).send_event = X_TRUE;
+        (*note).display = (*req).display;
+        (*note).requestor = (*req).requestor;
+        (*note).selection = (*req).selection;
+        (*note).target = (*req).target;
+        (*note).property = X_NONE;
+        if (served) {
+            (*note).property = property;
+        }
+        (*note).time = (*req).time;
+        XSendEvent((*req).display, (*req).requestor, X_FALSE, 0, reply.at());
+        XFlush((*req).display);
+    }
+}
+
+/** Whether this window owns the clipboard. */
+pub(crate) fn ownsClipboard(win : SysWindow) : bool {
+    return XGetSelectionOwner(win.display, clipboardAtom(win)) == win.window;
+}
+
+/** Claim the clipboard for this window, offering `text`; answers whether the claim stood. */
+pub(crate) fn claimClipboard(win : SysWindow, text : string) : bool {
+    win.ownedText = text;
+    XSetSelectionOwner(win.display, clipboardAtom(win), win.window, X_CURRENT_TIME);
+    XFlush(win.display);
+    // The server may refuse: the claim stands only if it now names this window.
+    let stood : bool = ownsClipboard(win);
+    if (!stood) {
+        win.ownedText = "";
+    }
+    return stood;
+}
+
+/**
+ * The clipboard's text as someone else's: ask the owner for it as UTF-8 and wait for the answer.
+ * Empty when there is no owner, it does not answer in time, or the text needs `INCR`.
+ */
+pub(crate) fn askOwner(win : SysWindow) : string {
+    let display : ptr = win.display;
+    let clipboard : i64 = clipboardAtom(win);
+    let utf8 : i64 = XInternAtom(display, "UTF8_STRING", X_FALSE);
+    let property : i64 = XInternAtom(display, PASTE_PROPERTY, X_FALSE);
+
+    XConvertSelection(display, clipboard, utf8, property, win.window, X_CURRENT_TIME);
+    XFlush(display);
+
+    let reply = new Blob(X_EVENT_BYTES);
+    defer reply.close();
+    let mut waited : i32 = 0;
+    while (waited < PASTE_WAIT_MS) {
+        if (XCheckTypedWindowEvent(display, win.window, X_SELECTION_NOTIFY, reply.at()) != 0) {
+            unsafe {
+                let note : ptr<XSelectionEvent> = reply.at() as ptr<XSelectionEvent>;
+                if ((*note).property == X_NONE) {
+                    return "";
+                }
+                return readProperty(win, (*note).property);
+            }
+        }
+        // `poll` with nothing to watch is a sleep that costs nothing while it lasts.
+        poll(Raw::nil(), 0, PASTE_STEP_MS);
+        waited += PASTE_STEP_MS;
+    }
+    return "";
+}
+
+/** Read — and delete — the UTF-8 text in `property` of this window; empty for anything else. */
+fn readProperty(win : SysWindow, property : i64) : string {
+    let kind = new Blob(8);
+    defer kind.close();
+    let format = new Blob(8);
+    defer format.close();
+    let items = new Blob(8);
+    defer items.close();
+    let after = new Blob(8);
+    defer after.close();
+    let data = new Blob(8);
+    defer data.close();
+
+    let status : i32 = XGetWindowProperty(
+        win.display, win.window, property, 0, PASTE_MAX_UNITS, X_TRUE, X_ANY_PROPERTY_TYPE,
+        kind.at(), format.at(), items.at(), after.at(), data.at()
+    );
+    if (status != 0) {
+        return "";
+    }
+    let found : ptr = Raw::at(Raw::i64At(data.at(), 0));
+    if (Raw::isNil(found)) {
+        return "";
+    }
+    let incr : i64 = XInternAtom(win.display, "INCR", X_FALSE);
+    let mut text : string = "";
+    if (Raw::i32At(format.at(), 0) == 8 && Raw::i64At(kind.at(), 0) != incr) {
+        text = Codec::fromUtf8(Raw::addr(found), Raw::i64At(items.at(), 0));
+    }
+    // Memory Xlib allocated goes back to Xlib, whatever was in it.
+    XFree(found);
+    return text;
+}

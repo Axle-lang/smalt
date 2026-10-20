@@ -59,6 +59,15 @@ pub(crate) const X_MAP_NOTIFY : i32 = 19;
 /** `ConfigureNotify` — the resize. */
 pub(crate) const X_CONFIGURE_NOTIFY : i32 = 22;
 
+/** `SelectionClear` — another client took the selection this one owned. */
+pub(crate) const X_SELECTION_CLEAR : i32 = 29;
+
+/** `SelectionRequest` — a client asks the owner for the selection's contents. */
+pub(crate) const X_SELECTION_REQUEST : i32 = 30;
+
+/** `SelectionNotify` — the owner's answer to a conversion. */
+pub(crate) const X_SELECTION_NOTIFY : i32 = 31;
+
 /** `ClientMessage` — how the window manager asks for a close. */
 pub(crate) const X_CLIENT_MESSAGE : i32 = 33;
 
@@ -91,6 +100,18 @@ pub(crate) const X_MASK_STRUCTURE_NOTIFY : i64 = 131072;
 
 /** `FocusChangeMask`. */
 pub(crate) const X_MASK_FOCUS_CHANGE : i64 = 2097152;
+
+/** `XA_ATOM` — the predefined atom naming the type "a list of atoms". */
+pub(crate) const X_ATOM_ATOM : i64 = 4;
+
+/** `XA_STRING` — the predefined atom naming Latin-1 text. */
+pub(crate) const X_ATOM_STRING : i64 = 31;
+
+/** `CurrentTime`. */
+pub(crate) const X_CURRENT_TIME : i64 = 0;
+
+/** `AnyPropertyType` — accept the property whatever its type. */
+pub(crate) const X_ANY_PROPERTY_TYPE : i64 = 0;
 
 /** `Button4` — a wheel notch away from the user. */
 pub(crate) const X_BUTTON_WHEEL_UP : i32 = 4;

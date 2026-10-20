@@ -1,0 +1,117 @@
+// codec — bytes and code units from the OS, as an Axle `string`.
+//
+// The other direction is `Mem::wideFrom` (a `string` as UTF-16) and `Mem::internString` (a `string`
+// as its own UTF-8 bytes). This is the way back, for text the OS owns: the clipboard's contents,
+// which arrive as a block of UTF-16 on Win32 and of UTF-8 on the X11 and Wayland ports.
+//
+// Both decoders are forgiving in the way a clipboard needs. A malformed sequence — a stray
+// continuation byte, a lead byte cut short, an unpaired surrogate — becomes U+FFFD and decoding
+// goes on at the next unit, so foreign text never throws and never desynchronises the rest. A NUL
+// ends the text early, which is what a C string is.
+//
+// A string is built through `StringBuilder`, one codepoint at a time, so the result is an ordinary
+// owned string and nothing here holds on to the block it read.
+
+use crate::kernel::mem::Mem;
+use std::text::StringBuilder;
+
+/** U+FFFD, the replacement character. */
+const CODEC_REPLACEMENT : i32 = 65533;
+
+/** The first codepoint outside the Basic Multilingual Plane. */
+const CODEC_SUPPLEMENTARY : i32 = 65536;
+
+/** The code unit that starts a UTF-16 surrogate pair, and the one that ends it. */
+const CODEC_HIGH_FIRST : i32 = 55296;
+const CODEC_HIGH_LAST : i32 = 56319;
+const CODEC_LOW_FIRST : i32 = 56320;
+const CODEC_LOW_LAST : i32 = 57343;
+
+/** Reading OS text into strings. */
+pub class Codec {
+    /** Whether `b` is a UTF-8 continuation byte (`10xxxxxx`). */
+    pub(file) static fn isTail(b : i32) : bool {
+        return (b & 0xC0) == 0x80;
+    }
+
+    /**
+     * The `bytes` bytes of UTF-8 at `base`, as a string; at most up to the first NUL.
+     * A nil block or a non-positive length is the empty string.
+     */
+    pub static fn fromUtf8(base : i64, bytes : i64) : string {
+        let sb : StringBuilder = new StringBuilder();
+        if (base == 0 || bytes <= 0) {
+            return sb.toString();
+        }
+        let mut i : i64 = 0;
+        while (i < bytes) {
+            let b0 : i32 = Mem::byteAt(base, i) & 0xFF;
+            if (b0 == 0) {
+                break;
+            }
+            let mut cp : i32 = CODEC_REPLACEMENT;
+            let mut taken : i64 = 1;
+            if (b0 < 0x80) {
+                cp = b0;
+            } else if (b0 >= 0xC2 && b0 <= 0xDF && i + 1 < bytes && Codec::isTail(Mem::byteAt(base, i + 1) & 0xFF)) {
+                cp = ((b0 & 0x1F) << 6) | (Mem::byteAt(base, i + 1) & 0x3F);
+                taken = 2;
+            } else if (b0 >= 0xE0 && b0 <= 0xEF && i + 2 < bytes
+                && Codec::isTail(Mem::byteAt(base, i + 1) & 0xFF) && Codec::isTail(Mem::byteAt(base, i + 2) & 0xFF)) {
+                cp = ((b0 & 0x0F) << 12) | ((Mem::byteAt(base, i + 1) & 0x3F) << 6) | (Mem::byteAt(base, i + 2) & 0x3F);
+                taken = 3;
+                // An encoded surrogate, or an overlong form, is not a character.
+                if (cp < 0x800 || (cp >= CODEC_HIGH_FIRST && cp <= CODEC_LOW_LAST)) {
+                    cp = CODEC_REPLACEMENT;
+                }
+            } else if (b0 >= 0xF0 && b0 <= 0xF4 && i + 3 < bytes
+                && Codec::isTail(Mem::byteAt(base, i + 1) & 0xFF) && Codec::isTail(Mem::byteAt(base, i + 2) & 0xFF)
+                && Codec::isTail(Mem::byteAt(base, i + 3) & 0xFF)) {
+                cp = ((b0 & 0x07) << 18) | ((Mem::byteAt(base, i + 1) & 0x3F) << 12)
+                    | ((Mem::byteAt(base, i + 2) & 0x3F) << 6) | (Mem::byteAt(base, i + 3) & 0x3F);
+                taken = 4;
+                if (cp < CODEC_SUPPLEMENTARY || cp > 0x10FFFF) {
+                    cp = CODEC_REPLACEMENT;
+                }
+            }
+            sb.appendChar(cp);
+            i += taken;
+        }
+        return sb.toString();
+    }
+
+    /**
+     * The `units` UTF-16 code units at `base`, as a string; at most up to the first NUL.
+     * A pair of surrogates is one character; one on its own is U+FFFD.
+     */
+    pub static fn fromUtf16(base : i64, units : i64) : string {
+        let sb : StringBuilder = new StringBuilder();
+        if (base == 0 || units <= 0) {
+            return sb.toString();
+        }
+        let mut i : i64 = 0;
+        while (i < units) {
+            let u : i32 = Mem::wordAt(base, i * 2);
+            if (u == 0) {
+                break;
+            }
+            let mut cp : i32 = u;
+            let mut taken : i64 = 1;
+            if (u >= CODEC_HIGH_FIRST && u <= CODEC_HIGH_LAST) {
+                cp = CODEC_REPLACEMENT;
+                if (i + 1 < units) {
+                    let v : i32 = Mem::wordAt(base, (i + 1) * 2);
+                    if (v >= CODEC_LOW_FIRST && v <= CODEC_LOW_LAST) {
+                        cp = CODEC_SUPPLEMENTARY + ((u - CODEC_HIGH_FIRST) << 10) + (v - CODEC_LOW_FIRST);
+                        taken = 2;
+                    }
+                }
+            } else if (u >= CODEC_LOW_FIRST && u <= CODEC_LOW_LAST) {
+                cp = CODEC_REPLACEMENT;
+            }
+            sb.appendChar(cp);
+            i += taken;
+        }
+        return sb.toString();
+    }
+}

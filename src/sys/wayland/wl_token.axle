@@ -79,6 +79,10 @@ pub extern "C" struct WlApp {
     pub cursorShapeManager : ptr;
     pub cursorDevice : ptr;
 
+    /** `wl_data_device_manager`, where there is one, and the clipboard record built over it (`WlClipboard`). */
+    pub dataManager : ptr;
+    pub clipboard : ptr;
+
     /** Registry names, found by the sweep and consumed by the binds. */
     pub compositorName : u32;
     pub shmName : u32;
@@ -87,6 +91,7 @@ pub extern "C" struct WlApp {
     pub outputName : u32;
     pub decorationName : u32;
     pub cursorShapeName : u32;
+    pub dataManagerName : u32;
 
     /** What the seat reports having: bit 0 a pointer, bit 1 a keyboard. */
     pub seatCaps : u32;

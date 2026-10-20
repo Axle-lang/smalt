@@ -258,6 +258,52 @@ extern "C" from "X11" {
      */
     fn XCreateFontCursor(display : ptr, shape : i32) : i64;
 
+    /** `int XSetSelectionOwner(Display *, Atom selection, Window owner, Time)` — claim the clipboard. */
+    fn XSetSelectionOwner(display : ptr, selection : i64, owner : i64, time : i64) : i32;
+
+    /** `Window XGetSelectionOwner(Display *, Atom selection)` — `None` when nobody owns it. */
+    fn XGetSelectionOwner(display : ptr, selection : i64) : i64;
+
+    /**
+     * `int XConvertSelection(Display *, Atom selection, Atom target, Atom property, Window requestor, Time)`.
+     *
+     * Asks the owner to put the selection, converted to `target`, in `property` of `requestor`
+     * and to answer with a `SelectionNotify`.
+     */
+    fn XConvertSelection(display : ptr, selection : i64, target : i64, property : i64, requestor : i64, time : i64) : i32;
+
+    /**
+     * `Bool XCheckTypedWindowEvent(Display *, Window, int type, XEvent *)` — takes one event of
+     * that type for that window off the queue, if there is one, and leaves every other event where
+     * it is. What lets a paste wait for its answer without eating the program's input.
+     */
+    fn XCheckTypedWindowEvent(display : ptr, window : i64, eventType : i32, out : ptr) : i32;
+
+    /**
+     * `int XGetWindowProperty(Display *, Window, Atom property, long offset, long length,
+     *  Bool delete, Atom req_type, Atom *actual_type, int *actual_format, unsigned long *nitems,
+     *  unsigned long *bytes_after, unsigned char **prop)`.
+     *
+     * The data comes back in memory Xlib allocated, which `XFree` gives back.
+     */
+    fn XGetWindowProperty(
+        display : ptr,
+        window : i64,
+        property : i64,
+        offset : i64,
+        length : i64,
+        delete : i32,
+        reqType : i64,
+        actualType : ptr,
+        actualFormat : ptr,
+        nitems : ptr,
+        bytesAfter : ptr,
+        data : ptr
+    ) : i32;
+
+    /** `int XFree(void *)` — releases memory Xlib allocated. */
+    fn XFree(data : ptr) : i32;
+
     /** `int XFreeCursor(Display *, Cursor)`. */
     fn XFreeCursor(display : ptr, cursor : i64) : i32;
 

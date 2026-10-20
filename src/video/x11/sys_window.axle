@@ -96,6 +96,12 @@ pub(crate) class SysWindow : Closeable {
      * writes the slots and `close` below gives every one of them back.
      */
     pub(crate) shapes          : Blob = new Blob((CURSOR_SHAPE_COUNT as i64) * 8);
+    /**
+     * The text this window offers while it owns the clipboard, and is asked for by the program that
+     * pastes. X11 has no clipboard storage: the owner of the selection *is* the clipboard, so when
+     * this window closes — or another one takes the selection — the text is gone.
+     */
+    pub(crate) ownedText       : string = "";
     /** The `CursorShape` asked for last, as its number. */
     pub(crate) shape           : i32 = 0;
     /** Whether relative-mouse mode has the pointer hidden. */

@@ -1,0 +1,523 @@
+// wl_data — the clipboard, as Wayland has it: a data device, offers, and a source.
+//
+// There is no clipboard storage in the protocol, and no ask-for-the-contents call. What there is:
+//
+//   * a **data device**, one per seat, that tells the client when the *selection* changes — the
+//     compositor introduces a `wl_data_offer` (what is on the clipboard, with a list of the formats
+//     it can be had in) and then names it the selection;
+//   * receiving: send `receive(mime, fd)` on the offer, and the program that owns the data writes it
+//     into the pipe the descriptor is the other end of, and closes it;
+//   * giving: make a `wl_data_source`, say which formats it serves, claim the selection with it, and
+//     when somebody receives, the compositor sends `send(mime, fd)` and this program writes the text
+//     into that descriptor.
+//
+// Text travels as UTF-8 and is named `text/plain;charset=utf-8` (or, by older programs,
+// `UTF8_STRING` or plain `text/plain`, which is taken as UTF-8 too).
+//
+// **Everything made here is released.** An offer that is replaced is destroyed; one introduced for a
+// drag-and-drop this library does not take part in is destroyed at once; a source is destroyed when
+// it is replaced or cancelled; the text it serves, the listener blocks and the record itself go
+// when the connection does. A pipe is closed on every path that opened it.
+//
+// **SIGPIPE.** Writing into a pipe whose reader has gone raises the signal, and the default action
+// ends the process; `openClipboard` sets it to be ignored, so the write fails with an error instead.
+// That is a process-wide setting, made only when the compositor offers a clipboard to serve.
+//
+// The callbacks are C calling in with one `void *`, so they write the record this file defines and
+// decide nothing; the program's own calls — `pasteText`, `copyText` — read it.
+
+use crate::kernel::blob::Blob;
+use crate::kernel::codec::Codec;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::sys::posix_io::{O_CLOEXEC, O_NONBLOCK, pipe2, POLL_READABLE, POLL_WRITABLE, readFd, signal, SIG_IGN, SIGPIPE, writeFd};
+use crate::sys::wl_args::WlArgs;
+use crate::sys::wl_core::WlCore;
+use crate::sys::wl_lib::{wl_display_flush, wl_proxy_add_listener};
+use crate::sys::wl_libc::{closeFd, cstrcmp, poll, PollFd};
+use crate::sys::wl_request::{
+    WL_DATA_DEVICE_SET_SELECTION, WL_DATA_MANAGER_CREATE_DATA_SOURCE, WL_DATA_MANAGER_GET_DATA_DEVICE,
+    WL_DATA_OFFER_DESTROY, WL_DATA_OFFER_RECEIVE, WL_DATA_SOURCE_DESTROY, WL_DATA_SOURCE_OFFER,
+};
+use crate::sys::wl_token::WlApp;
+
+/** How long a paste waits for the program that owns the data, and each pause while it does. */
+const PASTE_WAIT_MS : i32 = 1000;
+const PASTE_STEP_MS : i32 = 10;
+
+/** The most a paste reads, in bytes — 1 MiB. */
+const PASTE_MAX_BYTES : i64 = 1048576;
+
+/** The formats text is offered and asked for in, best first, by rank. */
+const MIME_UTF8 : string = "text/plain;charset=utf-8";
+const MIME_UTF8_OLD : string = "UTF8_STRING";
+const MIME_PLAIN : string = "text/plain";
+
+/** The record the clipboard's callbacks write and the program reads. */
+pub extern "C" struct WlClipboard {
+    /** The seat's `wl_data_device`. */
+    pub device : ptr;
+
+    /** The offer that is the selection — nil when there is none, or it holds no text. */
+    pub offer : ptr;
+
+    /** An offer introduced and not yet named the selection. */
+    pub pending : ptr;
+
+    /** The source this program claimed the selection with, or nil. */
+    pub source : ptr;
+
+    /** What the source serves: UTF-8 bytes this record owns, and how many. */
+    pub sourceText : ptr;
+    pub sourceBytes : i64;
+
+    /** The subscription blocks, one each — `libwayland` keeps their addresses. */
+    pub deviceListener : ptr;
+    pub offerListener : ptr;
+    pub sourceListener : ptr;
+
+    /** The best format the selection offer has, and the pending one: 1, 2 or 3 as above; 0 for none. */
+    pub offerMime : i32;
+    pub pendingMime : i32;
+}
+
+/** `struct wl_data_device_listener`. */
+pub extern "C" struct DataDeviceListener {
+    pub dataOffer : extern "C" (ptr, ptr, ptr) => void;
+    pub enter : extern "C" (ptr, ptr, u32, ptr, i32, i32, ptr) => void;
+    pub leave : extern "C" (ptr, ptr) => void;
+    pub motion : extern "C" (ptr, ptr, u32, i32, i32) => void;
+    pub drop : extern "C" (ptr, ptr) => void;
+    pub selection : extern "C" (ptr, ptr, ptr) => void;
+}
+
+/** `struct wl_data_offer_listener` — `offer`, and the two a later version adds. */
+pub extern "C" struct DataOfferListener {
+    pub offer : extern "C" (ptr, ptr, ptr) => void;
+    pub sourceActions : extern "C" (ptr, ptr, u32) => void;
+    pub action : extern "C" (ptr, ptr, u32) => void;
+}
+
+/** `struct wl_data_source_listener`. */
+pub extern "C" struct DataSourceListener {
+    pub target : extern "C" (ptr, ptr, ptr) => void;
+    pub send : extern "C" (ptr, ptr, ptr, i32) => void;
+    pub cancelled : extern "C" (ptr, ptr) => void;
+    pub dndDropPerformed : extern "C" (ptr, ptr) => void;
+    pub dndFinished : extern "C" (ptr, ptr) => void;
+    pub action : extern "C" (ptr, ptr, u32) => void;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────
+
+/** Send a destructor request on `proxy` and let the client-side proxy go with it. */
+fn destroyProxy(proxy : ptr, opcode : i32) : void {
+    if (Raw::isNil(proxy)) {
+        return;
+    }
+    let args = new WlArgs();
+    defer args.close();
+    args.sendDestroy(proxy, opcode);
+}
+
+/** The rank of a format's name: 1 best, 3 least, 0 for one this library does not read as text. */
+fn rankOf(mime : ptr) : i32 {
+    if (cstrcmp(mime, MIME_UTF8) == 0) {
+        return 1;
+    }
+    if (cstrcmp(mime, MIME_UTF8_OLD) == 0) {
+        return 2;
+    }
+    if (cstrcmp(mime, MIME_PLAIN) == 0) {
+        return 3;
+    }
+    return 0;
+}
+
+/** The format name of a rank. */
+fn mimeOf(rank : i32) : string {
+    if (rank == 1) {
+        return MIME_UTF8;
+    }
+    if (rank == 2) {
+        return MIME_UTF8_OLD;
+    }
+    return MIME_PLAIN;
+}
+
+/**
+ * `text` as a NUL-terminated C string in a block the caller closes — what an argument slot holds.
+ * A copy per call that is freed with the call, not one that lives for the run.
+ */
+fn cString(text : string) : Blob {
+    let block = new Blob(text.byteLength + 1);
+    Mem::internString(Raw::addr(block.at()), 0, text, text.byteLength as i32);
+    return block;
+}
+
+/** Whether `fd` can be read (or written, with `events`) within `ms`. */
+fn ready(fd : i32, events : i16, ms : i32) : bool {
+    let block = new Blob(sizeof<PollFd>());
+    defer block.close();
+    unsafe {
+        let one : ptr<PollFd> = block.at() as ptr<PollFd>;
+        (*one).fd = fd;
+        (*one).events = events;
+        (*one).revents = 0;
+        return poll(block.at(), 1, ms) > 0;
+    }
+}
+
+// ── What the compositor says ──────────────────────────────────────────
+
+/** A new offer: remember it as pending, and listen to the formats it lists. */
+pub(crate) fn onDataOffer(data : ptr, device : ptr, offer : ptr) : void {
+    unsafe {
+        let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
+        // An offer that never became the selection is dead weight: take it back.
+        if (!Raw::isNil((*clip).pending)) {
+            destroyProxy((*clip).pending, WL_DATA_OFFER_DESTROY);
+        }
+        (*clip).pending = offer;
+        (*clip).pendingMime = 0;
+        wl_proxy_add_listener(offer, (*clip).offerListener, data);
+    }
+}
+
+/** One format the pending offer comes in; keep the best text one. */
+pub(crate) fn onOfferMime(data : ptr, offer : ptr, mime : ptr) : void {
+    unsafe {
+        let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
+        let rank : i32 = rankOf(mime);
+        if (rank != 0 && ((*clip).pendingMime == 0 || rank < (*clip).pendingMime)) {
+            (*clip).pendingMime = rank;
+        }
+    }
+}
+
+/**
+ * A drag entered the window. This library takes no part in drag and drop, so the offer that came
+ * with it is taken back at once; left alone it would be a proxy nobody ever destroys.
+ */
+pub(crate) fn onDataEnter(data : ptr, device : ptr, serial : u32, surface : ptr, x : i32, y : i32, offer : ptr) : void {
+    unsafe {
+        let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
+        if (Raw::isNil(offer)) {
+            return;
+        }
+        if (Raw::addr(offer) == Raw::addr((*clip).pending)) {
+            (*clip).pending = Raw::nil();
+            (*clip).pendingMime = 0;
+        }
+        destroyProxy(offer, WL_DATA_OFFER_DESTROY);
+    }
+}
+
+pub(crate) fn onDataLeave(data : ptr, device : ptr) : void {}
+pub(crate) fn onDataMotion(data : ptr, device : ptr, time : u32, x : i32, y : i32) : void {}
+pub(crate) fn onDataDrop(data : ptr, device : ptr) : void {}
+
+/**
+ * The selection changed: `offer` is now the clipboard, or nil if it was emptied.
+ *
+ * The offer that was the clipboard is destroyed — replaced, or emptied — and the new one is kept
+ * only if it comes in a text format; one that does not is taken back rather than held for nothing.
+ */
+pub(crate) fn onDataSelection(data : ptr, device : ptr, offer : ptr) : void {
+    unsafe {
+        let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
+        if (!Raw::isNil((*clip).offer) && Raw::addr((*clip).offer) != Raw::addr(offer)) {
+            destroyProxy((*clip).offer, WL_DATA_OFFER_DESTROY);
+        }
+        (*clip).offer = Raw::nil();
+        (*clip).offerMime = 0;
+        if (Raw::isNil(offer)) {
+            return;
+        }
+        if (Raw::addr(offer) == Raw::addr((*clip).pending)) {
+            (*clip).pending = Raw::nil();
+        }
+        if ((*clip).pendingMime == 0) {
+            destroyProxy(offer, WL_DATA_OFFER_DESTROY);
+            return;
+        }
+        (*clip).offer = offer;
+        (*clip).offerMime = (*clip).pendingMime;
+        (*clip).pendingMime = 0;
+    }
+}
+
+pub(crate) fn onOfferSourceActions(data : ptr, offer : ptr, actions : u32) : void {}
+pub(crate) fn onOfferAction(data : ptr, offer : ptr, action : u32) : void {}
+pub(crate) fn onSourceTarget(data : ptr, source : ptr, mime : ptr) : void {}
+pub(crate) fn onSourceDndDrop(data : ptr, source : ptr) : void {}
+pub(crate) fn onSourceDndFinished(data : ptr, source : ptr) : void {}
+pub(crate) fn onSourceAction(data : ptr, source : ptr, action : u32) : void {}
+
+/**
+ * Somebody pastes what this program copied: write the text into the descriptor they gave, and close it.
+ *
+ * The writer may be slow to read and the pipe holds only so much, so a full pipe is waited on —
+ * for a bounded time, so a program that stops reading cannot hold this one.
+ */
+pub(crate) fn onSourceSend(data : ptr, source : ptr, mime : ptr, fd : i32) : void {
+    unsafe {
+        let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
+        let mut sent : i64 = 0;
+        let total : i64 = (*clip).sourceBytes;
+        let mut waited : i32 = 0;
+        while (sent < total && waited < PASTE_WAIT_MS) {
+            let wrote : i64 = writeFd(fd, Raw::at(Raw::addr((*clip).sourceText) + sent), total - sent);
+            if (wrote > 0) {
+                sent += wrote;
+            } else {
+                // No room yet, or the reader has gone. Either way the wait is counted, so a
+                // reader that went away is given up on after the deadline, not waited for.
+                ready(fd, POLL_WRITABLE, PASTE_STEP_MS);
+                waited += PASTE_STEP_MS;
+            }
+        }
+        closeFd(fd);
+    }
+}
+
+/** Another program claimed the selection: this source is finished, and so is the text it served. */
+pub(crate) fn onSourceCancelled(data : ptr, source : ptr) : void {
+    unsafe {
+        let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
+        destroyProxy(source, WL_DATA_SOURCE_DESTROY);
+        if (Raw::addr(source) == Raw::addr((*clip).source)) {
+            (*clip).source = Raw::nil();
+            if (!Raw::isNil((*clip).sourceText)) {
+                Raw::release((*clip).sourceText);
+                (*clip).sourceText = Raw::nil();
+            }
+            (*clip).sourceBytes = 0;
+        }
+    }
+}
+
+// ── Setting up and taking down ────────────────────────────────────────
+
+/**
+ * Make the clipboard's record and ask the seat for its data device, once the connection has both.
+ * Quietly nothing when the compositor offers no data-device manager or the tables are missing.
+ */
+pub(crate) fn openClipboard(app : ptr<WlApp>, args : WlArgs) : void {
+    unsafe {
+        if (Raw::isNil((*app).dataManager) || Raw::isNil((*app).seat)) {
+            return;
+        }
+        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        if (Raw::isNil((*core).dataDevice) || Raw::isNil((*core).dataSource) || Raw::isNil((*core).dataOffer)) {
+            return;
+        }
+        // A paste whose reader closes its end early would otherwise raise SIGPIPE on the write that
+        // follows, and the default action is to end the process. Ignoring it makes that write fail
+        // with an error instead — the way every graphical client that serves a clipboard has it.
+        signal(SIGPIPE, Raw::at(SIG_IGN));
+
+        let clip : ptr<WlClipboard> = Raw::take(sizeof<WlClipboard>()) as ptr<WlClipboard>;
+        Raw::clear(clip as ptr, sizeof<WlClipboard>());
+        (*app).clipboard = clip as ptr;
+
+        (*clip).deviceListener = Raw::take(sizeof<DataDeviceListener>());
+        let dl : ptr<DataDeviceListener> = (*clip).deviceListener as ptr<DataDeviceListener>;
+        (*dl).dataOffer = onDataOffer;
+        (*dl).enter = onDataEnter;
+        (*dl).leave = onDataLeave;
+        (*dl).motion = onDataMotion;
+        (*dl).drop = onDataDrop;
+        (*dl).selection = onDataSelection;
+
+        (*clip).offerListener = Raw::take(sizeof<DataOfferListener>());
+        let ol : ptr<DataOfferListener> = (*clip).offerListener as ptr<DataOfferListener>;
+        (*ol).offer = onOfferMime;
+        (*ol).sourceActions = onOfferSourceActions;
+        (*ol).action = onOfferAction;
+
+        (*clip).sourceListener = Raw::take(sizeof<DataSourceListener>());
+        let sl : ptr<DataSourceListener> = (*clip).sourceListener as ptr<DataSourceListener>;
+        (*sl).target = onSourceTarget;
+        (*sl).send = onSourceSend;
+        (*sl).cancelled = onSourceCancelled;
+        (*sl).dndDropPerformed = onSourceDndDrop;
+        (*sl).dndFinished = onSourceDndFinished;
+        (*sl).action = onSourceAction;
+
+        // `wl_data_device_manager.get_data_device` — "no": the new device, the seat.
+        args.set(0, 0);
+        args.setObject(1, (*app).seat);
+        (*clip).device = args.send((*app).dataManager, WL_DATA_MANAGER_GET_DATA_DEVICE, (*core).dataDevice, 1);
+        if (Raw::isNil((*clip).device)) {
+            return;
+        }
+        wl_proxy_add_listener((*clip).device, (*clip).deviceListener, clip as ptr);
+    }
+}
+
+/** Give back everything the clipboard made, while the connection is still open. */
+pub(crate) fn closeClipboard(app : ptr<WlApp>) : void {
+    unsafe {
+        if (Raw::isNil((*app).clipboard)) {
+            return;
+        }
+        let clip : ptr<WlClipboard> = (*app).clipboard as ptr<WlClipboard>;
+        destroyProxy((*clip).offer, WL_DATA_OFFER_DESTROY);
+        destroyProxy((*clip).pending, WL_DATA_OFFER_DESTROY);
+        destroyProxy((*clip).source, WL_DATA_SOURCE_DESTROY);
+        if (!Raw::isNil((*clip).sourceText)) {
+            Raw::release((*clip).sourceText);
+        }
+        // The listener blocks go after the proxies they were given to: a block is what the library
+        // would dispatch an in-flight event into. The device proxy has no destructor before
+        // version 2; the connection's disconnect gives it back.
+        Raw::release((*clip).sourceListener);
+        Raw::release((*clip).offerListener);
+        Raw::release((*clip).deviceListener);
+        Raw::release((*app).clipboard);
+        (*app).clipboard = Raw::nil();
+    }
+}
+
+// ── What the program asks ─────────────────────────────────────────────
+
+/** Whether the clipboard holds text this program could read. */
+pub(crate) fn hasClipboardText(app : ptr<WlApp>) : bool {
+    unsafe {
+        if (Raw::isNil((*app).clipboard)) {
+            return false;
+        }
+        let clip : ptr<WlClipboard> = (*app).clipboard as ptr<WlClipboard>;
+        return !Raw::isNil((*clip).source) || (!Raw::isNil((*clip).offer) && (*clip).offerMime != 0);
+    }
+}
+
+/**
+ * The clipboard's text as UTF-8.
+ *
+ * This program's own text is returned as it is. Someone else's is asked for: a pipe is made, its
+ * write end goes to them with `receive`, and the read end is polled until they close theirs or a
+ * second passes. Nothing here blocks beyond that, and both ends of the pipe are closed on every path.
+ */
+pub(crate) fn pasteText(app : ptr<WlApp>) : string {
+    unsafe {
+        if (Raw::isNil((*app).clipboard)) {
+            return "";
+        }
+        let clip : ptr<WlClipboard> = (*app).clipboard as ptr<WlClipboard>;
+        if (!Raw::isNil((*clip).source)) {
+            return Codec::fromUtf8(Raw::addr((*clip).sourceText), (*clip).sourceBytes);
+        }
+        if (Raw::isNil((*clip).offer) || (*clip).offerMime == 0) {
+            return "";
+        }
+
+        let fds = new Blob(8);
+        defer fds.close();
+        if (pipe2(fds.at(), O_CLOEXEC | O_NONBLOCK) != 0) {
+            return "";
+        }
+        let readEnd : i32 = Raw::i32At(fds.at(), 0);
+        let writeEnd : i32 = Raw::i32At(fds.at(), 4);
+
+        let args = new WlArgs();
+        defer args.close();
+        let mime = cString(mimeOf((*clip).offerMime));
+        defer mime.close();
+        // `wl_data_offer.receive` — "sh": the format, and the descriptor the owner writes to.
+        args.set(0, Raw::addr(mime.at()));
+        args.set(1, writeEnd as i64);
+        args.send((*clip).offer, WL_DATA_OFFER_RECEIVE, Raw::nil(), 0);
+        // The request carries its own copy of the descriptor; this end is ours to close, now,
+        // or the read end would never see the owner's close as the end of the data.
+        closeFd(writeEnd);
+        wl_display_flush((*app).display);
+
+        let buffer = new Blob(PASTE_MAX_BYTES);
+        defer buffer.close();
+        let mut total : i64 = 0;
+        let mut waited : i32 = 0;
+        let mut finished : bool = false;
+        while (!finished && total < PASTE_MAX_BYTES && waited < PASTE_WAIT_MS) {
+            if (!ready(readEnd, POLL_READABLE, PASTE_STEP_MS)) {
+                waited += PASTE_STEP_MS;
+            } else {
+                let got : i64 = readFd(readEnd, Raw::at(Raw::addr(buffer.at()) + total), PASTE_MAX_BYTES - total);
+                if (got > 0) {
+                    total += got;
+                } else {
+                    // End of the data (0), or an error: either way there is no more.
+                    finished = true;
+                }
+            }
+        }
+        closeFd(readEnd);
+        return Codec::fromUtf8(Raw::addr(buffer.at()), total);
+    }
+}
+
+/**
+ * Claim the clipboard and offer `text` on it, quoting `serial` — the serial of the last key or
+ * button event, which the compositor requires of a client that wants to own the selection.
+ * Answers whether the request was sent; a compositor may still decline it.
+ */
+pub(crate) fn copyText(app : ptr<WlApp>, serial : u32, text : string) : bool {
+    unsafe {
+        if (Raw::isNil((*app).clipboard)) {
+            return false;
+        }
+        let clip : ptr<WlClipboard> = (*app).clipboard as ptr<WlClipboard>;
+        if (Raw::isNil((*clip).device)) {
+            return false;
+        }
+        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        let args = new WlArgs();
+        defer args.close();
+
+        // Empty text is not worth a source: the selection is simply released.
+        if (text.byteLength == 0) {
+            args.setObject(0, Raw::nil());
+            args.set(1, serial as i64);
+            args.send((*clip).device, WL_DATA_DEVICE_SET_SELECTION, Raw::nil(), 0);
+            return true;
+        }
+
+        let bytes : i64 = text.byteLength;
+        let copy : ptr = Raw::take(bytes);
+        if (Raw::isNil(copy)) {
+            return false;
+        }
+        Mem::internString(Raw::addr(copy), 0, text, bytes as i32);
+
+        args.set(0, 0);
+        let source : ptr = args.send((*app).dataManager, WL_DATA_MANAGER_CREATE_DATA_SOURCE, (*core).dataSource, 1);
+        if (Raw::isNil(source)) {
+            Raw::release(copy);
+            return false;
+        }
+        wl_proxy_add_listener(source, (*clip).sourceListener, clip as ptr);
+        for (rank of 1..4) {
+            let name = cString(mimeOf(rank));
+            args.set(0, Raw::addr(name.at()));
+            args.send(source, WL_DATA_SOURCE_OFFER, Raw::nil(), 0);
+            name.close();
+        }
+        args.setObject(0, source);
+        args.set(1, serial as i64);
+        args.send((*clip).device, WL_DATA_DEVICE_SET_SELECTION, Raw::nil(), 0);
+
+        // The new source is in place; the one it replaces, and its text, are not wanted any more.
+        let old : ptr = (*clip).source;
+        let oldText : ptr = (*clip).sourceText;
+        (*clip).source = source;
+        (*clip).sourceText = copy;
+        (*clip).sourceBytes = bytes;
+        destroyProxy(old, WL_DATA_SOURCE_DESTROY);
+        if (!Raw::isNil(oldText)) {
+            Raw::release(oldText);
+        }
+        wl_display_flush((*app).display);
+        return true;
+    }
+}

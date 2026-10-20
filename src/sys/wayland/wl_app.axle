@@ -15,6 +15,7 @@
 
 use crate::kernel::raw::Raw;
 use crate::sys::wl_args::WlArgs;
+use crate::sys::wl_data::{closeClipboard, openClipboard};
 use crate::sys::wl_core::{loadCore, WlCore};
 use crate::sys::wl_token::{OutputListener, RegistryListener, WlApp, WlAppListeners};
 use crate::sys::wl_globals::{
@@ -80,6 +81,7 @@ pub(crate) fn connect() : ptr {
         bindOutput(app, args);
         bindDecorations(app, args);
         bindCursorShape(app, args);
+        bindDataManager(app, args);
 
         // A second round trip, so the answers to the binds — the
         // output's mode, the seat's capabilities — have arrived before
@@ -90,6 +92,7 @@ pub(crate) fn connect() : ptr {
         // reported having, never before the answer.
         openSeatDevices(app, args);
         openCursorDevice(app, args);
+        openClipboard(app, args);
         return app as ptr;
     }
 }
@@ -101,6 +104,8 @@ pub(crate) fn disconnect(token : ptr) : void {
             return;
         }
         let app : ptr<WlApp> = token as ptr<WlApp>;
+        // The clipboard's proxies are destroyed by request, so while the connection is open.
+        closeClipboard(app);
         if (!Raw::isNil((*app).display)) {
             // One call releases every proxy made on this connection:
             // the registry, the globals, and anything a window left
@@ -281,6 +286,22 @@ fn bindCursorShape(app : ptr<WlApp>, args : WlArgs) : void {
             (*app).cursorShapeName,
             (*tables).manager,
             "wp_cursor_shape_manager_v1"
+        );
+    }
+}
+
+/** The data-device manager, where there is one: without it there is no clipboard. */
+fn bindDataManager(app : ptr<WlApp>, args : WlArgs) : void {
+    unsafe {
+        if ((*app).dataManagerName == 0) {
+            return;
+        }
+        let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
+        if (Raw::isNil((*core).dataDeviceManager)) {
+            return;
+        }
+        (*app).dataManager = bindGlobal(
+            args, (*app).registry, (*app).dataManagerName, (*core).dataDeviceManager, "wl_data_device_manager"
         );
     }
 }

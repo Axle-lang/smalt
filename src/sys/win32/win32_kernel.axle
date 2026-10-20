@@ -51,4 +51,19 @@ extern "C" from "kernel32" {
 
     /** `DWORD GetLastError(void)`. */
     fn GetLastError() : i32;
+
+    /** `HGLOBAL GlobalAlloc(UINT flags, SIZE_T bytes)` — a block the clipboard can take over. */
+    fn GlobalAlloc(flags : i32, bytes : i64) : ptr;
+
+    /** `LPVOID GlobalLock(HGLOBAL)` — the block's address, while it is locked. */
+    fn GlobalLock(block : ptr) : ptr;
+
+    /** `BOOL GlobalUnlock(HGLOBAL)`. */
+    fn GlobalUnlock(block : ptr) : i32;
+
+    /** `HGLOBAL GlobalFree(HGLOBAL)` — null on success. */
+    fn GlobalFree(block : ptr) : ptr;
+
+    /** `SIZE_T GlobalSize(HGLOBAL)`. */
+    fn GlobalSize(block : ptr) : i64;
 }

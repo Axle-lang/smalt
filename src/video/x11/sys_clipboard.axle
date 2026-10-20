@@ -1,0 +1,49 @@
+// sys_clipboard — the platform seam for the system clipboard's text.
+//
+// THE CONTRACT:
+//
+//   hasText(win)        whether the clipboard holds text
+//   getText(win)        that text as UTF-8, or the empty string
+//   setText(win, text)  replace the clipboard's contents with `text`;
+//                       answers whether the system took it
+//
+// X11: there is no clipboard to put text *in* — the owner of the `CLIPBOARD` selection is the
+// clipboard, and a paste asks it. `setText` therefore claims ownership and keeps the text on the
+// window, `getText` returns that text when the window itself owns the clipboard and asks the owner
+// otherwise, and `hasText` reports whether anyone owns it. The protocol is `x_selection`'s.
+//
+// So text copied here survives only as long as this window does and nobody else copies: closing the
+// window gives the selection up, as every X11 client's does. A clipboard manager is what makes it
+// last, and one that is running takes a copy the moment this window claims.
+
+use crate::sys::x11_const::X_NONE;
+use crate::sys::x11_lib::XGetSelectionOwner;
+use crate::video::sys_window::SysWindow;
+use crate::video::x11::x_selection::{askOwner, claimClipboard, clipboardAtom, ownsClipboard};
+
+/** The system clipboard. */
+class SysClipboard {
+    /** Whether the clipboard has an owner — and, if it is this window, whether it has text. */
+    pub(crate) static fn hasText(win : SysWindow) : bool {
+        if (ownsClipboard(win)) {
+            return win.ownedText.byteLength > 0;
+        }
+        return XGetSelectionOwner(win.display, clipboardAtom(win)) != X_NONE;
+    }
+
+    /** The clipboard's text as UTF-8, or the empty string. */
+    pub(crate) static fn getText(win : SysWindow) : string {
+        if (ownsClipboard(win)) {
+            return win.ownedText;
+        }
+        if (XGetSelectionOwner(win.display, clipboardAtom(win)) == X_NONE) {
+            return "";
+        }
+        return askOwner(win);
+    }
+
+    /** Take the clipboard and offer `text` on it. */
+    pub(crate) static fn setText(win : SysWindow, text : string) : bool {
+        return claimClipboard(win, text);
+    }
+}

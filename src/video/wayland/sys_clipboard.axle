@@ -1,0 +1,45 @@
+// sys_clipboard — the platform seam for the system clipboard's text.
+//
+// THE CONTRACT:
+//
+//   hasText(win)        whether the clipboard holds text
+//   getText(win)        that text as UTF-8, or the empty string
+//   setText(win, text)  replace the clipboard's contents with `text`;
+//                       answers whether the system took it
+//
+// Wayland: the protocol is `sys::wl_data`'s — a data device that reports the selection, offers that
+// are received through a pipe, and a source that is written to one. What this file adds is the
+// window: the compositor accepts a claim on the selection only from the client that most recently
+// had a key or button event, quoting that event's serial, so `setText` quotes the one the window
+// recorded. A program that has had no input yet claims with serial 0 and may be refused.
+//
+// `getText` does not see a change until the events that announce it have been read, which the
+// program's own event loop does; a paste that follows closely on a copy in another program
+// therefore reads what the loop last pumped.
+
+use crate::sys::wl_data::{copyText, hasClipboardText, pasteText};
+use crate::sys::wl_token::WlApp;
+use crate::video::sys_window::SysWindow;
+use crate::video::wayland::wl_win_state::WlWinState;
+use crate::video::wayland::wl_window_ops::{winApp, winState};
+
+/** The system clipboard. */
+class SysClipboard {
+    /** Whether the clipboard holds text. */
+    pub(crate) static fn hasText(win : SysWindow) : bool {
+        return hasClipboardText(winApp(win) as ptr<WlApp>);
+    }
+
+    /** The clipboard's text as UTF-8, or the empty string. */
+    pub(crate) static fn getText(win : SysWindow) : string {
+        return pasteText(winApp(win) as ptr<WlApp>);
+    }
+
+    /** Take the clipboard and offer `text` on it. */
+    pub(crate) static fn setText(win : SysWindow, text : string) : bool {
+        unsafe {
+            let st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
+            return copyText(winApp(win) as ptr<WlApp>, (*st).inputSerial, text);
+        }
+    }
+}

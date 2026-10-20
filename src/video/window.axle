@@ -20,6 +20,7 @@
 
 use crate::core::error::PlatformError;
 use crate::video::cursor::CursorShape;
+use crate::video::sys_clipboard::SysClipboard;
 use crate::video::sys_cursor::SysCursor;
 use crate::video::sys_window::SysWindow;
 
@@ -231,6 +232,35 @@ pub class Window : Closeable {
         }
         self.cursorNow = shape;
         SysCursor::setShape(self.sys, shape as i32);
+    }
+
+    /**
+     * The text on the system clipboard, or the empty string when there is none.
+     *
+     * Read afresh each call — another program may have changed it — and
+     * UTF-8 whatever the platform keeps. On X11 and Wayland the owner of
+     * the clipboard is asked for it, which takes a round trip and, for an
+     * owner that does not answer, a short wait; a program that wants it
+     * only on a paste shortcut never notices.
+     */
+    pub fn clipboardText(self) : string {
+        return SysClipboard::getText(self.sys);
+    }
+
+    /** Whether the system clipboard holds text a `clipboardText` would return. */
+    pub fn hasClipboardText(self) : bool {
+        return SysClipboard::hasText(self.sys);
+    }
+
+    /**
+     * Put `text` on the system clipboard, answering whether it was taken.
+     *
+     * It stays there after this program exits on Windows; on X11 and
+     * Wayland it is served by this program for as long as it runs and
+     * owns the selection, as those systems have it.
+     */
+    pub fn setClipboardText(mut self, text : string) : bool {
+        return SysClipboard::setText(self.sys, text);
     }
 
     /** The shape the pointer was last asked to take over this window. */

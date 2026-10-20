@@ -127,6 +127,7 @@ pub(crate) fn onKeymap(data : ptr, keyboard : ptr, format : u32, fd : i32, size 
 
 pub(crate) fn onKeyEnter(data : ptr, keyboard : ptr, serial : u32, surface : ptr, keys : ptr) : void {
     unsafe {
+        (*(data as ptr<WlWinState>)).inputSerial = serial;
         push(data as ptr<WlWinState>, RING_ENTER, 0, 0);
     }
 }
@@ -139,6 +140,7 @@ pub(crate) fn onKeyLeave(data : ptr, keyboard : ptr, serial : u32, surface : ptr
 
 pub(crate) fn onKey(data : ptr, keyboard : ptr, serial : u32, time : u32, key : u32, state : u32) : void {
     unsafe {
+        (*(data as ptr<WlWinState>)).inputSerial = serial;
         push(data as ptr<WlWinState>, RING_KEY, state as i32, key as i32);
     }
 }
@@ -177,6 +179,7 @@ pub(crate) fn onPointerEnter(
     unsafe {
         let st : ptr<WlWinState> = data as ptr<WlWinState>;
         (*st).pointerSerial = serial;
+        (*st).inputSerial = serial;
         // The compositor shows no cursor of ours until we say which, once per enter.
         (*st).cursorDirty = 1;
         push(st, RING_POINTER_IN, x >> FIXED_SHIFT, y >> FIXED_SHIFT);
@@ -210,6 +213,7 @@ pub(crate) fn onPointerButton(
     state : u32
 ) : void {
     unsafe {
+        (*(data as ptr<WlWinState>)).inputSerial = serial;
         push(data as ptr<WlWinState>, RING_BUTTON, state as i32, button as i32);
     }
 }

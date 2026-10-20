@@ -36,7 +36,7 @@
 // pulled into the build by the seam file that imports them, which is
 // what keeps this header from having to know they exist.
 
-use crate::kernel::{raw, blob, mem, store};
+use crate::kernel::{raw, blob, mem, store, codec};
 
 use crate::sys::dib;
 
@@ -48,7 +48,8 @@ use crate::audio::{clip, mixer, bank};
 use crate::core::{error, init, timer, pool, event, keyboard, mouse, pump};
 
 use crate::video::{
-    window, display, cursor, cursor_art, scancode_set1, sys_window, sys_drain, sys_cursor, sys_vk_surface,
+    window, display, cursor, cursor_art, scancode_set1, sys_window, sys_drain, sys_cursor, sys_clipboard,
+    sys_vk_surface,
 };
 
 use crate::render::color;

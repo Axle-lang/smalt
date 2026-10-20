@@ -131,6 +131,27 @@ extern "C" from "user32" {
     /** `BOOL ReleaseCapture(void)`. */
     fn ReleaseCapture() : i32;
 
+    /** `BOOL OpenClipboard(HWND)` — fails while another program has it open. */
+    fn OpenClipboard(owner : ptr) : i32;
+
+    /** `BOOL CloseClipboard(void)`. */
+    fn CloseClipboard() : i32;
+
+    /** `BOOL EmptyClipboard(void)` — and makes the open window its owner. */
+    fn EmptyClipboard() : i32;
+
+    /** `HANDLE GetClipboardData(UINT format)` — the system's block, which the caller must not free. */
+    fn GetClipboardData(format : i32) : ptr;
+
+    /**
+     * `HANDLE SetClipboardData(UINT format, HANDLE mem)` — on success the block belongs to the
+     * system; on failure it is still the caller's to free.
+     */
+    fn SetClipboardData(format : i32, block : ptr) : ptr;
+
+    /** `BOOL IsClipboardFormatAvailable(UINT format)`. */
+    fn IsClipboardFormatAvailable(format : i32) : i32;
+
     /** `BOOL GetClientRect(HWND, LPRECT)` — the client area, with the origin at (0, 0). */
     fn GetClientRect(hwnd : ptr, rect : ptr<RECT>) : i32;
 

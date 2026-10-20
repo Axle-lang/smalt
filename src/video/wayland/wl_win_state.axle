@@ -76,6 +76,13 @@ pub extern "C" struct WlWinState {
     pub cursorDirty : i32;
     pub cursorSpare : i32;
 
+    /**
+     * The serial of the last key or button event — what a clipboard claim must quote, because the
+     * compositor honours only a claim made by the client that most recently had input.
+     */
+    pub inputSerial : u32;
+    pub inputSpare : i32;
+
     // ── The proxies a callback answers on ─────────────────────────
     pub display : ptr;
     pub wmBase : ptr;

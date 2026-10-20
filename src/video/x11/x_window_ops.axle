@@ -16,9 +16,11 @@ use crate::sys::x11_types::{MotifWmHints, XAnyEvent, XClientMessageEvent, XConfi
 use crate::sys::x11_const::{
     X_CLIENT_MESSAGE, X_CONFIGURE_NOTIFY, X_DESTROY_NOTIFY, X_EVENT_BYTES, X_FALSE, X_FOCUS_IN,
     X_FOCUS_OUT, X_MAP_NOTIFY, X_MOTIF_HINTS_FORMAT, X_MOTIF_HINTS_WORDS, X_MOTIF_HINT_DECORATIONS,
-    X_PROP_MODE_REPLACE, X_SIZE_HINT_MIN_MAX, X_TRUE, X_UNMAP_NOTIFY,
+    X_PROP_MODE_REPLACE, X_SELECTION_CLEAR, X_SELECTION_REQUEST, X_SIZE_HINT_MIN_MAX, X_TRUE,
+    X_UNMAP_NOTIFY,
 };
 use crate::video::sys_window::SysWindow;
+use crate::video::x11::x_selection::answerRequest;
 
 /** The property that carries a close request. */
 const WM_PROTOCOLS_ATOM : string = "WM_PROTOCOLS";
@@ -163,6 +165,16 @@ pub(crate) fn absorb(win : SysWindow, event : ptr) : bool {
             }
             X_FOCUS_OUT => {
                 noteFocus(win, false);
+                return true;
+            }
+            X_SELECTION_REQUEST => {
+                // Somebody is pasting what this window copied.
+                answerRequest(win, event);
+                return true;
+            }
+            X_SELECTION_CLEAR => {
+                // Somebody else copied: what this window offered is no longer the clipboard.
+                win.ownedText = "";
                 return true;
             }
             X_UNMAP_NOTIFY => {

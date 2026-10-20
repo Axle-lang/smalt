@@ -25,6 +25,14 @@ const BI_RGB : i32 = 0;
 /** `SRCCOPY` (0x00CC0020) — the raster op that just copies. */
 const SRCCOPY : i32 = 13369376;
 
+// ─── Clipboard and global memory ─────────────────────────────
+
+/** `CF_UNICODETEXT` (13) — NUL-terminated UTF-16 text. */
+const CF_UNICODETEXT : i32 = 13;
+
+/** `GMEM_MOVEABLE` (0x0002) — what a block handed to the clipboard must be. */
+const GMEM_MOVEABLE : i32 = 2;
+
 // ─── System metrics (`SM_*`) ─────────────────────────────────
 
 /** `SM_CXSCREEN` (0) — primary display width. */

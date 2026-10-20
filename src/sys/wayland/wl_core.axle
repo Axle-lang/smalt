@@ -29,6 +29,12 @@ pub extern "C" struct WlCore {
     pub pointer : ptr;
     pub output : ptr;
     pub callback : ptr;
+
+    /** The data-transfer tables the clipboard speaks — optional: without them there is no clipboard. */
+    pub dataDeviceManager : ptr;
+    pub dataDevice : ptr;
+    pub dataSource : ptr;
+    pub dataOffer : ptr;
 }
 
 /** Fill `core` from the loaded library; `false` when a symbol is missing. */
@@ -46,6 +52,10 @@ pub(crate) fn loadCore(core : ptr<WlCore>) : bool {
         (*core).pointer = dlsym(nil, "wl_pointer_interface");
         (*core).output = dlsym(nil, "wl_output_interface");
         (*core).callback = dlsym(nil, "wl_callback_interface");
+        (*core).dataDeviceManager = dlsym(nil, "wl_data_device_manager_interface");
+        (*core).dataDevice = dlsym(nil, "wl_data_device_interface");
+        (*core).dataSource = dlsym(nil, "wl_data_source_interface");
+        (*core).dataOffer = dlsym(nil, "wl_data_offer_interface");
         return complete(core);
     }
 }

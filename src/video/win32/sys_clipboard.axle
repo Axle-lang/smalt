@@ -1,0 +1,97 @@
+// sys_clipboard — the platform seam for the system clipboard's text.
+//
+// THE CONTRACT:
+//
+//   hasText(win)        whether the clipboard holds text
+//   getText(win)        that text as UTF-8, or the empty string
+//   setText(win, text)  replace the clipboard's contents with `text`;
+//                       answers whether the system took it
+//
+// Windows: the clipboard is a system service with one owner at a time. A program opens it
+// (`OpenClipboard`, which fails while another program holds it open — so it is retried a few
+// times), reads or replaces what is there, and closes it. The text travels as `CF_UNICODETEXT`: a
+// block of NUL-terminated UTF-16 the *system* owns once it has been given.
+//
+// **Who frees what.** A block read with `GetClipboardData` belongs to the system and is never
+// freed here. A block given with `SetClipboardData` belongs to the system from the moment the call
+// succeeds, and to this program until then — so a refused call frees it, and a successful one must
+// not. The clipboard is closed on every path out.
+
+use crate::kernel::codec::Codec;
+use crate::kernel::mem::Mem;
+use crate::kernel::raw::Raw;
+use crate::sys::win32_const::{CF_UNICODETEXT, GMEM_MOVEABLE};
+use crate::sys::win32_kernel::{GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock, Sleep};
+use crate::sys::win32_user::{CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard, SetClipboardData};
+use crate::video::sys_window::SysWindow;
+
+/** How many times a busy clipboard is tried, and the pause between tries in milliseconds. */
+const OPEN_ATTEMPTS : i32 = 5;
+const OPEN_PAUSE_MS : i32 = 3;
+
+/** Open the clipboard for `owner`, waiting a little for whoever has it. */
+fn openClipboard(owner : ptr) : bool {
+    for (attempt of 0..OPEN_ATTEMPTS) {
+        if (OpenClipboard(owner) != 0) {
+            return true;
+        }
+        Sleep(OPEN_PAUSE_MS);
+    }
+    return false;
+}
+
+/** The system clipboard. */
+class SysClipboard {
+    /** Whether the clipboard holds Unicode text. */
+    pub(crate) static fn hasText(win : SysWindow) : bool {
+        return IsClipboardFormatAvailable(CF_UNICODETEXT) != 0;
+    }
+
+    /** The clipboard's text as UTF-8, or the empty string. */
+    pub(crate) static fn getText(win : SysWindow) : string {
+        if (!openClipboard(win.handle())) {
+            return "";
+        }
+        let mut text : string = "";
+        let handle : ptr = GetClipboardData(CF_UNICODETEXT);
+        if (!Raw::isNil(handle)) {
+            let units : i64 = GlobalSize(handle) / 2;
+            let locked : ptr = GlobalLock(handle);
+            if (!Raw::isNil(locked)) {
+                text = Codec::fromUtf16(Raw::addr(locked), units);
+                GlobalUnlock(handle);
+            }
+        }
+        CloseClipboard();
+        return text;
+    }
+
+    /** Replace the clipboard's contents with `text`. */
+    pub(crate) static fn setText(win : SysWindow, text : string) : bool {
+        // A UTF-8 string never needs more UTF-16 units than it has bytes, plus the terminator.
+        let units : i64 = text.byteLength + 1;
+        let block : ptr = GlobalAlloc(GMEM_MOVEABLE, units * 2);
+        if (Raw::isNil(block)) {
+            return false;
+        }
+        let locked : ptr = GlobalLock(block);
+        if (Raw::isNil(locked)) {
+            GlobalFree(block);
+            return false;
+        }
+        Mem::wideFrom(Raw::addr(locked), text, units as i32);
+        GlobalUnlock(block);
+
+        if (!openClipboard(win.handle())) {
+            GlobalFree(block);
+            return false;
+        }
+        EmptyClipboard();
+        let taken : bool = !Raw::isNil(SetClipboardData(CF_UNICODETEXT, block));
+        if (!taken) {
+            GlobalFree(block);
+        }
+        CloseClipboard();
+        return taken;
+    }
+}

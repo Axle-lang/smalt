@@ -307,6 +307,96 @@ pub extern "C" struct XClientMessageEvent {
 }
 
 /**
+ * `XSelectionRequestEvent` — a client asking this window, as owner of a selection, for its
+ * contents in a given form.
+ */
+pub extern "C" struct XSelectionRequestEvent {
+    /** `int type`. */
+    pub type_     : i32;
+
+    /** `unsigned long serial`. */
+    pub serial    : i64;
+
+    /** `Bool send_event`. */
+    pub send_event : i32;
+
+    /** `Display *display`. */
+    pub display   : ptr;
+
+    /** `Window owner` — this window. */
+    pub owner     : i64;
+
+    /** `Window requestor` — who asked, and where the answer goes. */
+    pub requestor : i64;
+
+    /** `Atom selection` — which selection: `CLIPBOARD`, say. */
+    pub selection : i64;
+
+    /** `Atom target` — the form wanted: `UTF8_STRING`, `TARGETS`. */
+    pub target    : i64;
+
+    /** `Atom property` — the property of `requestor` to write the answer to. */
+    pub property  : i64;
+
+    /** `Time time`. */
+    pub time      : i64;
+}
+
+/** `XSelectionEvent` — the owner's answer, sent to the requestor: `property` is `None` for a refusal. */
+pub extern "C" struct XSelectionEvent {
+    /** `int type`. */
+    pub type_     : i32;
+
+    /** `unsigned long serial`. */
+    pub serial    : i64;
+
+    /** `Bool send_event`. */
+    pub send_event : i32;
+
+    /** `Display *display`. */
+    pub display   : ptr;
+
+    /** `Window requestor`. */
+    pub requestor : i64;
+
+    /** `Atom selection`. */
+    pub selection : i64;
+
+    /** `Atom target`. */
+    pub target    : i64;
+
+    /** `Atom property` — where the data is, or `None`. */
+    pub property  : i64;
+
+    /** `Time time`. */
+    pub time      : i64;
+}
+
+/** `XSelectionClearEvent` — another client took a selection this window owned. */
+pub extern "C" struct XSelectionClearEvent {
+    /** `int type`. */
+    pub type_     : i32;
+
+    /** `unsigned long serial`. */
+    pub serial    : i64;
+
+    /** `Bool send_event`. */
+    pub send_event : i32;
+
+    /** `Display *display`. */
+    pub display   : ptr;
+
+    /** `Window window`. */
+    pub window    : i64;
+
+    /** `Atom selection`. */
+    pub selection : i64;
+
+    /** `Time time`. */
+    pub time      : i64;
+}
+
+/**
  * `XImage` — the description `XPutImage` reads a client-side buffer
  * through.
  *

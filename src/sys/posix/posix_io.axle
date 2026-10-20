@@ -1,0 +1,41 @@
+// posix_io — pipes and descriptor reads and writes, declared once for both Linux ports.
+//
+// Two features need a pipe. The Wayland clipboard moves text through one (the compositor hands each
+// side an end), and the wake-up that lets another thread rouse a sleeping event loop is a pipe whose
+// read end the loop polls alongside the window system's connection. Both Linux ports need the same
+// three calls, so they are declared here and not in either port's own list — one `extern`
+// declaration per symbol per program is a rule (LIMITATIONS §2.14).
+//
+// Everything here is non-blocking by construction: a pipe made by `pipe2` with `O_NONBLOCK` answers
+// `read` and `write` at once, with -1 and `EAGAIN` when there is nothing to take or no room to give,
+// and the callers wait with `poll`, which has a deadline.
+
+/** `int pipe2(int pipefd[2], int flags)` — two descriptors, the read end first. */
+@link(symbol = "pipe2")
+pub extern "C" fn pipe2(fds : ptr, flags : i32) : i32;
+
+/** `ssize_t read(int, void *, size_t)` — bytes read, 0 at the end, -1 on error or when it would block. */
+@link(symbol = "read")
+pub extern "C" fn readFd(fd : i32, buffer : ptr, bytes : i64) : i64;
+
+/** `ssize_t write(int, const void *, size_t)` — bytes written, or -1. */
+@link(symbol = "write")
+pub extern "C" fn writeFd(fd : i32, buffer : ptr, bytes : i64) : i64;
+
+/** `sighandler_t signal(int, sighandler_t)` — what to do on a signal; `SIG_IGN` is to ignore it. */
+@link(symbol = "signal")
+pub extern "C" fn signal(sig : i32, handler : ptr) : ptr;
+
+/** `SIGPIPE` — a write to a pipe nobody reads — and `SIG_IGN`, the handler value that ignores one. */
+pub(crate) const SIGPIPE : i32 = 13;
+pub(crate) const SIG_IGN : i64 = 1;
+
+/** `O_NONBLOCK` — `read` and `write` never wait. */
+pub(crate) const O_NONBLOCK : i32 = 2048;
+
+/** `O_CLOEXEC` — the descriptor is this process's business and does not leak into one it starts. */
+pub(crate) const O_CLOEXEC : i32 = 524288;
+
+/** `POLLIN` — there is something to read; `POLLOUT` — there is room to write. */
+pub(crate) const POLL_READABLE : i16 = 1;
+pub(crate) const POLL_WRITABLE : i16 = 4;

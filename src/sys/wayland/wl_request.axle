@@ -52,6 +52,21 @@ pub(crate) const WL_SEAT_GET_POINTER : i32 = 0;
 /** `wl_seat.get_keyboard`. */
 pub(crate) const WL_SEAT_GET_KEYBOARD : i32 = 1;
 
+/** `wl_data_device_manager.create_data_source`, and `.get_data_device`. */
+pub(crate) const WL_DATA_MANAGER_CREATE_DATA_SOURCE : i32 = 0;
+pub(crate) const WL_DATA_MANAGER_GET_DATA_DEVICE : i32 = 1;
+
+/** `wl_data_device.set_selection`. */
+pub(crate) const WL_DATA_DEVICE_SET_SELECTION : i32 = 1;
+
+/** `wl_data_source.offer`, and `.destroy`. */
+pub(crate) const WL_DATA_SOURCE_OFFER : i32 = 0;
+pub(crate) const WL_DATA_SOURCE_DESTROY : i32 = 1;
+
+/** `wl_data_offer.receive`, and `.destroy`. */
+pub(crate) const WL_DATA_OFFER_RECEIVE : i32 = 1;
+pub(crate) const WL_DATA_OFFER_DESTROY : i32 = 2;
+
 /** `wl_pointer.set_cursor`. */
 pub(crate) const WL_POINTER_SET_CURSOR : i32 = 0;
 
