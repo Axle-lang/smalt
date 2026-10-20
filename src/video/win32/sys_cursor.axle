@@ -31,50 +31,12 @@
 
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
-use crate::sys::win32_types::{POINT, RECT};
-use crate::sys::win32_user::{ClientToScreen, GetClientRect, GetCursorPos, LoadCursorW, ScreenToClient, SetCursor, SetCursorPos, ShowCursor};
+use crate::sys::win32_types::POINT;
+use crate::sys::win32_user::{ClientToScreen, LoadCursorW, SetCursor, SetCursorPos, ShowCursor};
 use crate::video::cursor::CURSOR_HIDDEN;
 use crate::video::sys_window::SysWindow;
-use crate::video::win_const::{IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_HELP, IDC_IBEAM, IDC_NO, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IDC_WAIT};
+use crate::video::win_cursor::{atomOf, pointerInClient};
 use crate::video::win_proc::recordCursor;
-
-/** The `IDC_*` atom of the system cursor that draws shape `shape`. */
-fn atomOf(shape : i32) : i64 {
-    return match shape {
-        1 => IDC_HAND,
-        2 => IDC_IBEAM,
-        3 => IDC_CROSS,
-        4 => IDC_SIZEWE,
-        5 => IDC_SIZENS,
-        6 => IDC_SIZENWSE,
-        7 => IDC_SIZENESW,
-        8 => IDC_SIZEALL,
-        9 => IDC_WAIT,
-        10 => IDC_NO,
-        11 => IDC_HELP,
-        _ => IDC_ARROW,
-    };
-}
-
-/** Whether the pointer is over `hwnd`'s client area right now. */
-fn pointerInClient(hwnd : ptr) : bool {
-    let pointBlock = new Blob(sizeof<POINT>());
-    defer pointBlock.close();
-    let rectBlock = new Blob(sizeof<RECT>());
-    defer rectBlock.close();
-    unsafe {
-        let point : ptr<POINT> = pointBlock.at() as ptr<POINT>;
-        let rect : ptr<RECT> = rectBlock.at() as ptr<RECT>;
-        if (GetCursorPos(point) == 0) {
-            return false;
-        }
-        if (ScreenToClient(hwnd, point) == 0 || GetClientRect(hwnd, rect) == 0) {
-            return false;
-        }
-        return (*point).x >= (*rect).left && (*point).x < (*rect).right
-            && (*point).y >= (*rect).top && (*point).y < (*rect).bottom;
-    }
-}
 
 /** Pointer confinement, visibility and shape. */
 class SysCursor {

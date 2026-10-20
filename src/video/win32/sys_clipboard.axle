@@ -21,24 +21,10 @@ use crate::kernel::codec::Codec;
 use crate::kernel::mem::Mem;
 use crate::kernel::raw::Raw;
 use crate::sys::win32_const::{CF_UNICODETEXT, GMEM_MOVEABLE};
-use crate::sys::win32_kernel::{GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock, Sleep};
-use crate::sys::win32_user::{CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard, SetClipboardData};
+use crate::sys::win32_kernel::{GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock};
+use crate::sys::win32_user::{CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, SetClipboardData};
+use crate::video::win_clipboard::openClipboard;
 use crate::video::sys_window::SysWindow;
-
-/** How many times a busy clipboard is tried, and the pause between tries in milliseconds. */
-const OPEN_ATTEMPTS : i32 = 5;
-const OPEN_PAUSE_MS : i32 = 3;
-
-/** Open the clipboard for `owner`, waiting a little for whoever has it. */
-fn openClipboard(owner : ptr) : bool {
-    for (attempt of 0..OPEN_ATTEMPTS) {
-        if (OpenClipboard(owner) != 0) {
-            return true;
-        }
-        Sleep(OPEN_PAUSE_MS);
-    }
-    return false;
-}
 
 /** The system clipboard. */
 class SysClipboard {

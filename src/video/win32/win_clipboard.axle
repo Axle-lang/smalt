@@ -1,0 +1,22 @@
+// win_clipboard — opening the Win32 clipboard, which the seam's methods share.
+//
+// Kept out of `SysClipboard`'s file because that is a seam, and a seam offers the same surface on
+// every port: a helper this port alone has lives in a module of its own.
+
+use crate::sys::win32_kernel::Sleep;
+use crate::sys::win32_user::OpenClipboard;
+
+/** How many times a busy clipboard is tried, and the pause between tries in milliseconds. */
+const OPEN_ATTEMPTS : i32 = 5;
+const OPEN_PAUSE_MS : i32 = 3;
+
+/** Open the clipboard for `owner`, waiting a little for whoever has it. */
+pub(crate) fn openClipboard(owner : ptr) : bool {
+    for (attempt of 0..OPEN_ATTEMPTS) {
+        if (OpenClipboard(owner) != 0) {
+            return true;
+        }
+        Sleep(OPEN_PAUSE_MS);
+    }
+    return false;
+}

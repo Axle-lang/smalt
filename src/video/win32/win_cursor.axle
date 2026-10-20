@@ -1,0 +1,47 @@
+// win_cursor — what the Win32 cursor code needs that is not the seam's.
+//
+// `SysCursor` is a seam: every port offers it with the same surface, so a helper that only this port
+// has lives here, in a module of its own, rather than beside the seam's methods.
+
+use crate::kernel::blob::Blob;
+use crate::sys::win32_types::{POINT, RECT};
+use crate::sys::win32_user::{GetClientRect, GetCursorPos, ScreenToClient};
+use crate::video::win_const::{IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_HELP, IDC_IBEAM, IDC_NO, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IDC_WAIT};
+
+/** The `IDC_*` atom of the system cursor that draws shape `shape`. */
+pub(crate) fn atomOf(shape : i32) : i64 {
+    return match shape {
+        1 => IDC_HAND,
+        2 => IDC_IBEAM,
+        3 => IDC_CROSS,
+        4 => IDC_SIZEWE,
+        5 => IDC_SIZENS,
+        6 => IDC_SIZENWSE,
+        7 => IDC_SIZENESW,
+        8 => IDC_SIZEALL,
+        9 => IDC_WAIT,
+        10 => IDC_NO,
+        11 => IDC_HELP,
+        _ => IDC_ARROW,
+    };
+}
+
+/** Whether the pointer is over `hwnd`'s client area right now. */
+pub(crate) fn pointerInClient(hwnd : ptr) : bool {
+    let pointBlock = new Blob(sizeof<POINT>());
+    defer pointBlock.close();
+    let rectBlock = new Blob(sizeof<RECT>());
+    defer rectBlock.close();
+    unsafe {
+        let point : ptr<POINT> = pointBlock.at() as ptr<POINT>;
+        let rect : ptr<RECT> = rectBlock.at() as ptr<RECT>;
+        if (GetCursorPos(point) == 0) {
+            return false;
+        }
+        if (ScreenToClient(hwnd, point) == 0 || GetClientRect(hwnd, rect) == 0) {
+            return false;
+        }
+        return (*point).x >= (*rect).left && (*point).x < (*rect).right
+            && (*point).y >= (*rect).top && (*point).y < (*rect).bottom;
+    }
+}
