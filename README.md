@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://axle-lang.dev"><img alt="Powered by Axle" src="https://img.shields.io/badge/powered%20by-Axle-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
-  <a href="https://axle-lang.dev"><img alt="Axle 0.14.0+" src="https://img.shields.io/badge/axle-0.14.0%2B-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
+  <a href="https://axle-lang.dev"><img alt="Axle 0.18.0+" src="https://img.shields.io/badge/axle-0.18.0%2B-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
 </p>
 <p align="center">
   <img alt="Rendering: CPU or Vulkan" src="https://img.shields.io/badge/rendering-CPU%20%C2%B7%20Vulkan-FF7A45?style=flat-square&labelColor=1b1b2b">
@@ -160,10 +160,10 @@ That is the whole setup. No DLL beside the binary, no `[link]` section — `gdi3
 
 ### Prerequisite
 
-Only the Axle compiler, **v0.14.0 or newer**:
+Only the Axle compiler, **v0.18.0 or newer**:
 
 ```bash
-axle --version      # must print 0.14.0 or higher
+axle --version      # must print 0.18.0 or higher
 ```
 
 0.14 is a floor, not a preference: it spells annotations as values —
@@ -177,7 +177,7 @@ no version that builds both.
 
 <br>
 
-- **Windows** — install the x64 `.msi` from the `v0.14.0` (or newer) release; it puts `axle.exe` in `C:\Program Files (x86)\Axle\` and on your `PATH`.
+- **Windows** — install the x64 `.msi` from the `v0.18.0` (or newer) release; it puts `axle.exe` in `C:\Program Files (x86)\Axle\` and on your `PATH`.
 - **Other platforms** — see [axle-lang.dev](https://axle-lang.dev).
 
 On Linux, the X11 port needs `libx11-dev` and `libasound2-dev`; the
