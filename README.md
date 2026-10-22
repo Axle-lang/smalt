@@ -93,7 +93,8 @@ smalt = { path = "../smalt" }
 ```rs
 use smalt::{Platform, PlatformError, WindowDesc, Events, EventKind, Clock, FramePacer, SoftDevice, Camera, Color};
 
-// `main` is the only place errors stop: everything below propagates with `?`.
+// `main` is the only place errors stop: a function declared `! PlatformError`
+// lets a raise from the constructor or `open` leave it without any ceremony.
 fn main() : i32 {
     try {
         return run();
@@ -107,12 +108,12 @@ fn run() : i32 ! PlatformError {
     // --- Open the platform, and the window on it ---------------------------
     // Every handle here is `Closeable`, so the compiler refuses the path that
     // forgets one. `defer` runs on the way out, including the error way out.
-    let platform = new Platform()?;
+    let platform = new Platform();
     defer platform.close();
 
     let win = platform.open(
         WindowDesc { title: "game", w: 1280, h: 720, resizable: true }
-    )?;
+    );
     defer win.close();
 
     // --- The three things a frame is made of -------------------------------
@@ -129,7 +130,7 @@ fn run() : i32 ! PlatformError {
 
     // --- The loop ----------------------------------------------------------
     let pacer = new FramePacer(60);
-    let running = true;
+    let mut running = true;
     while (running) {
         // 1. time: `dt` is the variable span since the last tick
         let dt = pacer.tick(clock);
@@ -166,10 +167,11 @@ Only the Axle compiler, **v0.18.0 or newer**:
 axle --version      # must print 0.18.0 or higher
 ```
 
-0.14 is a floor, not a preference: it spells annotations as values —
-`@layout(packed)`, `@link(symbol = "…")` — and refuses the older
-`@packed` / `@link_name` the BMP headers and the Wayland imports used
-to carry. An older compiler does not know the new spellings, so there is
+0.18 is a floor, not a preference: it spells annotations as values —
+`@layout(packed)`, `@link(symbol = "…")` — refuses the older
+`@packed` / `@link_name`, and rejects a write through a pointer bound
+with a plain `let` (**E0004**), so every binding smalt writes through is
+`let mut`. An older compiler does not know the new spellings, so there is
 no version that builds both.
 
 <details>
@@ -232,6 +234,8 @@ A program that already has a renderer should not have to adopt one to get a wind
 | `SDL_Scancode` | `Scancode` — same numbering, same meaning |
 | `SDL_GetMouseState` | `events.mouseX()` / `mouseY()` / `isButtonDown` |
 | `SDL_SetWindowRelativeMouseMode` | `events.setRelativeMouse(true)` |
+| `SDL_GetClipboardText` / `SDL_SetClipboardText` | `win.clipboardText()` / `win.setClipboardText(text)` — text only |
+| `SDL_CreateSystemCursor` / `SDL_SetCursor` | `win.setCursor(CursorShape::…)` |
 | `SDL_GetTicks` | `clock.ticks()` |
 | `SDL_GetPerformanceCounter` | `clock.counter()` / `clock.frequency()` |
 | `SDL_Delay` / `SDL_DelayPrecise` | `clock.delay(ms)` / `clock.delayUntil(us)` |
@@ -241,6 +245,7 @@ A program that already has a renderer should not have to adopt one to get a wind
 | `SDL_SaveBMP` | `Bmp::write(path, frame)` |
 | `SDL_LoadFile` | `AssetFile::readAll(path)` |
 | `SDL_Rect` | `Rect` |
+| `SDL_UpdateWindowSurfaceRects` | `surface.presentRegion(win, x, y, w, h)`, with `Damage` to accumulate what changed |
 | `SDL_FillSurfaceRect` | `frame.fillRect(rect, packed)` — and `fillRound`, `border`, `shade`, `ring`, `spark` |
 | `SDL_SetClipRect` | `frame.clipped(rect)` — a *copy*, so there is no restore to forget |
 | *(SDL ships no font; SDL_ttf is a separate library and a C dependency)* | `BitmapFont::baked(Face::Ui)` — two faces baked in, anti-aliased; `draw` for a label, `drawBytes` for a figure, `fromTables` for a face of your own |
@@ -277,15 +282,15 @@ Layers, bottom to top. **A module never reaches upward.**
    │            vk/ the Vulkan backend            → doc/GPU.md            │
    ├─────────────────────────────────────────────────────────────────────┤
    │  render/   device (trait) · color · vertex · mesh · texture · camera │
-   │            frame (2-D) · glyphs · text · surface                     │
+   │            frame (2-D) · glyphs · text · surface · damage            │
    │            soft/ target · present · raster · shade · device_soft     │
    ├─────────────────────────────────────────────────────────────────────┤
    │  audio/    clip (WAV) · mixer (voices) · bank (variants)             │
    ├─────────────────────────────────────────────────────────────────────┤
    │  math/     vec · mat · quat · geom          io/  file · fmt · bmp    │
    ├─────────────────────────────────────────────────────────────────────┤
-   │  video/    window · display · scancode_set1                          │
-   │            SEAM  sys_window · sys_drain · sys_cursor                 │
+   │  video/    window · display · cursor · cursor_art · scancode_set1    │
+   │            SEAM  sys_window · sys_drain · sys_cursor · sys_clipboard │
    │                  sys_vk_surface   (a window → a VkSurfaceKHR)        │
    │            win32/   class · window · proc · keymap · const           │
    │            x11/     x_window_ops · x_decode · x_keymap               │
@@ -294,6 +299,7 @@ Layers, bottom to top. **A module never reaches upward.**
    │            posix/   evdev_keymap  ← both Linux ports                 │
    ├─────────────────────────────────────────────────────────────────────┤
    │  core/     init · error · timer · event · keyboard · mouse · pump    │
+   │            pool (WorkerPool)                                         │
    ├─────────────────────────────────────────────────────────────────────┤
    │  platform/ audio_format                                              │
    │            SEAM  sys_app · sys_clock · sys_screen · sys_blit         │
@@ -409,7 +415,7 @@ not beside the window that fills it — `x_surface`, the
 `HDC`, and `wl_drawable`, which holds more than either because Wayland
 has no server-side drawable at all.
 
-**The ten seams, and what each costs on each side.** (`sys_gpu_loader` and `sys_vk_surface`, at the foot of the table, are the two a GPU adds.)
+**The eleven seams, and what each costs on each side.** (`sys_gpu_loader` and `sys_vk_surface` are the two a GPU adds; `sys_clipboard` is the last.)
 
 | Seam | Win32 | X11 | Wayland |
 |---|---|---|---|
@@ -423,6 +429,7 @@ has no server-side drawable at all.
 | `sys_cursor` | `ClientToScreen` + `SetCursorPos`; `ShowCursor`'s balanced counter | `XWarpPointer` (window-relative); hiding is a cursor with no pixels | hiding is `set_cursor` with no surface; **there is no warp at all** — see below |
 | `sys_gpu_loader` | `LoadLibraryExW` of System32's `vulkan-1.dll` + `GetProcAddress` | `dlopen("libvulkan.so.1")` + `dlsym` — shared with Wayland, in `posix/` | ⟵ the same file |
 | `sys_vk_surface` | `vkCreateWin32SurfaceKHR(HINSTANCE, HWND)` | `vkCreateXlibSurfaceKHR(Display *, Window)` | `vkCreateWaylandSurfaceKHR(wl_display *, wl_surface *)` |
+| `sys_clipboard` | `OpenClipboard` / `GetClipboardData` (`CF_UNICODETEXT`) | the `CLIPBOARD` selection — served from our drain when another client asks | a `wl_data_device` that reports the selection, and a `wl_data_source` we offer |
 
 What is deliberately **not** duplicated: the PS/2 set-1 code block
 (`video/scancode_set1`), which Windows reads out of `lParam` bits 16..23
@@ -555,7 +562,7 @@ That is the CPU rasteriser. The GPU path — `Renderer`, `Scene`, the Vulkan bac
 
 ## 🚧 Not covered
 
-Gamepads, touch, clipboard, dialogs, IME, threads — and macOS. On the GPU side: **only Vulkan 1.0 exists** (no OpenGL, Direct3D or Metal), it **type-checks for Linux but has not been built or run there**, and it has no custom shaders, render targets or post effects. [`doc/GPU.md`](doc/GPU.md) says exactly what is there and what is checked.
+Gamepads, touch, dialogs, IME, clipboard formats other than text — and macOS. On the GPU side: **only Vulkan 1.0 exists** (no OpenGL, Direct3D or Metal), it **type-checks for Linux but has not been built or run there**, and it has no shadows, MSAA or instancing. [`doc/GPU.md`](doc/GPU.md) says exactly what is there and what is checked.
 
 On Wayland specifically: pointer warping, key repeat, text input, cursor
 restoration after a hide, and fractional scaling. Each is an addition
