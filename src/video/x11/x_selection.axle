@@ -98,7 +98,7 @@ pub(crate) fn answerRequest(win : SysWindow, event : ptr) : void {
 
         let reply = new Blob(X_EVENT_BYTES);
         defer reply.close();
-        let note : ptr<XSelectionEvent> = reply.at() as ptr<XSelectionEvent>;
+        let mut note : ptr<XSelectionEvent> = reply.at() as ptr<XSelectionEvent>;
         (*note).type_ = X_SELECTION_NOTIFY;
         (*note).send_event = X_TRUE;
         (*note).display = (*req).display;

@@ -46,7 +46,7 @@ pub(crate) fn registerCloseProtocol(win : SysWindow) : i64 {
     let slot = new Blob(8);
     defer slot.close();
     unsafe {
-        let list : ptr<i64> = slot.at() as ptr<i64>;
+        let mut list : ptr<i64> = slot.at() as ptr<i64>;
         *list = atom;
         XSetWMProtocols(win.display, win.window, list, WM_PROTOCOL_COUNT);
     }
@@ -58,7 +58,7 @@ pub(crate) fn pinSize(win : SysWindow, w : i32, h : i32) : void {
     let block = new Blob(sizeof<XSizeHints>());
     defer block.close();
     unsafe {
-        let hints : ptr<XSizeHints> = block.at() as ptr<XSizeHints>;
+        let mut hints : ptr<XSizeHints> = block.at() as ptr<XSizeHints>;
         (*hints).flags = X_SIZE_HINT_MIN_MAX;
         (*hints).min_width = w;
         (*hints).min_height = h;
@@ -83,7 +83,7 @@ pub(crate) fn removeDecorations(win : SysWindow) : void {
     let block = new Blob(sizeof<MotifWmHints>());
     defer block.close();
     unsafe {
-        let hints : ptr<MotifWmHints> = block.at() as ptr<MotifWmHints>;
+        let mut hints : ptr<MotifWmHints> = block.at() as ptr<MotifWmHints>;
         (*hints).flags = X_MOTIF_HINT_DECORATIONS;
         (*hints).decorations = MOTIF_NO_DECORATIONS;
         // The property is its own type, which is what the convention
@@ -241,21 +241,21 @@ pub(crate) fn noteMinimised(win : SysWindow, minimised : bool) : void {
 pub(crate) fn roundTrip(win : SysWindow, scratch : Blob, kind : i32, w : i32, h : i32) : bool {
     unsafe {
         Raw::clear(scratch.at(), X_EVENT_BYTES);
-        let any : ptr<XAnyEvent> = scratch.at() as ptr<XAnyEvent>;
+        let mut any : ptr<XAnyEvent> = scratch.at() as ptr<XAnyEvent>;
         (*any).type_ = kind;
         (*any).send_event = X_TRUE;
         (*any).display = win.display;
         (*any).window = win.window;
 
         if (kind == X_CONFIGURE_NOTIFY) {
-            let cfg : ptr<XConfigureEvent> = scratch.at() as ptr<XConfigureEvent>;
+            let mut cfg : ptr<XConfigureEvent> = scratch.at() as ptr<XConfigureEvent>;
             (*cfg).event = win.window;
             (*cfg).window = win.window;
             (*cfg).width = w;
             (*cfg).height = h;
         }
         if (kind == X_CLIENT_MESSAGE) {
-            let msg : ptr<XClientMessageEvent> = scratch.at() as ptr<XClientMessageEvent>;
+            let mut msg : ptr<XClientMessageEvent> = scratch.at() as ptr<XClientMessageEvent>;
             (*msg).message_type = XInternAtom(win.display, WM_PROTOCOLS_ATOM, X_FALSE);
             (*msg).format = X_MOTIF_HINTS_FORMAT;
             (*msg).data[0] = win.deleteAtom;

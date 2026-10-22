@@ -99,7 +99,7 @@ pub(crate) class SysBlit : Closeable {
             return;
         }
         unsafe {
-            let img = self.header();
+            let mut img = self.header();
             (*img).width = w;
             (*img).height = h;
             (*img).xoffset = 0;
@@ -163,7 +163,7 @@ pub(crate) class SysBlit : Closeable {
             }
 
             self.describe(putW, putH);
-            let img = self.header();
+            let mut img = self.header();
             (*img).data = source;
             XPutImage(
                 (*target).display,
@@ -225,7 +225,7 @@ pub(crate) class SysBlit : Closeable {
                 return;
             }
             self.describe(srcW, srcH);
-            let img = self.header();
+            let mut img = self.header();
             (*img).data = Raw::pixelsOf(pixels);
             XPutImage(
                 (*target).display,

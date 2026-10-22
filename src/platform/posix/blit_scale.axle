@@ -63,7 +63,7 @@ pub(crate) class ScaleScratch : Closeable {
         let xStep : i64 = ((srcW as i64) << ScaleScratch::FRACTION_BITS) / (dstW as i64);
         let yStep : i64 = ((srcH as i64) << ScaleScratch::FRACTION_BITS) / (dstH as i64);
         unsafe {
-            let dst : ptr<i32> = self.pixels.at() as ptr<i32>;
+            let mut dst : ptr<i32> = self.pixels.at() as ptr<i32>;
             let mut sy : i64 = 0;
             for (dy of 0..dstH) {
                 let srcRow : i64 = (sy >> ScaleScratch::FRACTION_BITS) * (srcW as i64);
