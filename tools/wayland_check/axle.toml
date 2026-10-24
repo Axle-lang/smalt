@@ -1,0 +1,9 @@
+[package]
+name = "wayland_check"
+version = "0.1.0"
+
+# The Wayland backend is selected by the feature on this edge. A command-line
+# `--features` reaches the root crate only, so this is where the request lives:
+# the dependency edge that names smalt.
+[dependencies]
+smalt = { path = "../..", features = ["wayland"] }

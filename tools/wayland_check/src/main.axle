@@ -1,0 +1,14 @@
+// wayland_check — the smallest program that makes the Wayland backend part of
+// the link.
+//
+// The feature is asked for on the dependency edge that names smalt, because
+// `axle build --features …` reaches the root crate and no further. What this
+// probe proves is the selection and the link, not a picture: `checkRecords` is
+// static and callable before initialisation, so a runner with no display can
+// build it and start it.
+
+use smalt::Platform;
+
+fn main() : void {
+    println("backend record check: " + Platform::checkRecords().toString());
+}

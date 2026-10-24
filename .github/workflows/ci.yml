@@ -2,13 +2,16 @@ name: CI
 
 # Every push to `dev` or `main`, and every pull request aimed at either.
 #
-# smalt promises three backends from one tree (Win32, X11, Wayland). The first two are proved here by
-# building what they build for, on the machine they are for:
+# smalt promises three backends from one tree (Win32, X11, Wayland), and each is proved by building what it
+# builds for, on the machine it is for:
 #
 #   seam      the one architectural invariant — no OS import outside a port directory — held by a script, so
 #             a stray `extern "C" from "user32"` is found here and not at a Linux linker a hundred files away;
 #   windows   the Win32 port: every example built, and the headless checks run;
 #   linux     the X11 port: every example built, and the headless checks run;
+#   wayland   the Wayland port, selected on the probe's dependency edge: the probe's ports table shows which
+#             backend is active. The port does not compile with 0.18.1 yet, so its build reports without
+#             failing the run until it does.
 #
 # The graphical examples are built and not run: a runner has no display. The headless ones (`self_check`,
 # `proc_check`, `gpu_check`, `audio_check`) answer with their failure count as the exit code. `proc_check`
@@ -161,3 +164,50 @@ jobs:
         continue-on-error: true
         run: ./examples/audio_check/target/audio_check
 
+  wayland:
+    name: Build (Linux x86_64, Wayland)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Axle and the link dependencies
+        run: |
+          sudo install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://apt.axle-lang.dev/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/axle.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/axle.gpg arch=amd64] https://apt.axle-lang.dev stable main" \
+            | sudo tee /etc/apt/sources.list.d/axle.list
+          sudo apt-get update
+          sudo apt-get install -y axle libwayland-dev libasound2-dev
+
+      - name: Check the compiler is new enough
+        run: |
+          got=$(axle --version | awk '{print $2}' | cut -d- -f1)
+          if [ "$(printf '%s\n%s\n' "$AXLE_MIN" "$got" | sort -V | head -n1)" != "$AXLE_MIN" ]; then
+            echo "axle $got is older than the required $AXLE_MIN"; exit 1
+          fi
+          echo "axle $got satisfies >= $AXLE_MIN"
+
+      - uses: actions/checkout@v4
+
+      # The probe names smalt with `features = ["wayland"]` on its dependency edge, which is the only place
+      # a dependency's feature can be asked for. This assertion is what makes the job about Wayland rather
+      # than about a flag that reached the root crate and stopped there.
+      - name: The Wayland port is the one selected
+        working-directory: tools/wayland_check
+        run: |
+          axle ports | tee ports.txt
+          grep -q 'wayland.*active' ports.txt
+
+      # The probe proves the selection. The port itself does not compile with
+      # 0.18.1 yet — ownership and `unsafe` errors under src/sys/wayland — so
+      # this step reports without failing the run until it is green; that is
+      # the day to flip `continue-on-error` to false.
+      - name: Build the probe
+        id: build
+        continue-on-error: true
+        working-directory: tools/wayland_check
+        run: axle build
+
+      - name: Run the probe
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        working-directory: tools/wayland_check
+        run: ./target/wayland_check
