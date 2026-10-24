@@ -1,0 +1,163 @@
+name: CI
+
+# Every push to `dev` or `main`, and every pull request aimed at either.
+#
+# smalt promises three backends from one tree (Win32, X11, Wayland). The first two are proved here by
+# building what they build for, on the machine they are for:
+#
+#   seam      the one architectural invariant — no OS import outside a port directory — held by a script, so
+#             a stray `extern "C" from "user32"` is found here and not at a Linux linker a hundred files away;
+#   windows   the Win32 port: every example built, and the headless checks run;
+#   linux     the X11 port: every example built, and the headless checks run;
+#
+# The graphical examples are built and not run: a runner has no display. The headless ones (`self_check`,
+# `proc_check`, `gpu_check`, `audio_check`) answer with their failure count as the exit code. `proc_check`
+# checks the Win32 window procedure, so it runs on Windows only; `audio_check` may find no sound device on a
+# runner, and reports without failing the run.
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The compiler these sources need. The installers serve whatever is current, so the jobs check instead of
+  # assuming: an older `axle` fails with one clear line rather than a hundred confusing ones.
+  AXLE_MIN: '0.18.0'
+
+jobs:
+  seam:
+    name: Seam (no OS outside a port)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tools/check_seam.sh
+
+  windows:
+    name: Build (Windows x86_64, Win32)
+    runs-on: windows-latest
+    steps:
+      - name: Install Axle
+        shell: pwsh
+        run: |
+          $msi = Join-Path $env:RUNNER_TEMP 'axle.msi'
+          Invoke-WebRequest -UseBasicParsing `
+            -Uri 'https://dl.axle-lang.dev/latest/axle-windows-x86_64.msi' -OutFile $msi
+          $p = Start-Process msiexec.exe -Wait -PassThru `
+            -ArgumentList '/i', "`"$msi`"", '/qn', '/norestart'
+          if ($p.ExitCode -ne 0) { throw "msiexec failed with exit code $($p.ExitCode)" }
+          $dir = $null
+          foreach ($k in 'HKLM:\SOFTWARE\WOW6432Node\Axle', 'HKLM:\SOFTWARE\Axle') {
+            if (-not $dir -and (Test-Path $k)) {
+              $dir = (Get-ItemProperty $k -Name InstallDir -ErrorAction SilentlyContinue).InstallDir
+            }
+          }
+          foreach ($c in 'C:\Program Files (x86)\Axle', 'C:\Program Files\Axle') {
+            if (-not $dir -and (Test-Path (Join-Path $c 'axle.exe'))) { $dir = $c }
+          }
+          if (-not $dir) { throw 'the MSI installed, but axle.exe was not found' }
+          Add-Content -Path $env:GITHUB_PATH -Value $dir.TrimEnd('\')
+          if (-not (Get-Command lld-link.exe -ErrorAction SilentlyContinue)) {
+            throw 'lld-link.exe is not on PATH; axle cannot link a Windows binary without it (install LLVM)'
+          }
+
+      - name: Check the compiler is new enough
+        shell: pwsh
+        run: |
+          $got = (((& axle --version) -split ' ')[1] -split '-')[0]
+          if ([version]$got -lt [version]$env:AXLE_MIN) { throw "axle $got is older than the required $env:AXLE_MIN" }
+          "axle $got satisfies >= $env:AXLE_MIN"
+
+      - uses: actions/checkout@v4
+
+      # The table of seams per port, with a tick for each: the answer to "what did it resolve".
+      - name: The ports this build resolves
+        run: axle ports
+
+      - name: Build every example
+        shell: pwsh
+        run: |
+          foreach ($d in Get-ChildItem examples -Directory) {
+            "── $($d.Name)"
+            Push-Location $d.FullName
+            axle build
+            $code = $LASTEXITCODE
+            Pop-Location
+            if ($code -ne 0) { throw "$($d.Name) failed to build" }
+          }
+
+      # Headless: no window, so they run on a runner. The exit code is the number of failures.
+      - name: Run the headless checks
+        shell: pwsh
+        run: |
+          $failed = @()
+          foreach ($n in 'self_check', 'proc_check', 'gpu_check') {
+            "── $n"
+            & ".\examples\$n\target\$n.exe"
+            if ($LASTEXITCODE -ne 0) { $failed += $n }
+          }
+          if ($failed.Count -gt 0) { throw "failed: $($failed -join ', ')" }
+
+      # A runner has no sound device, so the block cycle of the mixer may not have one to open.
+      - name: Run the audio check
+        continue-on-error: true
+        run: .\examples\audio_check\target\audio_check.exe
+
+  linux:
+    name: Build (Linux x86_64, X11)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Axle and the link dependencies
+        run: |
+          sudo install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://apt.axle-lang.dev/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/axle.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/axle.gpg arch=amd64] https://apt.axle-lang.dev stable main" \
+            | sudo tee /etc/apt/sources.list.d/axle.list
+          sudo apt-get update
+          # The `-dev` packages are for the linker's sake: the binary runs against the libX11 and libasound
+          # any desktop already has.
+          sudo apt-get install -y axle libx11-dev libasound2-dev
+
+      - name: Check the compiler is new enough
+        run: |
+          got=$(axle --version | awk '{print $2}' | cut -d- -f1)
+          if [ "$(printf '%s\n%s\n' "$AXLE_MIN" "$got" | sort -V | head -n1)" != "$AXLE_MIN" ]; then
+            echo "axle $got is older than the required $AXLE_MIN"; exit 1
+          fi
+          echo "axle $got satisfies >= $AXLE_MIN"
+
+      - uses: actions/checkout@v4
+
+      - name: The ports this build resolves
+        run: axle ports
+
+      # `set -e` explicitly, rather than leaning on the runner's `bash -e`: a
+      # failed example in the middle of the loop must fail the step, not be
+      # hidden by the one after it.
+      - name: Build every example
+        run: |
+          set -e
+          for d in examples/*/; do
+            echo "── $d"
+            (cd "$d" && axle build)
+          done
+
+      # `proc_check` is the Win32 window procedure (`SendMessageW`), so it is run on Windows only.
+      - name: Run the headless checks
+        run: |
+          failed=""
+          for n in self_check gpu_check; do
+            echo "── $n"
+            "./examples/$n/target/$n" || failed="$failed $n"
+          done
+          if [ -n "$failed" ]; then echo "failed:$failed"; exit 1; fi
+
+      - name: Run the audio check
+        continue-on-error: true
+        run: ./examples/audio_check/target/audio_check
+
