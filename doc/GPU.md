@@ -5,12 +5,12 @@ the design: what a game writes, what is behind it, who owns what, how it is chec
 because it is the reason the work was done — how a CPU-rasterised game such as
 [voxel-axle](https://github.com/Axle-lang/voxel-axle) moves onto it.
 
-> **Status.** It builds with `axle` 0.14.1 on Windows, `examples/gpu_check` passes,
+> **Status.** It builds with `axle` 0.20.0 on Windows, `examples/gpu_check` passes,
 > `examples/gpu_cube --gpu --smoke` draws, re-uploads, reads a frame back and tears down on a
 > discrete GPU through Vulkan (and `--software` on the CPU), and `examples/gpu_shaders` runs a
 > program's own mesh, background and pass shaders and checks the frame it reads back.
-> voxel-axle draws through it. The Linux ports type-check (`axle check --target
-> x86_64-unknown-linux-gnu`, X11 and Wayland) but have not been built or run — see
+> voxel-axle draws through it. On Linux the X11 port builds and its headless checks pass (Axle 0.20); the Vulkan path has not been run
+> there, and the Wayland port does not compile with the current compiler — see
 > [How it is checked](#how-it-is-checked-and-what-is-not).
 
 ## The idea
@@ -327,7 +327,7 @@ All of it is Axle, plus `check_seam.sh`:
 discrete GPU; its pixels are read back, not asserted); the program shaders, passes, texture
 updates and read-back under the validation layer (gpu_shaders checks their pixels, without it); the sub-allocator under random traffic; that the
 embedded SPIR-V is what the GLSL compiles to (see [Changing a shader](#changing-a-shader)); X11
-and Wayland surface creation, and any Linux build and run (they type-check); a swapchain rebuilt
+and Wayland surface creation, and any Linux Vulkan run (X11 builds, and the headless `gpu_check` passes there); a swapchain rebuilt
 under the validation layer (no run resizes the window); a lost device or surface (the paths are
 written, not provoked); high-DPI; multiple monitors.
 
@@ -355,7 +355,7 @@ pixels within four levels of each other.
 
 ## Limits and next steps
 
-* **Linux type-checks but has not been built or run** — see the status note at the top.
+* **Linux: X11 builds and `gpu_check` passes; the Vulkan path has not run there**, and the Wayland port does not compile with the current compiler — see the status note at the top.
 * **A program's shaders are SPIR-V it compiles itself** (`tools/spirv_tables.py`); the CPU
   fallback cannot run them. A pass reads two colour targets and the depth, no more.
 * **No shadow maps, no MSAA, no instancing.** A program draws shadows the way voxel does — baked

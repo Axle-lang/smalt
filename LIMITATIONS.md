@@ -13,7 +13,7 @@ Three sections, because the three have different answers:
   were taken from prose instead, and all three were wrong; they now say
   what actually happens, and say that they used to say otherwise.
 - [**What is verified, and how far**](#3-what-is-verified-and-how-far) —
-  which claims are tested, which are type-checked only, and which are
+  which claims are tested, which are only type-checked, and which are
   neither.
 
 A line marked **★** is one where the limitation has a workaround that is
@@ -28,7 +28,7 @@ already in the source; follow the reference and you will find it.
 There is one, and it is Vulkan 1.0. [`doc/GPU.md`](doc/GPU.md) is the design; this is the
 account of what it does not do.
 
-**It builds and runs on Windows.** With axle 0.14.1 every example builds, `examples/gpu_check`
+**It builds and runs on Windows.** With axle 0.20.0 every example builds, `examples/gpu_check`
 passes, and `gpu_cube --gpu --smoke` (and `--software --smoke`) draws, releases and re-uploads
 while frames are in flight, reads a frame back, and tears down — on a discrete GPU. The built-in
 path ran once under the Khronos validation layer with synchronization checks without one
@@ -36,8 +36,9 @@ message; the program shaders, passes, texture updates and read-back (`examples/g
 which checks the pixels it reads back) have not been run under it. Not established: that the
 built-in shading's picture is right (its pixels are read back, not asserted), that the committed
 SPIR-V is what the GLSL compiles to (`tools/build_shaders.sh` regenerates it), the sub-allocator
-under random traffic, a Linux build and run (both ports only type-check), and X11 / Wayland
-surface creation, which has never executed (the records' layouts are checked).
+under random traffic, a Vulkan run on Linux, and X11 / Wayland surface creation, which has never
+executed (the records' layouts are checked). The X11 build compiles every example and its headless
+checks pass on Linux.
 
 What the GPU path does *not* have:
 
@@ -82,14 +83,16 @@ selectors — possible through the same FFI, and not written.
 
 ### 1.3 Input and desktop integration
 
-No gamepads, no touch, no clipboard, no file dialogs, no IME, no
+No gamepads, no touch, no clipboard formats other than text, no file dialogs, no IME, no
 drag-and-drop, no multi-window input routing. Display enumeration covers
 the **primary monitor only** (`src/video/display.axle` says which calls
 the rest would need).
 
 ### 1.4 Wayland, specifically
 
-The Wayland port is real but thinner than the X11 one, and each gap is an
+**Status: it does not compile with Axle 0.20.0.** `axle build` on `tools/wayland_check` reports close to two hundred E0004 (bindings assigned through without `let mut`), two E0707 (a `ptr` cast outside an `unsafe` block) and one E0003 (`MANAGER_REQUESTS` declared twice). CI reports the Wayland build without failing the run until it is green. The X11 port is the one to use.
+
+The Wayland port is thinner than the X11 one, and each gap is an
 extension rather than a bug:
 
 | Missing | Needs |
@@ -481,7 +484,8 @@ the window procedure.
 ### 3.2 Type-checked on every port, run on one
 
 `axle check --target …` and `axle ports` verify all three ports from any
-machine, and both are clean. **They are only run on Windows here.**
+machine. The Win32 and X11 builds are clean; the Wayland one is not (§1.4). **The graphical paths have been run on Windows,
+and on Linux only through X11 under Xvfb; the headless checks (`self_check`, `gpu_check`) pass on both.**
 
 The one addition where that gap matters is `Events::wait`:
 
