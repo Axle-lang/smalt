@@ -7,7 +7,7 @@ The README is the tour; this is the machinery. Each section is independent.
 - [The 2-D surface](#the-2-d-surface) · [The event loop that sleeps](#the-event-loop-that-sleeps)
 - [The rendering pipeline](#the-rendering-pipeline) · [Notes for anyone extending this](#notes-for-anyone-extending-this)
 
-![One tree, three backends](img/ports.svg)
+![One tree, three backends](img/ports.png)
 
 ## Ports in depth
 

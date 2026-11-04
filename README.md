@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="doc/img/banner.svg" alt="smalt — a window, an event queue and a 3D renderer, written in Axle" width="100%">
+<img src="doc/img/banner.png" alt="smalt — a window, an event queue and a 3D renderer, written in Axle" width="100%">
 
 <br>
 
@@ -210,7 +210,7 @@ the shared library the desktop already has.
 
 </details>
 
-![A frame: time, input, simulate, draw, present](doc/img/frame-loop.svg)
+![A frame: time, input, simulate, draw, present](doc/img/frame-loop.png)
 
 ## 🕹️ Examples
 
@@ -260,13 +260,13 @@ A program that already has a renderer should not have to adopt one to get a wind
 
 ## 🏛️ Architecture
 
-<p align="center"><img src="doc/img/architecture.svg" alt="smalt's layers, bottom to top, and where the operating system lives" width="860"></p>
+<p align="center"><img src="doc/img/architecture.png" alt="smalt's layers, bottom to top, and where the operating system lives" width="860"></p>
 
 **A module never reaches upward.** The operating system lives under `src/*/<os>/` and nowhere else, and not one `use` in the portable half names a platform — `tools/check_seam.sh` is that sentence, enforced.
 
 ### One tree, three backends
 
-<p align="center"><img src="doc/img/ports.svg" alt="One source tree builds three backends; the target and a feature pick the port" width="860"></p>
+<p align="center"><img src="doc/img/ports.png" alt="One source tree builds three backends; the target and a feature pick the port" width="860"></p>
 
 There is no `#[cfg]` in Axle, and there is not one here either. A crate declares its **ports** in `axle.toml` — a condition and the directories that carry it — and a module path resolves to `<path>.axle` when a capability has one implementation, or to a file in the *active* port's directory when it has one per backend:
 
@@ -291,7 +291,7 @@ The seams, what each costs on each side, and why the platform seam is a file bou
 
 ### Three ways to draw
 
-<p align="center"><img src="doc/img/rendering-paths.svg" alt="Renderer, SoftDevice, or your own renderer over a framebuffer" width="860"></p>
+<p align="center"><img src="doc/img/rendering-paths.png" alt="Renderer, SoftDevice, or your own renderer over a framebuffer" width="860"></p>
 
 A program that already has a renderer should not have to adopt one to get a window: smalt stays a framebuffer underneath, and ships two programs (`donut3d`, `mario3d`) that use it that way. The CPU rasteriser is described in [`doc/INTERNALS.md`](doc/INTERNALS.md#the-rendering-pipeline); the GPU path — `Renderer`, `Scene`, the Vulkan backend, and how a CPU-rasterised game moves onto it — in [`doc/GPU.md`](doc/GPU.md).
 

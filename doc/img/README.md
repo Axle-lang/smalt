@@ -1,3 +1,3 @@
 # Illustrations
 
-The SVGs in this folder embed subsets of **Inter** and **JetBrains Mono** (both SIL Open Font License 1.1) so that they look the same on every machine; only the characters each picture uses are included.
+The PNGs in this folder are rendered from HTML pages at twice their size, in one palette: a quiet dark page, one accent, colour that means something.
