@@ -217,7 +217,7 @@ pub class MeshBuilder {
             Mem::addressOf(self.verts),
             (self.vcount as i64) * (MeshBuilder::VERTEX_BYTES as i64)
         );
-        free(self.verts);
+        drop self.verts;
         self.verts = next;
         self.vcap = cap;
         return true;
@@ -234,7 +234,7 @@ pub class MeshBuilder {
         }
         let next : i32[] = malloc<i32>(cap as i64);
         Mem::copy(Mem::addressOf(next), Mem::addressOf(self.indices), (self.icount as i64) * 4);
-        free(self.indices);
+        drop self.indices;
         self.indices = next;
         self.icap = cap;
         return true;

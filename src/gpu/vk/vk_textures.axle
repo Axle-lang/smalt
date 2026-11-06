@@ -362,7 +362,7 @@ pub(crate) class VkTextures {
         if (tailBytes > 0) {
             let tail : i32[] = img.mipTailOf(mips, desc.cutout, desc.srgb);
             Mem::copy(staging.mapped() + img.byteCount(), Mem::addressOf(tail), tailBytes);
-            free(tail);
+            drop tail;
         }
 
         let usage : i32 = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;

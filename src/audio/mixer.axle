@@ -348,7 +348,7 @@ pub class Mixer : Closeable {
 
     /** Stop the device. The clips are the bank's to release. */
     pub fn close(self) : void {
-        free(self.voices);
+        drop self.voices;
         self.audio.close();
     }
 }

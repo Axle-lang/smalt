@@ -358,7 +358,7 @@ pub class Image {
             sw = dw;
             sh = dh;
         }
-        free(lin);
+        drop lin;
         return tail;
     }
 

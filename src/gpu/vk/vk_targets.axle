@@ -147,7 +147,7 @@ pub(crate) class VkTargets {
         fi.height = self.h;
         fi.layers = 1;
         let r : i32 = ctx.table.createFramebuffer(ctx.device, fi, Raw::at(ctx.scratch));
-        free(at);
+        drop at;
         if (!VkErr::ok(r)) {
             return 0;
         }
@@ -163,7 +163,7 @@ pub(crate) class VkTargets {
         ai.descriptorSetCount = 1;
         ai.pSetLayouts = VkAddr::handles(layouts);
         let r : i32 = ctx.table.allocateDescriptorSets(ctx.device, ai, Raw::at(ctx.scratch));
-        free(layouts);
+        drop layouts;
         if (!VkErr::ok(r)) {
             return 0;
         }
@@ -193,8 +193,8 @@ pub(crate) class VkTargets {
         let mut w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
         w[0] = write;
         ctx.table.updateDescriptorSets(ctx.device, 1, VkAddr::writeDescriptorSet(w), 0, Raw::nil());
-        free(w);
-        free(ii);
+        drop w;
+        drop ii;
         return set;
     }
 

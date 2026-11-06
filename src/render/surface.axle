@@ -123,7 +123,7 @@ pub class Surface : Closeable {
         }
         self.w = w;
         self.h = h;
-        free(self.colour);
+        drop self.colour;
         self.colour = malloc<i32>((w as i64) * h);
     }
 

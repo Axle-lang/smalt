@@ -97,7 +97,7 @@ pub class RenderTarget {
         self.w = w;
         self.h = h;
         let count = (w as i64) * h;
-        free(self.color);
+        drop self.color;
         self.color = malloc<i32>(count);
         self.depth = malloc<f32>(count);
     }

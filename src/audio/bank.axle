@@ -127,6 +127,6 @@ pub class SoundBank : Closeable {
         for (i of 0..self.count) {
             self.clips[i].close();
         }
-        free(self.clips);
+        drop self.clips;
     }
 }
