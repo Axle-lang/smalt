@@ -42,22 +42,22 @@ use crate::video::sys_window::SysWindow;
  */
 pub struct WindowDesc {
     /** Caption text. */
-    pub title      : string = "smalt";
+    pub title : string = "smalt";
 
     /** Client-area width, in pixels. */
-    pub w          : i32 = 1280;
+    pub w : i32 = 1280;
 
     /** Client-area height, in pixels. */
-    pub h          : i32 = 720;
+    pub h : i32 = 720;
 
     /** Whether the user may resize it; the framebuffer follows. */
-    pub resizable  : bool = false;
+    pub resizable : bool = false;
 
     /** No caption, no border — the shape a fullscreen-ish game wants. */
     pub borderless : bool = false;
 
     /** Create it hidden; `show()` reveals it. */
-    pub hidden     : bool = false;
+    pub hidden : bool = false;
 }
 
 /**

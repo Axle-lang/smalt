@@ -22,8 +22,8 @@ use crate::kernel::raw::Raw;
 use crate::sys::wide::Wide;
 use crate::sys::win32_types::WNDCLASSEXW;
 use crate::sys::win32_user::{RegisterClassExW, LoadCursorW};
-use crate::video::win_proc::windowProc;
 use crate::video::win_const::{CS_HREDRAW, CS_VREDRAW, CS_OWNDC, IDC_ARROW};
+use crate::video::win_proc::windowProc;
 
 /** The class every smalt window is created from. */
 const WIN_CLASS_NAME : string = "smalt.window";

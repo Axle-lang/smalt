@@ -17,7 +17,7 @@
  */
 pub extern "C" struct timespec {
     /** `time_t tv_sec` — whole seconds. */
-    pub tv_sec  : i64;
+    pub tv_sec : i64;
 
     /** `long tv_nsec` — nanoseconds, 0..999999999. */
     pub tv_nsec : i64;

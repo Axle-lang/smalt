@@ -9,10 +9,16 @@ use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
 use crate::sys::wide::Wide;
 use crate::sys::win32_types::RECT;
-use crate::sys::win32_user::{CreateWindowExW, DestroyWindow, AdjustWindowRectEx, ShowWindow, UpdateWindow, SetWindowTextW, SetForegroundWindow, IsWindow, GetDC, SetWindowLongPtrW};
-use crate::video::win_const::GWLP_USERDATA;
+use crate::sys::win32_user::{
+    CreateWindowExW, DestroyWindow, AdjustWindowRectEx, ShowWindow, UpdateWindow, SetWindowTextW,
+    SetForegroundWindow, IsWindow, GetDC, SetWindowLongPtrW
+};
 use crate::video::win_class::WinClass;
-use crate::video::win_const::{WS_OVERLAPPEDWINDOW, WS_CAPTION, WS_SYSMENU, WS_MINIMIZEBOX, WS_POPUP, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, CW_USEDEFAULT, SW_SHOW, SW_HIDE};
+use crate::video::win_const::GWLP_USERDATA;
+use crate::video::win_const::{
+    WS_OVERLAPPEDWINDOW, WS_CAPTION, WS_SYSMENU, WS_MINIMIZEBOX, WS_POPUP, WS_CLIPCHILDREN,
+    WS_CLIPSIBLINGS, CW_USEDEFAULT, SW_SHOW, SW_HIDE
+};
 
 /** HWND creation, teardown, and the state polled in place of sent messages. */
 class WinWindow {
@@ -38,7 +44,13 @@ class WinWindow {
      * `AdjustWindowRectEx` before creation. Skipping that step is the
      * classic bug where a 1280×720 request yields a 1264×681 framebuffer.
      */
-    pub(crate) static fn create(instance : ptr, title : string, w : i32, h : i32, style : i32) : ptr {
+    pub(crate) static fn create(
+        instance : ptr,
+        title : string,
+        w : i32,
+        h : i32,
+        style : i32
+    ) : ptr {
         let mut outerW : i32 = 0;
         let mut outerH : i32 = 0;
         let block = new Blob(sizeof<RECT>());

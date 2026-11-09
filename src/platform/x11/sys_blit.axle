@@ -53,12 +53,15 @@
 // shared segment cannot exist.
 
 use crate::kernel::blob::Blob;
-use crate::platform::blit_scale::ScaleScratch;
 use crate::kernel::raw::Raw;
+use crate::platform::blit_scale::ScaleScratch;
 use crate::platform::x_surface::XSurface;
+use crate::sys::x11_const::{
+    X_BITMAP_UNIT, X_BITS_PER_PIXEL, X_BLUE_MASK, X_GREEN_MASK, X_LSB_FIRST, X_RED_MASK,
+    X_TRUE_COLOR_DEPTH, X_Z_PIXMAP
+};
 use crate::sys::x11_lib::{XFlush, XInitImage, XPutImage};
 use crate::sys::x11_types::XImage;
-use crate::sys::x11_const::{X_BITMAP_UNIT, X_BITS_PER_PIXEL, X_BLUE_MASK, X_GREEN_MASK, X_LSB_FIRST, X_RED_MASK, X_TRUE_COLOR_DEPTH, X_Z_PIXMAP};
 
 /** Bytes in one 32-bit pixel. */
 const BLIT_PIXEL_BYTES : i32 = 4;

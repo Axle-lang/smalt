@@ -24,9 +24,7 @@
 use crate::kernel::raw::Raw;
 use crate::sys::wl_lib::{WlInterface, WlMessage};
 use crate::sys::wl_libc::cstr;
-use crate::sys::wl_table::{
-    nullTypes, putMessage, recordAt, typesOf1, typesOf2, typesOfObjectThen,
-};
+use crate::sys::wl_table::{nullTypes, putMessage, recordAt, typesOf1, typesOf2, typesOfObjectThen};
 
 /** `xdg_wm_base.destroy`. */
 pub(crate) const XDG_WM_BASE_DESTROY : i32 = 0;
@@ -71,8 +69,8 @@ const XDG_TOPLEVEL_REQUESTS : i64 = 14;
 
 /** The three tables, held where every marshal can reach them. */
 pub extern "C" struct XdgTables {
-    pub wmBase : ptr;
-    pub surface : ptr;
+    pub wmBase   : ptr;
+    pub surface  : ptr;
     pub toplevel : ptr;
 }
 
@@ -84,12 +82,29 @@ pub extern "C" struct XdgTables {
  * `show_window_menu` names a `wl_seat`, a `set_fullscreen` names a
  * `wl_output`. They come from [`crate::sys::wl_core`].
  */
-pub(crate) fn buildXdgTables(out : ptr<XdgTables>, wlSurface : ptr, wlSeat : ptr, wlOutput : ptr) : void {
+pub(crate) fn buildXdgTables(
+    out : ptr<XdgTables>,
+    wlSurface : ptr,
+    wlSeat : ptr,
+    wlOutput : ptr
+) : void {
     unsafe {
         let block = Raw::take(3 * sizeof<WlInterface>());
-        let wmBase : ptr<WlInterface> = recordAt(block, 0, sizeof<WlInterface>()) as ptr<WlInterface>;
-        let surface : ptr<WlInterface> = recordAt(block, 1, sizeof<WlInterface>()) as ptr<WlInterface>;
-        let toplevel : ptr<WlInterface> = recordAt(block, 2, sizeof<WlInterface>()) as ptr<WlInterface>;
+        let wmBase : ptr<WlInterface> = recordAt(
+            block,
+            0,
+            sizeof<WlInterface>()
+        ) as ptr<WlInterface>;
+        let surface : ptr<WlInterface> = recordAt(
+            block,
+            1,
+            sizeof<WlInterface>()
+        ) as ptr<WlInterface>;
+        let toplevel : ptr<WlInterface> = recordAt(
+            block,
+            2,
+            sizeof<WlInterface>()
+        ) as ptr<WlInterface>;
         (*out).wmBase = wmBase as ptr;
         (*out).surface = surface as ptr;
         (*out).toplevel = toplevel as ptr;

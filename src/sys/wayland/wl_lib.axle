@@ -88,9 +88,9 @@ extern "C" from "wayland-client" {
  * interface pointer per argument, null for those that name none.
  */
 pub extern "C" struct WlMessage {
-    pub name : ptr;
+    pub name      : ptr;
     pub signature : ptr;
-    pub types : ptr;
+    pub types     : ptr;
 }
 
 /**
@@ -104,12 +104,12 @@ pub extern "C" struct WlMessage {
  * of the listener struct.
  */
 pub extern "C" struct WlInterface {
-    pub name : ptr;
-    pub version : i32;
+    pub name        : ptr;
+    pub version     : i32;
     pub methodCount : i32;
-    pub methods : ptr;
-    pub eventCount : i32;
-    pub events : ptr;
+    pub methods     : ptr;
+    pub eventCount  : i32;
+    pub events      : ptr;
 }
 
 /**

@@ -18,23 +18,23 @@ use crate::sys::posix_dl::dlsym;
 
 /** The core tables, looked up once and read for the run. */
 pub extern "C" struct WlCore {
-    pub registry : ptr;
+    pub registry   : ptr;
     pub compositor : ptr;
-    pub shm : ptr;
-    pub shmPool : ptr;
-    pub buffer : ptr;
-    pub surface : ptr;
-    pub seat : ptr;
-    pub keyboard : ptr;
-    pub pointer : ptr;
-    pub output : ptr;
-    pub callback : ptr;
+    pub shm        : ptr;
+    pub shmPool    : ptr;
+    pub buffer     : ptr;
+    pub surface    : ptr;
+    pub seat       : ptr;
+    pub keyboard   : ptr;
+    pub pointer    : ptr;
+    pub output     : ptr;
+    pub callback   : ptr;
 
     /** The data-transfer tables the clipboard speaks — optional: without them there is no clipboard. */
     pub dataDeviceManager : ptr;
-    pub dataDevice : ptr;
-    pub dataSource : ptr;
-    pub dataOffer : ptr;
+    pub dataDevice        : ptr;
+    pub dataSource        : ptr;
+    pub dataOffer         : ptr;
 }
 
 /** Fill `core` from the loaded library; `false` when a symbol is missing. */
@@ -63,8 +63,7 @@ pub(crate) fn loadCore(core : ptr<WlCore>) : bool {
 /** Every table this port will marshal against, present. */
 fn complete(core : ptr<WlCore>) : bool {
     unsafe {
-        return !Raw::isNil((*core).registry)
-            && !Raw::isNil((*core).compositor)
+        return !Raw::isNil((*core).registry) && !Raw::isNil((*core).compositor)
             && !Raw::isNil((*core).shm)
             && !Raw::isNil((*core).shmPool)
             && !Raw::isNil((*core).buffer)

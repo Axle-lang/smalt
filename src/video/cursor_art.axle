@@ -203,7 +203,10 @@ fn distance(
         let h5 : f64 = capsule(px, py, 27.0, 19.5, 24.5, 21.5, 1.0);
         let h6 : f64 = capsule(px, py, 24.5, 21.5, 24.5, 23.0, 1.0);
         let dot : f64 = capsule(px, py, 24.5, 26.0, 24.5, 26.0, 1.1);
-        return lesser(lesser(a, lesser(h1, h2)), lesser(lesser(h3, h4), lesser(h5, lesser(h6, dot))));
+        return lesser(
+            lesser(a, lesser(h1, h2)),
+            lesser(lesser(h3, h4), lesser(h5, lesser(h6, dot)))
+        );
     }
     return polygon(px, py, arrow);
 }
@@ -236,7 +239,9 @@ class CursorArt {
      */
     pub static fn draw(base : i64, shape : i32) : void {
         // The polygons are built once, outside the pixel loop.
-        let arrow : f64[] = [4.0, 3.0, 4.0, 25.0, 10.0, 19.5, 14.5, 28.0, 18.0, 26.5, 13.5, 18.0, 21.0, 18.0];
+        let arrow : f64[] = [
+            4.0, 3.0, 4.0, 25.0, 10.0, 19.5, 14.5, 28.0, 18.0, 26.5, 13.5, 18.0, 21.0, 18.0,
+        ];
         let headL : f64[] = [3.0, 16.0, 10.5, 10.0, 10.5, 22.0];
         let headR : f64[] = [29.0, 16.0, 21.5, 10.0, 21.5, 22.0];
         let moveL : f64[] = [3.0, 16.0, 9.0, 11.5, 9.0, 20.5];
@@ -246,7 +251,18 @@ class CursorArt {
 
         for (y of 0..CURSOR_ART_SIDE) {
             for (x of 0..CURSOR_ART_SIDE) {
-                let d : f64 = distance(shape, (x as f64) + 0.5, (y as f64) + 0.5, arrow, headL, headR, moveL, moveR, sandTop, sandBottom);
+                let d : f64 = distance(
+                    shape,
+                    (x as f64) + 0.5,
+                    (y as f64) + 0.5,
+                    arrow,
+                    headL,
+                    headR,
+                    moveL,
+                    moveR,
+                    sandTop,
+                    sandBottom
+                );
                 let fill : f64 = coverage(0.5 - d);
                 let edge : f64 = coverage(0.5 - (d - OUTLINE));
                 let at : i64 = ((y * CURSOR_ART_SIDE + x) as i64) * 4;

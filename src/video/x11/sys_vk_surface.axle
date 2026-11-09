@@ -28,7 +28,7 @@
 use crate::kernel::raw::Raw;
 use crate::sys::vk::vk_const::{
     VK_ERROR_EXTENSION_NOT_PRESENT, VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
-    VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+    VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR
 };
 use crate::sys::vk::vk_table::VkTable;
 use crate::video::sys_window::SysWindow;

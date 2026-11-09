@@ -6,7 +6,10 @@
 use crate::kernel::blob::Blob;
 use crate::sys::win32_types::{POINT, RECT};
 use crate::sys::win32_user::{GetClientRect, GetCursorPos, ScreenToClient};
-use crate::video::win_const::{IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_HELP, IDC_IBEAM, IDC_NO, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IDC_WAIT};
+use crate::video::win_const::{
+    IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_HELP, IDC_IBEAM, IDC_NO, IDC_SIZEALL, IDC_SIZENESW,
+    IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IDC_WAIT
+};
 
 /** The `IDC_*` atom of the system cursor that draws shape `shape`. */
 pub(crate) fn atomOf(shape : i32) : i64 {
@@ -41,7 +44,7 @@ pub(crate) fn pointerInClient(hwnd : ptr) : bool {
         if (ScreenToClient(hwnd, point) == 0 || GetClientRect(hwnd, rect) == 0) {
             return false;
         }
-        return (*point).x >= (*rect).left && (*point).x < (*rect).right
-            && (*point).y >= (*rect).top && (*point).y < (*rect).bottom;
+        return (*point).x >= (*rect).left && (*point).x < (*rect).right && (*point).y >= (*rect).top
+            && (*point).y < (*rect).bottom;
     }
 }

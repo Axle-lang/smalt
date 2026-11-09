@@ -45,8 +45,8 @@ use crate::kernel::raw::Raw;
 use crate::platform::blit_scale::ScaleScratch;
 use crate::platform::wayland::wl_blit_header::WlBlitHeader;
 use crate::platform::wayland::wl_drawable::{
-    commitFrame, commitRegion, dropFrame, ensureBuffers, freeSlot, slotAt, staleAdd, staleClear, WlDrawable,
-    WL_BUFFER_COUNT, WL_NO_SLOT, WL_PIXEL_BYTES, WlSlot,
+    commitFrame, commitRegion, dropFrame, ensureBuffers, freeSlot, slotAt, staleAdd, staleClear,
+    WlDrawable, WL_BUFFER_COUNT, WL_NO_SLOT, WL_PIXEL_BYTES, WlSlot
 };
 use crate::sys::wl_args::WlArgs;
 

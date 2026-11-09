@@ -11,19 +11,19 @@
 // and the callers wait with `poll`, which has a deadline.
 
 /** `int pipe2(int pipefd[2], int flags)` — two descriptors, the read end first. */
-@link(symbol = "pipe2")
+@link(symbol="pipe2")
 pub extern "C" fn pipe2(fds : ptr, flags : i32) : i32;
 
 /** `ssize_t read(int, void *, size_t)` — bytes read, 0 at the end, -1 on error or when it would block. */
-@link(symbol = "read")
+@link(symbol="read")
 pub extern "C" fn readFd(fd : i32, buffer : ptr, bytes : i64) : i64;
 
 /** `ssize_t write(int, const void *, size_t)` — bytes written, or -1. */
-@link(symbol = "write")
+@link(symbol="write")
 pub extern "C" fn writeFd(fd : i32, buffer : ptr, bytes : i64) : i64;
 
 /** `sighandler_t signal(int, sighandler_t)` — what to do on a signal; `SIG_IGN` is to ignore it. */
-@link(symbol = "signal")
+@link(symbol="signal")
 pub extern "C" fn signal(sig : i32, handler : ptr) : ptr;
 
 /** `SIGPIPE` — a write to a pipe nobody reads — and `SIG_IGN`, the handler value that ignores one. */

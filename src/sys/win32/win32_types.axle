@@ -35,13 +35,13 @@ pub extern "C" struct POINT {
 /** `typedef struct tagRECT { LONG left, top, right, bottom; } RECT;` */
 pub extern "C" struct RECT {
     /** `LONG left`. */
-    pub left   : i32;
+    pub left : i32;
 
     /** `LONG top`. */
-    pub top    : i32;
+    pub top : i32;
 
     /** `LONG right`. */
-    pub right  : i32;
+    pub right : i32;
 
     /** `LONG bottom`. */
     pub bottom : i32;
@@ -50,13 +50,13 @@ pub extern "C" struct RECT {
 /** `typedef struct tagTRACKMOUSEEVENT { DWORD cbSize; DWORD dwFlags; HWND hwndTrack; DWORD dwHoverTime; } TRACKMOUSEEVENT;` */
 pub extern "C" struct TRACKMOUSEEVENT {
     /** `DWORD cbSize` — must carry `sizeof<TRACKMOUSEEVENT>()`. */
-    pub cbSize      : u32;
+    pub cbSize : u32;
 
     /** `DWORD dwFlags` — `TME_LEAVE` asks for one `WM_MOUSELEAVE`. */
-    pub dwFlags     : u32;
+    pub dwFlags : u32;
 
     /** `HWND hwndTrack` — the window whose pointer is watched. */
-    pub hwndTrack   : ptr;
+    pub hwndTrack : ptr;
 
     /** `DWORD dwHoverTime` — unused with `TME_LEAVE`. */
     pub dwHoverTime : u32;
@@ -73,22 +73,22 @@ pub extern "C" struct TRACKMOUSEEVENT {
  */
 pub extern "C" struct MSG {
     /** `HWND hwnd` — the window the message is for. */
-    pub hwnd    : ptr;
+    pub hwnd : ptr;
 
     /** `UINT message` — the `WM_*` code. */
     pub message : u32;
 
     /** `WPARAM wParam` — for a key, the virtual-key code. */
-    pub wParam  : u64;
+    pub wParam : u64;
 
     /** `LPARAM lParam` — for a key, the repeat / scancode / flags word. */
-    pub lParam  : i64;
+    pub lParam : i64;
 
     /** `DWORD time` — the message's post time, in ticks. */
-    pub time    : u32;
+    pub time : u32;
 
     /** `POINT pt` — cursor position when the message was posted. */
-    pub pt      : POINT;
+    pub pt : POINT;
 }
 
 /**
@@ -102,40 +102,40 @@ pub extern "C" struct MSG {
  */
 pub extern "C" struct WNDCLASSEXW {
     /** `UINT cbSize` — must carry `sizeof<WNDCLASSEXW>()`. */
-    pub cbSize        : u32;
+    pub cbSize : u32;
 
     /** `UINT style` — the `CS_*` class flags. */
-    pub style         : u32;
+    pub style : u32;
 
     /** `WNDPROC lpfnWndProc` — see `video/windows/win_proc`. */
-    pub lpfnWndProc   : extern "C" (ptr, u32, u64, i64) => i64;
+    pub lpfnWndProc : extern "C" (ptr, u32, u64, i64) => i64;
 
     /** `int cbClsExtra`. */
-    pub cbClsExtra    : i32;
+    pub cbClsExtra : i32;
 
     /** `int cbWndExtra`. */
-    pub cbWndExtra    : i32;
+    pub cbWndExtra : i32;
 
     /** `HINSTANCE hInstance`. */
-    pub hInstance     : ptr;
+    pub hInstance : ptr;
 
     /** `HICON hIcon`. */
-    pub hIcon         : ptr;
+    pub hIcon : ptr;
 
     /** `HCURSOR hCursor`. */
-    pub hCursor       : ptr;
+    pub hCursor : ptr;
 
     /** `HBRUSH hbrBackground`. */
     pub hbrBackground : ptr;
 
     /** `LPCWSTR lpszMenuName`. */
-    pub lpszMenuName  : ptr;
+    pub lpszMenuName : ptr;
 
     /** `LPCWSTR lpszClassName`. */
     pub lpszClassName : ptr;
 
     /** `HICON hIconSm`. */
-    pub hIconSm       : ptr;
+    pub hIconSm : ptr;
 }
 
 /**
@@ -156,25 +156,25 @@ pub extern "C" struct WNDCLASSEXW {
  */
 pub extern "C" struct WAVEFORMATEX {
     /** `WORD wFormatTag` — `WAVE_FORMAT_PCM` (1) here. */
-    pub wFormatTag      : u16;
+    pub wFormatTag : u16;
 
     /** `WORD nChannels` — 1 mono, 2 stereo. */
-    pub nChannels       : u16;
+    pub nChannels : u16;
 
     /** `DWORD nSamplesPerSec` — frames per second, not samples. */
-    pub nSamplesPerSec  : u32;
+    pub nSamplesPerSec : u32;
 
     /** `DWORD nAvgBytesPerSec` — `nSamplesPerSec * nBlockAlign`. */
     pub nAvgBytesPerSec : u32;
 
     /** `WORD nBlockAlign` — bytes for one frame across all channels. */
-    pub nBlockAlign     : u16;
+    pub nBlockAlign : u16;
 
     /** `WORD wBitsPerSample` — 16 here. */
-    pub wBitsPerSample  : u16;
+    pub wBitsPerSample : u16;
 
     /** `WORD cbSize` — extra bytes after this record; 0 for PCM. */
-    pub cbSize          : u16;
+    pub cbSize : u16;
 }
 
 /**
@@ -192,26 +192,26 @@ pub extern "C" struct WAVEFORMATEX {
  */
 pub extern "C" struct WAVEHDR {
     /** `LPSTR lpData` — the PCM block; must outlive the queueing. */
-    pub lpData          : ptr;
+    pub lpData : ptr;
 
     /** `DWORD dwBufferLength` — bytes of `lpData` to play. */
-    pub dwBufferLength  : u32;
+    pub dwBufferLength : u32;
 
     /** `DWORD dwBytesRecorded` — input only; zero here. */
     pub dwBytesRecorded : u32;
 
     /** `DWORD_PTR dwUser` — the caller's; carries the block's index. */
-    pub dwUser          : u64;
+    pub dwUser : u64;
 
     /** `DWORD dwFlags` — `WHDR_PREPARED`, and `WHDR_DONE` when free. */
-    pub dwFlags         : u32;
+    pub dwFlags : u32;
 
     /** `DWORD dwLoops` — loop count; zero plays once. */
-    pub dwLoops         : u32;
+    pub dwLoops : u32;
 
     /** `struct wavehdr_tag *lpNext` — the driver's; never written here. */
-    pub lpNext          : ptr;
+    pub lpNext : ptr;
 
     /** `DWORD_PTR reserved` — the driver's; never written here. */
-    pub reserved        : u64;
+    pub reserved : u64;
 }

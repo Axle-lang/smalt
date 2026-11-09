@@ -43,26 +43,24 @@
 use crate::core::error::PlatformError;
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
-use crate::video::cursor::CURSOR_SHAPE_COUNT;
 use crate::platform::x_surface::XSurface;
-use crate::sys::x11_lib::{
-    XChangeProperty, XCreateGC, XCreateSimpleWindow, XDestroyWindow, XBlackPixel,
-    XDefaultScreen, XFlush, XFreeCursor, XFreeGC, XInternAtom, XMapRaised, XNextEvent,
-    XPending, XRootWindow, XSelectInput, XSendEvent, XSetWMNormalHints, XSetWMProtocols,
-    XStoreName, XSync, XUnmapWindow,
-};
-use crate::sys::x11_types::{
-    MotifWmHints, XAnyEvent, XClientMessageEvent, XConfigureEvent, XSizeHints,
-};
 use crate::sys::x11_const::{
     X_CLIENT_MESSAGE, X_CONFIGURE_NOTIFY, X_DESTROY_NOTIFY, X_FALSE, X_FOCUS_IN, X_FOCUS_OUT,
-    X_MAP_NOTIFY, X_MASK_BUTTON_PRESS, X_MASK_BUTTON_RELEASE, X_MASK_EXPOSURE,
-    X_MASK_ENTER_WINDOW, X_MASK_FOCUS_CHANGE, X_MASK_KEY_PRESS, X_MASK_KEY_RELEASE,
-    X_MASK_LEAVE_WINDOW, X_MASK_POINTER_MOTION,
-    X_MASK_STRUCTURE_NOTIFY, X_MOTIF_HINTS_FORMAT, X_MOTIF_HINT_DECORATIONS,
-    X_EVENT_BYTES, X_MOTIF_HINTS_WORDS, X_NONE, X_PROP_MODE_REPLACE, X_SIZE_HINT_MIN_MAX,
-    X_TRUE, X_UNMAP_NOTIFY,
+    X_MAP_NOTIFY, X_MASK_BUTTON_PRESS, X_MASK_BUTTON_RELEASE, X_MASK_EXPOSURE, X_MASK_ENTER_WINDOW,
+    X_MASK_FOCUS_CHANGE, X_MASK_KEY_PRESS, X_MASK_KEY_RELEASE, X_MASK_LEAVE_WINDOW,
+    X_MASK_POINTER_MOTION, X_MASK_STRUCTURE_NOTIFY, X_MOTIF_HINTS_FORMAT, X_MOTIF_HINT_DECORATIONS,
+    X_EVENT_BYTES, X_MOTIF_HINTS_WORDS, X_NONE, X_PROP_MODE_REPLACE, X_SIZE_HINT_MIN_MAX, X_TRUE,
+    X_UNMAP_NOTIFY
 };
+use crate::sys::x11_lib::{
+    XChangeProperty, XCreateGC, XCreateSimpleWindow, XDestroyWindow, XBlackPixel, XDefaultScreen,
+    XFlush, XFreeCursor, XFreeGC, XInternAtom, XMapRaised, XNextEvent, XPending, XRootWindow,
+    XSelectInput, XSendEvent, XSetWMNormalHints, XSetWMProtocols, XStoreName, XSync, XUnmapWindow
+};
+use crate::sys::x11_types::{
+    MotifWmHints, XAnyEvent, XClientMessageEvent, XConfigureEvent, XSizeHints
+};
+use crate::video::cursor::CURSOR_SHAPE_COUNT;
 use crate::video::x11::shape_cursor::freeShapeCursors;
 use crate::video::x11::x_window_ops::{pinSize, registerCloseProtocol, removeDecorations, roundTrip};
 
@@ -71,13 +69,16 @@ const WINDOW_BORDER_WIDTH : i32 = 0;
 
 /** An on-screen window and its drawing surface, on X11. */
 pub(crate) class SysWindow : Closeable {
-    pub(crate) display         : ptr;
-    pub(crate) window          : i64;
-    gc                         : ptr;
+    pub(crate) display : ptr;
+    pub(crate) window  : i64;
+    gc                 : ptr;
+
     /** The `(display, window, gc)` triple the blit reads. */
-    token                      : Blob = new Blob(sizeof<XSurface>());
+    token : Blob = new Blob(sizeof<XSurface>());
+
     /** The atom a close request carries in `data.l[0]`. */
-    pub(crate) deleteAtom      : i64;
+    pub(crate) deleteAtom : i64;
+
     /**
      * The cursor that draws nothing, or `None` until one is needed.
      *
@@ -86,7 +87,8 @@ pub(crate) class SysWindow : Closeable {
      * `SysCursor` makes it on the first hide and this class releases it,
      * because it is the window it is defined on that outlives the call.
      */
-    pub(crate) blank           : i64 = X_NONE;
+    pub(crate) blank : i64 = X_NONE;
+
     /**
      * The server cursors made for the shapes this window has shown, one
      * eight-byte slot per `CursorShape`; zero means not made yet.
@@ -95,24 +97,28 @@ pub(crate) class SysWindow : Closeable {
      * its shape and released with the window — `video::x11::shape_cursor`
      * writes the slots and `close` below gives every one of them back.
      */
-    pub(crate) shapes          : Blob = new Blob((CURSOR_SHAPE_COUNT as i64) * 8);
+    pub(crate) shapes : Blob = new Blob((CURSOR_SHAPE_COUNT as i64) * 8);
+
     /**
      * The text this window offers while it owns the clipboard, and is asked for by the program that
      * pastes. X11 has no clipboard storage: the owner of the selection *is* the clipboard, so when
      * this window closes — or another one takes the selection — the text is gone.
      */
-    pub(crate) ownedText       : string = "";
+    pub(crate) ownedText : string = "";
+
     /** The `CursorShape` asked for last, as its number. */
-    pub(crate) shape           : i32 = 0;
+    pub(crate) shape : i32 = 0;
+
     /** Whether relative-mouse mode has the pointer hidden. */
-    pub(crate) pointerHidden   : bool = false;
-    w                          : i32;
-    h                          : i32;
-    pub(crate) closePending    : bool = false;
-    pub(crate) destroyed       : bool = false;
-    pub(crate) sizePending     : bool = false;
-    pub(crate) pendingW        : i32;
-    pub(crate) pendingH        : i32;
+    pub(crate) pointerHidden : bool = false;
+    w                        : i32;
+    h                        : i32;
+    pub(crate) closePending  : bool = false;
+    pub(crate) destroyed     : bool = false;
+    pub(crate) sizePending   : bool = false;
+    pub(crate) pendingW      : i32;
+    pub(crate) pendingH      : i32;
+
     /**
      * Assumed, not observed: a window that has just been mapped usually
      * has focus, and the first `FocusOut` corrects it. The Win32 backend
@@ -171,9 +177,12 @@ pub(crate) class SysWindow : Closeable {
         XSelectInput(
             app,
             self.window,
-            X_MASK_KEY_PRESS | X_MASK_KEY_RELEASE | X_MASK_BUTTON_PRESS
-                | X_MASK_BUTTON_RELEASE | X_MASK_POINTER_MOTION | X_MASK_EXPOSURE
-                | X_MASK_STRUCTURE_NOTIFY | X_MASK_FOCUS_CHANGE | X_MASK_ENTER_WINDOW
+            X_MASK_KEY_PRESS | X_MASK_KEY_RELEASE | X_MASK_BUTTON_PRESS | X_MASK_BUTTON_RELEASE
+                | X_MASK_POINTER_MOTION
+                | X_MASK_EXPOSURE
+                | X_MASK_STRUCTURE_NOTIFY
+                | X_MASK_FOCUS_CHANGE
+                | X_MASK_ENTER_WINDOW
                 | X_MASK_LEAVE_WINDOW
         );
         self.deleteAtom = registerCloseProtocol(self);

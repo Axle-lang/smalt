@@ -27,7 +27,9 @@
 // these same two functions.
 
 use crate::kernel::raw::Raw;
-use crate::sys::x11_lib::{XCloseDisplay, XDefaultScreen, XDisplayHeight, XDisplayWidth, XOpenDisplay};
+use crate::sys::x11_lib::{
+    XCloseDisplay, XDefaultScreen, XDisplayHeight, XDisplayWidth, XOpenDisplay
+};
 
 /** What a display query answers when there is no display to ask. */
 const SCREEN_UNKNOWN : i32 = 0;

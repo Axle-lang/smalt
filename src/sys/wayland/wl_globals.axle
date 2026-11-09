@@ -16,8 +16,8 @@
 
 use crate::sys::wl_args::WlArgs;
 use crate::sys::wl_libc::{cstr, cstrcmp};
-use crate::sys::wl_token::WlApp;
 use crate::sys::wl_request::{WL_BIND_VERSION, WL_REGISTRY_BIND};
+use crate::sys::wl_token::WlApp;
 
 /** `wl_output.mode`'s `current` bit: the mode the monitor is actually in. */
 const WL_OUTPUT_MODE_CURRENT : i32 = 1;
@@ -60,8 +60,7 @@ pub(crate) fn onGlobal(data : ptr, registry : ptr, name : u32, iface : ptr, vers
  * them for the run, and a compositor that withdraws `wl_compositor`
  * mid-session has ended the session by other means.
  */
-pub(crate) fn onGlobalRemove(data : ptr, registry : ptr, name : u32) : void {
-}
+pub(crate) fn onGlobalRemove(data : ptr, registry : ptr, name : u32) : void {}
 
 /** The monitor's physical placement — not what a window size wants. */
 pub(crate) fn onOutputGeometry(
@@ -75,8 +74,7 @@ pub(crate) fn onOutputGeometry(
     make : ptr,
     model : ptr,
     transform : i32
-) : void {
-}
+) : void {}
 
 /** One of the monitor's modes; only the current one is the screen size. */
 pub(crate) fn onOutputMode(

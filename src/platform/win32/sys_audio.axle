@@ -36,10 +36,15 @@
 
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
-use crate::platform::audio_format::{AUDIO_BLOCK_FRAMES, AUDIO_CHANNELS, AUDIO_RATE, AUDIO_SAMPLE_BYTES, AudioFormat};
+use crate::platform::audio_format::{
+    AUDIO_BLOCK_FRAMES, AUDIO_CHANNELS, AUDIO_RATE, AUDIO_SAMPLE_BYTES, AudioFormat
+};
 use crate::platform::win32::wave_block::{deviceHandle, headerAt};
+use crate::sys::win32_mm::{
+    waveOutOpen, waveOutPrepareHeader, waveOutWrite, waveOutUnprepareHeader, waveOutReset,
+    waveOutClose
+};
 use crate::sys::win32_types::{WAVEFORMATEX, WAVEHDR};
-use crate::sys::win32_mm::{waveOutOpen, waveOutPrepareHeader, waveOutWrite, waveOutUnprepareHeader, waveOutReset, waveOutClose};
 
 /** Blocks in flight. Four gives about 93 ms of slack against a long frame. */
 const AUDIO_BLOCKS : i32 = 4;
@@ -68,9 +73,9 @@ const MMSYSERR_NOERROR : i32 = 0;
  */
 pub(crate) class SysAudio : Closeable {
     // the HWAVEOUT slot the open call writes through
-    device  : Blob = new Blob(8);
+    device : Blob = new Blob(8);
     // WAVEFORMATEX, read once by the open call
-    format  : Blob = new Blob(sizeof<WAVEFORMATEX>());
+    format : Blob = new Blob(sizeof<WAVEFORMATEX>());
     // AUDIO_BLOCKS * WAVEHDR, contiguous
     headers : Blob = new Blob((AUDIO_BLOCKS as i64) * (sizeof<WAVEHDR>() as i64));
     // AUDIO_BLOCKS * block bytes, contiguous
@@ -192,7 +197,8 @@ pub(crate) class SysAudio : Closeable {
                 deviceHandle(self.device),
                 h as ptr,
                 size
-            ) != MMSYSERR_NOERROR) {
+            )
+                != MMSYSERR_NOERROR) {
                 return;
             }
             waveOutWrite(deviceHandle(self.device), h as ptr, size);

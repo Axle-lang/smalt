@@ -34,7 +34,8 @@ pub(crate) class Win32Layout {
         if (offsetof(POINT, y) != 4) { return 2; }
 
         if (sizeof<RECT>() != 16) { return 3; }
-        if (offsetof(RECT, top) != 4 || offsetof(RECT, right) != 8 || offsetof(RECT, bottom) != 12) {
+        if (offsetof(RECT, top) != 4 || offsetof(RECT, right) != 8
+            || offsetof(RECT, bottom) != 12) {
             return 4;
         }
 
@@ -119,10 +120,18 @@ pub(crate) class Win32Layout {
 
         // `hwndTrack` is pointer-aligned, so `dwFlags` is followed by no gap and
         // `dwHoverTime` by four bytes of one: 24, not 20.
-        if (sizeof<TRACKMOUSEEVENT>() != 24) { return 32; }
-        if (offsetof(TRACKMOUSEEVENT, dwFlags) != 4) { return 33; }
-        if (offsetof(TRACKMOUSEEVENT, hwndTrack) != 8) { return 34; }
-        if (offsetof(TRACKMOUSEEVENT, dwHoverTime) != 16) { return 35; }
+        if (sizeof<TRACKMOUSEEVENT>() != 24) {
+            return 32;
+        }
+        if (offsetof(TRACKMOUSEEVENT, dwFlags) != 4) {
+            return 33;
+        }
+        if (offsetof(TRACKMOUSEEVENT, hwndTrack) != 8) {
+            return 34;
+        }
+        if (offsetof(TRACKMOUSEEVENT, dwHoverTime) != 16) {
+            return 35;
+        }
 
         return 0;
     }

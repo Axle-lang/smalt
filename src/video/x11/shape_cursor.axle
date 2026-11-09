@@ -27,19 +27,31 @@ const SLOT_BYTES : i64 = 8;
 /** The glyph of the standard cursor font that draws shape `shape`. */
 fn glyphOf(shape : i32) : i32 {
     return match shape {
-        1 => 60,     // hand2
-        2 => 152,    // xterm
-        3 => 34,     // crosshair
-        4 => 108,    // sb_h_double_arrow
-        5 => 116,    // sb_v_double_arrow
-        6 => 14,     // bottom_right_corner
-        7 => 12,     // bottom_left_corner
-        8 => 52,     // fleur
-        9 => 150,    // watch
-        10 => 0,     // X_cursor
-        11 => 92,    // question_arrow
-        _ => 68,     // left_ptr
+        1 => 60,
+        2 => 152,
+        3 => 34,
+        4 => 108,
+        5 => 116,
+        6 => 14,
+        7 => 12,
+        8 => 52,
+        9 => 150,
+        10 => 0,
+        11 => 92,
+        _ => 68,
     };
+    // hand2
+    // xterm
+    // crosshair
+    // sb_h_double_arrow
+    // sb_v_double_arrow
+    // bottom_right_corner
+    // bottom_left_corner
+    // fleur
+    // watch
+    // X_cursor
+    // question_arrow
+    // left_ptr
 }
 
 /** The cursor for `shape`, made on first use; `X_NONE` when the server refuses. */

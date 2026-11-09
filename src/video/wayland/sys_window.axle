@@ -38,14 +38,14 @@ use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
 use crate::platform::wayland::wl_drawable::{
     commitFrame, detachFrame, dropDrawable, ensureBuffers, freeSlot, initDrawable, releaseBuffers,
-    WlDrawable, WL_NO_SLOT,
+    WlDrawable, WL_NO_SLOT
 };
-use crate::sys::wl_token::WlApp;
 use crate::sys::wl_args::WlArgs;
 use crate::sys::wl_core::WlCore;
 use crate::sys::wl_lib::{wl_display_roundtrip, wl_proxy_add_listener};
 use crate::sys::wl_libc::cstr;
 use crate::sys::wl_request::{WL_DISPLAY_SYNC, WL_SURFACE_COMMIT};
+use crate::sys::wl_token::WlApp;
 use crate::sys::xdg_shell::XDG_TOPLEVEL_SET_TITLE;
 use crate::video::wayland::wl_win_events::onSyncDone;
 use crate::video::wayland::wl_win_state::{WlCallbackListener, WlWinState};

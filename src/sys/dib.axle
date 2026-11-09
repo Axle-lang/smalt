@@ -27,25 +27,25 @@
  */
 pub extern "C" struct BITMAPINFOHEADER {
     /** `DWORD biSize` — the header's own size. */
-    pub biSize          : u32;
+    pub biSize : u32;
 
     /** `LONG biWidth`. */
-    pub biWidth         : i32;
+    pub biWidth : i32;
 
     /** `LONG biHeight` — negative for a top-down image. */
-    pub biHeight        : i32;
+    pub biHeight : i32;
 
     /** `WORD biPlanes` — always 1. */
-    pub biPlanes        : u16;
+    pub biPlanes : u16;
 
     /** `WORD biBitCount`. */
-    pub biBitCount      : u16;
+    pub biBitCount : u16;
 
     /** `DWORD biCompression`. */
-    pub biCompression   : u32;
+    pub biCompression : u32;
 
     /** `DWORD biSizeImage`. */
-    pub biSizeImage     : u32;
+    pub biSizeImage : u32;
 
     /** `LONG biXPelsPerMeter`. */
     pub biXPelsPerMeter : i32;
@@ -54,22 +54,22 @@ pub extern "C" struct BITMAPINFOHEADER {
     pub biYPelsPerMeter : i32;
 
     /** `DWORD biClrUsed`. */
-    pub biClrUsed       : u32;
+    pub biClrUsed : u32;
 
     /** `DWORD biClrImportant`. */
-    pub biClrImportant  : u32;
+    pub biClrImportant : u32;
 }
 
 /** `typedef struct tagRGBQUAD { BYTE rgbBlue, rgbGreen, rgbRed, rgbReserved; } RGBQUAD;` */
 pub extern "C" struct RGBQUAD {
     /** `BYTE rgbBlue`. */
-    pub rgbBlue     : u8;
+    pub rgbBlue : u8;
 
     /** `BYTE rgbGreen`. */
-    pub rgbGreen    : u8;
+    pub rgbGreen : u8;
 
     /** `BYTE rgbRed`. */
-    pub rgbRed      : u8;
+    pub rgbRed : u8;
 
     /** `BYTE rgbReserved`. */
     pub rgbReserved : u8;

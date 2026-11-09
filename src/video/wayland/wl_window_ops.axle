@@ -18,31 +18,31 @@
 
 use crate::core::error::PlatformError;
 use crate::kernel::raw::Raw;
-use crate::sys::wl_token::WlApp;
 use crate::sys::wl_args::WlArgs;
 use crate::sys::wl_core::WlCore;
 use crate::sys::wl_lib::{wl_display_roundtrip, wl_proxy_add_listener};
 use crate::sys::wl_libc::cstr;
 use crate::sys::wl_request::{
-    WL_COMPOSITOR_CREATE_SURFACE, WL_DISPLAY_SYNC, WL_SURFACE_COMMIT, WL_SURFACE_DESTROY,
+    WL_COMPOSITOR_CREATE_SURFACE, WL_DISPLAY_SYNC, WL_SURFACE_COMMIT, WL_SURFACE_DESTROY
 };
 use crate::sys::wl_table::{WL_WORD_BYTES};
+use crate::sys::wl_token::WlApp;
 use crate::sys::xdg_decoration::{
     XdgDecorationTables, ZXDG_DECORATION_GET_TOPLEVEL, ZXDG_DECORATION_MODE_SERVER_SIDE,
-    ZXDG_TOPLEVEL_DECORATION_DESTROY, ZXDG_TOPLEVEL_DECORATION_SET_MODE,
+    ZXDG_TOPLEVEL_DECORATION_DESTROY, ZXDG_TOPLEVEL_DECORATION_SET_MODE
 };
 use crate::sys::xdg_shell::{
     XdgTables, XDG_SURFACE_DESTROY, XDG_SURFACE_GET_TOPLEVEL, XDG_TOPLEVEL_DESTROY,
     XDG_TOPLEVEL_SET_APP_ID, XDG_TOPLEVEL_SET_MAX_SIZE, XDG_TOPLEVEL_SET_MIN_SIZE,
-    XDG_TOPLEVEL_SET_TITLE, XDG_WM_BASE_GET_XDG_SURFACE,
+    XDG_TOPLEVEL_SET_TITLE, XDG_WM_BASE_GET_XDG_SURFACE
 };
 use crate::video::sys_window::SysWindow;
 use crate::video::wayland::wl_cursor::releaseKit;
 use crate::video::wayland::wl_win_events::{
-    onDecorationConfigure, onSurfaceConfigure, onSyncDone, onToplevelClose, onToplevelConfigure,
+    onDecorationConfigure, onSurfaceConfigure, onSyncDone, onToplevelClose, onToplevelConfigure
 };
 use crate::video::wayland::wl_win_state::{
-    WlCallbackListener, WlWinState, XdgDecorationListener, XdgSurfaceListener, XdgToplevelListener,
+    WlCallbackListener, WlWinState, XdgDecorationListener, XdgSurfaceListener, XdgToplevelListener
 };
 
 /** Slots in the acknowledgement block — the same shape as [`WlArgs`]. */
@@ -95,7 +95,12 @@ pub(crate) fn createWindow(
         let xdg : ptr<XdgTables> = (*app).xdg as ptr<XdgTables>;
 
         args.set(0, 0);
-        let surface = args.send((*app).compositor, WL_COMPOSITOR_CREATE_SURFACE, (*core).surface, 1);
+        let surface = args.send(
+            (*app).compositor,
+            WL_COMPOSITOR_CREATE_SURFACE,
+            (*core).surface,
+            1
+        );
         if (Raw::isNil(surface)) {
             throw PlatformError("wl_compositor.create_surface produced no surface");
         }
@@ -108,8 +113,7 @@ pub(crate) fn createWindow(
             throw PlatformError("xdg_wm_base.get_xdg_surface produced no surface");
         }
         (*st).xdgSurface = xdgSurface;
-        let surfaceListener : ptr<XdgSurfaceListener> =
-            (*st).surfaceListener as ptr<XdgSurfaceListener>;
+        let surfaceListener : ptr<XdgSurfaceListener> = (*st).surfaceListener as ptr<XdgSurfaceListener>;
         (*surfaceListener).configure = onSurfaceConfigure;
         wl_proxy_add_listener(xdgSurface, (*st).surfaceListener, st as ptr);
 
@@ -119,8 +123,7 @@ pub(crate) fn createWindow(
             throw PlatformError("xdg_surface.get_toplevel produced no toplevel");
         }
         (*st).toplevel = toplevel;
-        let toplevelListener : ptr<XdgToplevelListener> =
-            (*st).toplevelListener as ptr<XdgToplevelListener>;
+        let toplevelListener : ptr<XdgToplevelListener> = (*st).toplevelListener as ptr<XdgToplevelListener>;
         (*toplevelListener).configure = onToplevelConfigure;
         (*toplevelListener).close = onToplevelClose;
         wl_proxy_add_listener(toplevel, (*st).toplevelListener, st as ptr);
@@ -195,14 +198,16 @@ fn requestDecoration(st : ptr<WlWinState>, app : ptr<WlApp>, args : WlArgs) : vo
         args.set(0, 0);
         args.setObject(1, (*st).toplevel);
         let decoration = args.send(
-            (*app).decorationManager, ZXDG_DECORATION_GET_TOPLEVEL, (*decor).decoration, 1
+            (*app).decorationManager,
+            ZXDG_DECORATION_GET_TOPLEVEL,
+            (*decor).decoration,
+            1
         );
         if (Raw::isNil(decoration)) {
             return;
         }
         (*st).decoration = decoration;
-        let listener : ptr<XdgDecorationListener> =
-            (*st).decorationListener as ptr<XdgDecorationListener>;
+        let listener : ptr<XdgDecorationListener> = (*st).decorationListener as ptr<XdgDecorationListener>;
         (*listener).configure = onDecorationConfigure;
         wl_proxy_add_listener(decoration, (*st).decorationListener, st as ptr);
         args.set(0, ZXDG_DECORATION_MODE_SERVER_SIDE);

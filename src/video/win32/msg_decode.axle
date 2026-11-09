@@ -14,7 +14,11 @@ use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
 use crate::sys::win32_types::TRACKMOUSEEVENT;
 use crate::sys::win32_user::{ReleaseCapture, SetCapture, TrackMouseEvent};
-use crate::video::win_const::{TME_LEAVE, WM_MOUSELEAVE, WHEEL_DELTA, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP};
+use crate::video::win_const::{
+    TME_LEAVE, WM_MOUSELEAVE, WHEEL_DELTA, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN,
+    WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP
+};
 use crate::video::win_keymap::WinKeymap;
 
 /** The first UTF-16 surrogate — a code unit that is half a character. */
@@ -120,20 +124,18 @@ pub(crate) fn handle(
         WM_KEYDOWN | WM_SYSKEYDOWN => {
             let sc = keyOf(lp);
             keys.press(sc);
-            queue.push(
-                Event {
-                    kind: EventKind::KeyDown,
-                    timestamp: stamp,
-                    scancode: sc,
-                    repeat: repeatOf(lp),
-                }
-            );
-        }
+            queue.push(Event {
+                kind: EventKind::KeyDown,
+                timestamp: stamp,
+                scancode: sc,
+                repeat: repeatOf(lp),
+            });
+        },
         WM_KEYUP | WM_SYSKEYUP => {
             let sc = keyOf(lp);
             keys.release(sc);
             queue.push(Event { kind: EventKind::KeyUp, timestamp: stamp, scancode: sc });
-        }
+        },
         WM_CHAR => {
             let cp : i32 = (wp & 0xFFFF) as i32;
             // A surrogate half is not a character. Dropping it loses
@@ -143,7 +145,7 @@ pub(crate) fn handle(
             if (cp < SURROGATE_LOW_BOUND || cp > SURROGATE_HIGH_BOUND) {
                 queue.push(Event { kind: EventKind::TextInput, timestamp: stamp, text: cp });
             }
-        }
+        },
         WM_MOUSEMOVE => {
             let nx = mouseX(lp);
             let ny = mouseY(lp);
@@ -165,7 +167,7 @@ pub(crate) fn handle(
                 e.dy = ny - py;
             }
             queue.push(e);
-        }
+        },
         WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN => {
             let b = buttonOf(message);
             // The first button down takes the capture, so a drag that leaves
@@ -176,17 +178,15 @@ pub(crate) fn handle(
             mouse.press(b);
             let at = mouseX(lp);
             let down = mouseY(lp);
-            queue.push(
-                Event {
-                    kind: EventKind::MouseButtonDown,
-                    timestamp: stamp,
-                    button: b,
-                    x: at,
-                    y: down,
-                    clicks: mouse.countClick(b, stamp, at, down),
-                }
-            );
-        }
+            queue.push(Event {
+                kind: EventKind::MouseButtonDown,
+                timestamp: stamp,
+                button: b,
+                x: at,
+                y: down,
+                clicks: mouse.countClick(b, stamp, at, down),
+            });
+        },
         WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP => {
             let b = buttonOf(message);
             mouse.release(b);
@@ -194,32 +194,30 @@ pub(crate) fn handle(
             if (!mouse.anyDown()) {
                 ReleaseCapture();
             }
-            queue.push(
-                Event {
-                    kind: EventKind::MouseButtonUp,
-                    timestamp: stamp,
-                    button: b,
-                    x: mouseX(lp),
-                    y: mouseY(lp),
-                }
-            );
-        }
+            queue.push(Event {
+                kind: EventKind::MouseButtonUp,
+                timestamp: stamp,
+                button: b,
+                x: mouseX(lp),
+                y: mouseY(lp),
+            });
+        },
         WM_MOUSELEAVE => {
             // Sent once per `TrackMouseEvent`. A drag in progress holds the
             // capture and keeps getting motion and the release from outside;
             // the program is told the pointer left, and decides what it means.
             mouse.setInside(false);
             queue.push(Event { kind: EventKind::MouseLeft, timestamp: stamp });
-        }
+        },
         WM_MOUSEWHEEL => {
             let notches = wheelOf(wp);
             mouse.scroll(notches);
             queue.push(Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: notches });
-        }
+        },
         WM_CLOSE | WM_QUIT => {
             queue.push(Event { kind: EventKind::Quit, timestamp: stamp });
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }
 

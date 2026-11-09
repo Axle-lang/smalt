@@ -26,8 +26,8 @@
 // window closes, which is why `SysWindow` has an `adoptBlankCursor` and
 // the Win32 one does not.
 
-use crate::sys::x11_lib::{XFlush, XWarpPointer};
 use crate::sys::x11_const::X_NONE;
+use crate::sys::x11_lib::{XFlush, XWarpPointer};
 use crate::video::sys_window::SysWindow;
 use crate::video::x11::shape_cursor::applyCursor;
 use crate::video::x11::x_window_ops::{connection, id};

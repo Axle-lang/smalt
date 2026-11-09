@@ -39,4 +39,3 @@ pub(crate) class SysScreen {
         return measure(false);
     }
 }
-

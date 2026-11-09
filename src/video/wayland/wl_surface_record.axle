@@ -13,13 +13,13 @@
 /** `VkWaylandSurfaceCreateInfoKHR`. */
 pub extern "C" struct VkWaylandSurfaceCreateInfoKHR {
     /** `VkStructureType sType`. */
-    pub sType   : i32;
+    pub sType : i32;
 
     /** `const void *pNext`. */
-    pub pNext   : ptr;
+    pub pNext : ptr;
 
     /** `VkWaylandSurfaceCreateFlagsKHR flags`. */
-    pub flags   : i32;
+    pub flags : i32;
 
     /** `struct wl_display *display`. */
     pub display : ptr;

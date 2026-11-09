@@ -40,5 +40,6 @@ pub(crate) fn recover(handle : Blob, err : i64) : void {
 
 /** The device's queue depth, in microseconds. */
 pub(crate) fn latencyUs() : i32 {
-    return (((AUDIO_BLOCK_FRAMES as i64) * PCM_RING_BLOCKS * PCM_MICROS_PER_SEC) / (AUDIO_RATE as i64)) as i32;
+    return (((AUDIO_BLOCK_FRAMES as i64) * PCM_RING_BLOCKS * PCM_MICROS_PER_SEC)
+        / (AUDIO_RATE as i64)) as i32;
 }

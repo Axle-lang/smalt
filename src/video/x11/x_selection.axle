@@ -22,12 +22,12 @@ use crate::kernel::codec::Codec;
 use crate::kernel::mem::Mem;
 use crate::kernel::raw::Raw;
 use crate::sys::x11_const::{
-    X_ANY_PROPERTY_TYPE, X_ATOM_ATOM, X_ATOM_STRING, X_CURRENT_TIME, X_EVENT_BYTES, X_FALSE,
-    X_NONE, X_PROP_MODE_REPLACE, X_SELECTION_NOTIFY, X_TRUE,
+    X_ANY_PROPERTY_TYPE, X_ATOM_ATOM, X_ATOM_STRING, X_CURRENT_TIME, X_EVENT_BYTES, X_FALSE, X_NONE,
+    X_PROP_MODE_REPLACE, X_SELECTION_NOTIFY, X_TRUE
 };
 use crate::sys::x11_lib::{
     poll, XChangeProperty, XCheckTypedWindowEvent, XConvertSelection, XFlush, XFree,
-    XGetSelectionOwner, XGetWindowProperty, XInternAtom, XSendEvent, XSetSelectionOwner,
+    XGetSelectionOwner, XGetWindowProperty, XInternAtom, XSendEvent, XSetSelectionOwner
 };
 use crate::sys::x11_types::{XSelectionEvent, XSelectionRequestEvent};
 use crate::video::sys_window::SysWindow;
@@ -80,9 +80,19 @@ pub(crate) fn answerRequest(win : SysWindow, event : ptr) : void {
                 Raw::putI64(list.at(), 8, utf8);
                 Raw::putI64(list.at(), 16, X_ATOM_STRING);
                 Raw::putI64(list.at(), 24, plain);
-                XChangeProperty((*req).display, (*req).requestor, property, X_ATOM_ATOM, 32, X_PROP_MODE_REPLACE, list.at(), 4);
+                XChangeProperty(
+                    (*req).display,
+                    (*req).requestor,
+                    property,
+                    X_ATOM_ATOM,
+                    32,
+                    X_PROP_MODE_REPLACE,
+                    list.at(),
+                    4
+                );
                 served = true;
-            } else if (target == utf8 || target == plain || (target == X_ATOM_STRING && isAscii(win.ownedText))) {
+            } else if (target == utf8 || target == plain
+                || (target == X_ATOM_STRING && isAscii(win.ownedText))) {
                 let bytes : i64 = win.ownedText.byteLength;
                 let data = new Blob(bytes);
                 defer data.close();
@@ -91,7 +101,16 @@ pub(crate) fn answerRequest(win : SysWindow, event : ptr) : void {
                 if (target == X_ATOM_STRING) {
                     kind = X_ATOM_STRING;
                 }
-                XChangeProperty((*req).display, (*req).requestor, property, kind, 8, X_PROP_MODE_REPLACE, data.at(), bytes as i32);
+                XChangeProperty(
+                    (*req).display,
+                    (*req).requestor,
+                    property,
+                    kind,
+                    8,
+                    X_PROP_MODE_REPLACE,
+                    data.at(),
+                    bytes as i32
+                );
                 served = true;
             }
         }
@@ -180,8 +199,18 @@ fn readProperty(win : SysWindow, property : i64) : string {
     defer data.close();
 
     let status : i32 = XGetWindowProperty(
-        win.display, win.window, property, 0, PASTE_MAX_UNITS, X_TRUE, X_ANY_PROPERTY_TYPE,
-        kind.at(), format.at(), items.at(), after.at(), data.at()
+        win.display,
+        win.window,
+        property,
+        0,
+        PASTE_MAX_UNITS,
+        X_TRUE,
+        X_ANY_PROPERTY_TYPE,
+        kind.at(),
+        format.at(),
+        items.at(),
+        after.at(),
+        data.at()
     );
     if (status != 0) {
         return "";

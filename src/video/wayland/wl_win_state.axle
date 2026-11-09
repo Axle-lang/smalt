@@ -25,16 +25,16 @@ pub(crate) const WL_RING_STRIDE : i64 = 4;
 /** The latches, the proxies, and the input the callbacks leave behind. */
 pub extern "C" struct WlWinState {
     // ── What the frame loop reads and clears ──────────────────────
-    pub closePending : i32;
-    pub destroyed : i32;
-    pub sizePending : i32;
-    pub pendingW : i32;
-    pub pendingH : i32;
-    pub w : i32;
-    pub h : i32;
-    pub focused : i32;
-    pub focusPending : i32;
-    pub minimised : i32;
+    pub closePending    : i32;
+    pub destroyed       : i32;
+    pub sizePending     : i32;
+    pub pendingW        : i32;
+    pub pendingH        : i32;
+    pub w               : i32;
+    pub h               : i32;
+    pub focused         : i32;
+    pub focusPending    : i32;
+    pub minimised       : i32;
     pub minimisePending : i32;
 
     /** Set by the first `xdg_surface.configure`; a window is not one until. */
@@ -71,24 +71,24 @@ pub extern "C" struct WlWinState {
      * relative-mouse mode has it hidden, and whether the compositor must be told again — it
      * forgets the cursor at every `wl_pointer.enter`, so each enter sets this.
      */
-    pub cursorShape : i32;
+    pub cursorShape  : i32;
     pub cursorHidden : i32;
-    pub cursorDirty : i32;
-    pub cursorSpare : i32;
+    pub cursorDirty  : i32;
+    pub cursorSpare  : i32;
 
     /**
      * The serial of the last key or button event — what a clipboard claim must quote, because the
      * compositor honours only a claim made by the client that most recently had input.
      */
     pub inputSerial : u32;
-    pub inputSpare : i32;
+    pub inputSpare  : i32;
 
     // ── The proxies a callback answers on ─────────────────────────
-    pub display : ptr;
-    pub wmBase : ptr;
-    pub surface : ptr;
+    pub display    : ptr;
+    pub wmBase     : ptr;
+    pub surface    : ptr;
     pub xdgSurface : ptr;
-    pub toplevel : ptr;
+    pub toplevel   : ptr;
     pub decoration : ptr;
 
     /** The built-in pointers' surface and buffers — made on the first need, released with the window. */
@@ -98,12 +98,12 @@ pub extern "C" struct WlWinState {
     pub ackArgs : ptr;
 
     // ── The subscriptions, one block each ─────────────────────────
-    pub surfaceListener : ptr;
-    pub toplevelListener : ptr;
+    pub surfaceListener    : ptr;
+    pub toplevelListener   : ptr;
     pub decorationListener : ptr;
-    pub syncListener : ptr;
-    pub keyboardListener : ptr;
-    pub pointerListener : ptr;
+    pub syncListener       : ptr;
+    pub keyboardListener   : ptr;
+    pub pointerListener    : ptr;
 
     // ── What the seat's callbacks leave for the drain ─────────────
     pub head : i32;
@@ -125,7 +125,7 @@ pub extern "C" struct XdgSurfaceListener {
 /** `struct xdg_toplevel_listener` at version 1 — configure, then close. */
 pub extern "C" struct XdgToplevelListener {
     pub configure : extern "C" (ptr, ptr, i32, i32, ptr) => void;
-    pub close : extern "C" (ptr, ptr) => void;
+    pub close     : extern "C" (ptr, ptr) => void;
 }
 
 /** `struct zxdg_toplevel_decoration_v1_listener` — one event. */

@@ -14,23 +14,25 @@
 // The listeners the sweep installs live in [`crate::sys::wl_globals`].
 
 use crate::kernel::raw::Raw;
+use crate::sys::cursor_shape::{
+    buildCursorShapeTables, CursorShapeTables, WP_CURSOR_SHAPE_MANAGER_GET_POINTER
+};
 use crate::sys::wl_args::WlArgs;
-use crate::sys::wl_data::{closeClipboard, openClipboard};
 use crate::sys::wl_core::{loadCore, WlCore};
-use crate::sys::wl_token::{OutputListener, RegistryListener, WlApp, WlAppListeners};
+use crate::sys::wl_data::{closeClipboard, openClipboard};
 use crate::sys::wl_globals::{
     bindGlobal, onGlobal, onGlobalRemove, onOutputDescription, onOutputDone, onOutputGeometry,
-    onOutputMode, onOutputName, onOutputScale, onSeatCapabilities, onSeatName,
+    onOutputMode, onOutputName, onOutputScale, onSeatCapabilities, onSeatName
 };
 use crate::sys::wl_lib::{
     wl_display_connect, wl_display_disconnect, wl_display_roundtrip, wl_proxy_add_listener,
-    wl_proxy_get_version, wl_proxy_marshal_array_flags,
+    wl_proxy_get_version, wl_proxy_marshal_array_flags
 };
 use crate::sys::wl_request::{
     WL_BIND_VERSION, WL_DISPLAY_GET_REGISTRY, WL_SEAT_CAPABILITY_KEYBOARD,
-    WL_SEAT_CAPABILITY_POINTER, WL_SEAT_GET_KEYBOARD, WL_SEAT_GET_POINTER,
+    WL_SEAT_CAPABILITY_POINTER, WL_SEAT_GET_KEYBOARD, WL_SEAT_GET_POINTER
 };
-use crate::sys::cursor_shape::{buildCursorShapeTables, CursorShapeTables, WP_CURSOR_SHAPE_MANAGER_GET_POINTER};
+use crate::sys::wl_token::{OutputListener, RegistryListener, WlApp, WlAppListeners};
 use crate::sys::xdg_decoration::{buildDecorationTables, XdgDecorationTables};
 use crate::sys::xdg_shell::{buildXdgTables, XdgTables};
 
@@ -156,13 +158,21 @@ fn bindShell(app : ptr<WlApp>, args : WlArgs) : bool {
         let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
         let xdg : ptr<XdgTables> = (*app).xdg as ptr<XdgTables>;
         (*app).compositor = bindGlobal(
-            args, (*app).registry, (*app).compositorName, (*core).compositor, "wl_compositor"
+            args,
+            (*app).registry,
+            (*app).compositorName,
+            (*core).compositor,
+            "wl_compositor"
         );
         (*app).shm = bindGlobal(args, (*app).registry, (*app).shmName, (*core).shm, "wl_shm");
-        (*app).wmBase =
-            bindGlobal(args, (*app).registry, (*app).wmBaseName, (*xdg).wmBase, "xdg_wm_base");
-        return !Raw::isNil((*app).compositor)
-            && !Raw::isNil((*app).shm)
+        (*app).wmBase = bindGlobal(
+            args,
+            (*app).registry,
+            (*app).wmBaseName,
+            (*xdg).wmBase,
+            "xdg_wm_base"
+        );
+        return !Raw::isNil((*app).compositor) && !Raw::isNil((*app).shm)
             && !Raw::isNil((*app).wmBase);
     }
 }
@@ -206,13 +216,21 @@ fn openSeatDevices(app : ptr<WlApp>, args : WlArgs) : void {
         let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
         if (hasCapability((*app).seatCaps as i32, WL_SEAT_CAPABILITY_POINTER)) {
             args.set(0, 0);
-            (*app).pointer =
-                args.send((*app).seat, WL_SEAT_GET_POINTER, (*core).pointer, WL_BIND_VERSION);
+            (*app).pointer = args.send(
+                (*app).seat,
+                WL_SEAT_GET_POINTER,
+                (*core).pointer,
+                WL_BIND_VERSION
+            );
         }
         if (hasCapability((*app).seatCaps as i32, WL_SEAT_CAPABILITY_KEYBOARD)) {
             args.set(0, 0);
-            (*app).keyboard =
-                args.send((*app).seat, WL_SEAT_GET_KEYBOARD, (*core).keyboard, WL_BIND_VERSION);
+            (*app).keyboard = args.send(
+                (*app).seat,
+                WL_SEAT_GET_KEYBOARD,
+                (*core).keyboard,
+                WL_BIND_VERSION
+            );
         }
     }
 }
@@ -229,8 +247,13 @@ fn bindOutput(app : ptr<WlApp>, args : WlArgs) : void {
             return;
         }
         let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
-        (*app).output =
-            bindGlobal(args, (*app).registry, (*app).outputName, (*core).output, "wl_output");
+        (*app).output = bindGlobal(
+            args,
+            (*app).registry,
+            (*app).outputName,
+            (*core).output,
+            "wl_output"
+        );
         if (Raw::isNil((*app).output)) {
             return;
         }
@@ -301,7 +324,11 @@ fn bindDataManager(app : ptr<WlApp>, args : WlArgs) : void {
             return;
         }
         (*app).dataManager = bindGlobal(
-            args, (*app).registry, (*app).dataManagerName, (*core).dataDeviceManager, "wl_data_device_manager"
+            args,
+            (*app).registry,
+            (*app).dataManagerName,
+            (*core).dataDeviceManager,
+            "wl_data_device_manager"
         );
     }
 }

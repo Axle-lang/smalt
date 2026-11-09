@@ -30,7 +30,7 @@ pub(crate) class ScaleScratch : Closeable {
      * than as an absent one every path would have to test for. A game
      * whose window matches its framebuffer never grows it.
      */
-    pixels   : Blob = new Blob(1);
+    pixels : Blob = new Blob(1);
 
     /** Pixels the block has room for. */
     capacity : i64 = 0;
@@ -59,7 +59,14 @@ pub(crate) class ScaleScratch : Closeable {
      * `sx = dx * srcW / dstW` costs, and at a window's worth of pixels
      * sixty times a second that is the whole budget.
      */
-    pub(crate) fn resample(mut self, source : i32[], srcW : i32, srcH : i32, dstW : i32, dstH : i32) : void {
+    pub(crate) fn resample(
+        mut self,
+        source : i32[],
+        srcW : i32,
+        srcH : i32,
+        dstW : i32,
+        dstH : i32
+    ) : void {
         let xStep : i64 = ((srcW as i64) << ScaleScratch::FRACTION_BITS) / (dstW as i64);
         let yStep : i64 = ((srcH as i64) << ScaleScratch::FRACTION_BITS) / (dstH as i64);
         unsafe {
@@ -70,7 +77,8 @@ pub(crate) class ScaleScratch : Closeable {
                 let dstRow : i64 = (dy as i64) * (dstW as i64);
                 let mut sx : i64 = 0;
                 for (dx of 0..dstW) {
-                    dst[dstRow + (dx as i64)] = source[srcRow + (sx >> ScaleScratch::FRACTION_BITS)];
+                    dst[dstRow + (dx as i64)] = source[srcRow
+                        + (sx >> ScaleScratch::FRACTION_BITS)];
                     sx = sx + xStep;
                 }
                 sy = sy + yStep;

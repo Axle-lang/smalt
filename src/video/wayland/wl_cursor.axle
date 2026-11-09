@@ -20,11 +20,13 @@ use crate::kernel::raw::Raw;
 use crate::sys::cursor_shape::{protocolShape, WP_CURSOR_SHAPE_DEVICE_SET_SHAPE};
 use crate::sys::wl_args::WlArgs;
 use crate::sys::wl_core::WlCore;
-use crate::sys::wl_libc::{closeFd, ftruncate, memfdCreate, mmap, munmap, MAP_SHARED, MFD_CLOEXEC, PROT_READ_WRITE};
+use crate::sys::wl_libc::{
+    closeFd, ftruncate, memfdCreate, mmap, munmap, MAP_SHARED, MFD_CLOEXEC, PROT_READ_WRITE
+};
 use crate::sys::wl_request::{
     WL_BUFFER_DESTROY, WL_COMPOSITOR_CREATE_SURFACE, WL_POINTER_SET_CURSOR, WL_SHM_CREATE_POOL,
     WL_SHM_FORMAT_ARGB8888, WL_SHM_POOL_CREATE_BUFFER, WL_SHM_POOL_DESTROY, WL_SURFACE_ATTACH,
-    WL_SURFACE_COMMIT, WL_SURFACE_DAMAGE, WL_SURFACE_DESTROY,
+    WL_SURFACE_COMMIT, WL_SURFACE_DAMAGE, WL_SURFACE_DESTROY
 };
 use crate::sys::wl_token::WlApp;
 use crate::video::cursor::{CURSOR_HIDDEN, CURSOR_SHAPE_COUNT};
@@ -40,13 +42,13 @@ const KIT_SLOT_BYTES : i64 = 8;
 /** What a window made to draw the built-in pointers with. */
 pub extern "C" struct WlCursorKit {
     pub surface : ptr;
-    pub pool : ptr;
+    pub pool    : ptr;
     pub mapping : ptr;
 
     /** `CURSOR_SHAPE_COUNT` `wl_buffer` proxies, one per shape. */
-    pub buffers : ptr;
-    pub fd : i32;
-    pub spare : i32;
+    pub buffers  : ptr;
+    pub fd       : i32;
+    pub spare    : i32;
     pub mapBytes : i64;
 }
 
@@ -102,7 +104,12 @@ fn makeKit(app : ptr<WlApp>, st : ptr<WlWinState>, args : WlArgs) : ptr<WlCursor
         Raw::clear((*kit).buffers, (CURSOR_SHAPE_COUNT as i64) * KIT_SLOT_BYTES);
 
         args.set(0, 0);
-        (*kit).surface = args.send((*app).compositor, WL_COMPOSITOR_CREATE_SURFACE, (*core).surface, 1);
+        (*kit).surface = args.send(
+            (*app).compositor,
+            WL_COMPOSITOR_CREATE_SURFACE,
+            (*core).surface,
+            1
+        );
         if (Raw::isNil((*kit).surface)) {
             return refuse(st, args);
         }

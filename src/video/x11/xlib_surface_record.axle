@@ -13,16 +13,16 @@
 /** `VkXlibSurfaceCreateInfoKHR`. */
 pub extern "C" struct VkXlibSurfaceCreateInfoKHR {
     /** `VkStructureType sType`. */
-    pub sType  : i32;
+    pub sType : i32;
 
     /** `const void *pNext`. */
-    pub pNext  : ptr;
+    pub pNext : ptr;
 
     /** `VkXlibSurfaceCreateFlagsKHR flags`. */
-    pub flags  : i32;
+    pub flags : i32;
 
     /** `Display *dpy`. */
-    pub dpy    : ptr;
+    pub dpy : ptr;
 
     /** `Window window` — an `unsigned long`, so 64 bits. */
     pub window : i64;

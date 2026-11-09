@@ -22,9 +22,11 @@ use crate::kernel::mem::Mem;
 use crate::kernel::raw::Raw;
 use crate::sys::win32_const::{CF_UNICODETEXT, GMEM_MOVEABLE};
 use crate::sys::win32_kernel::{GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock};
-use crate::sys::win32_user::{CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, SetClipboardData};
-use crate::video::win_clipboard::openClipboard;
+use crate::sys::win32_user::{
+    CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, SetClipboardData
+};
 use crate::video::sys_window::SysWindow;
+use crate::video::win_clipboard::openClipboard;
 
 /** The system clipboard. */
 class SysClipboard {

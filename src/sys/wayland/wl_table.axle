@@ -32,7 +32,13 @@ pub(crate) fn recordAt(base : ptr, i : i64, stride : i64) : ptr {
  * `h` file descriptor, `?` the next one may be null), and `types` names
  * the interface of each argument that has one.
  */
-pub(crate) fn putMessage(base : ptr, i : i64, name : string, signature : string, types : ptr) : void {
+pub(crate) fn putMessage(
+    base : ptr,
+    i : i64,
+    name : string,
+    signature : string,
+    types : ptr
+) : void {
     unsafe {
         let m : ptr<WlMessage> = recordAt(base, i, sizeof<WlMessage>()) as ptr<WlMessage>;
         (*m).name = cstr(name);

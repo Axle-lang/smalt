@@ -16,8 +16,8 @@
 // Linux: `XDisplayWidth` / `XDisplayHeight` on the default screen, with
 // Xinerama or XRandR behind the same two functions for multi-monitor.
 
-use crate::sys::win32_user::GetSystemMetrics;
 use crate::sys::win32_const::{SM_CXSCREEN, SM_CYSCREEN};
+use crate::sys::win32_user::GetSystemMetrics;
 
 /** What the primary display measures. */
 pub(crate) class SysScreen {

@@ -20,8 +20,8 @@ pub extern "C" struct XSurface {
     pub display : ptr;
 
     /** The window id — a `Drawable`. */
-    pub window  : i64;
+    pub window : i64;
 
     /** The graphics context the put is issued through. */
-    pub gc      : ptr;
+    pub gc : ptr;
 }

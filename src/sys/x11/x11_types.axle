@@ -29,19 +29,19 @@
  */
 pub extern "C" struct XAnyEvent {
     /** `int type`. */
-    pub type_      : i32;
+    pub type_ : i32;
 
     /** `unsigned long serial`. */
-    pub serial     : i64;
+    pub serial : i64;
 
     /** `Bool send_event`. */
     pub send_event : i32;
 
     /** `Display *display`. */
-    pub display    : ptr;
+    pub display : ptr;
 
     /** `Window window`. */
-    pub window     : i64;
+    pub window : i64;
 }
 
 /**
@@ -52,46 +52,46 @@ pub extern "C" struct XAnyEvent {
  */
 pub extern "C" struct XKeyEvent {
     /** `int type`. */
-    pub type_       : i32;
+    pub type_ : i32;
 
     /** `unsigned long serial`. */
-    pub serial      : i64;
+    pub serial : i64;
 
     /** `Bool send_event`. */
-    pub send_event  : i32;
+    pub send_event : i32;
 
     /** `Display *display`. */
-    pub display     : ptr;
+    pub display : ptr;
 
     /** `Window window`. */
-    pub window      : i64;
+    pub window : i64;
 
     /** `Window root`. */
-    pub root        : i64;
+    pub root : i64;
 
     /** `Window subwindow`. */
-    pub subwindow   : i64;
+    pub subwindow : i64;
 
     /** `Time time`. */
-    pub time        : i64;
+    pub time : i64;
 
     /** `int x` — pointer x, in the window. */
-    pub x           : i32;
+    pub x : i32;
 
     /** `int y`. */
-    pub y           : i32;
+    pub y : i32;
 
     /** `int x_root`. */
-    pub x_root      : i32;
+    pub x_root : i32;
 
     /** `int y_root`. */
-    pub y_root      : i32;
+    pub y_root : i32;
 
     /** `unsigned int state` — the modifier and button mask. */
-    pub state       : u32;
+    pub state : u32;
 
     /** `unsigned int keycode`. */
-    pub keycode     : u32;
+    pub keycode : u32;
 
     /** `Bool same_screen`. */
     pub same_screen : i32;
@@ -107,46 +107,46 @@ pub extern "C" struct XKeyEvent {
  */
 pub extern "C" struct XButtonEvent {
     /** `int type`. */
-    pub type_       : i32;
+    pub type_ : i32;
 
     /** `unsigned long serial`. */
-    pub serial      : i64;
+    pub serial : i64;
 
     /** `Bool send_event`. */
-    pub send_event  : i32;
+    pub send_event : i32;
 
     /** `Display *display`. */
-    pub display     : ptr;
+    pub display : ptr;
 
     /** `Window window`. */
-    pub window      : i64;
+    pub window : i64;
 
     /** `Window root`. */
-    pub root        : i64;
+    pub root : i64;
 
     /** `Window subwindow`. */
-    pub subwindow   : i64;
+    pub subwindow : i64;
 
     /** `Time time`. */
-    pub time        : i64;
+    pub time : i64;
 
     /** `int x`. */
-    pub x           : i32;
+    pub x : i32;
 
     /** `int y`. */
-    pub y           : i32;
+    pub y : i32;
 
     /** `int x_root`. */
-    pub x_root      : i32;
+    pub x_root : i32;
 
     /** `int y_root`. */
-    pub y_root      : i32;
+    pub y_root : i32;
 
     /** `unsigned int state`. */
-    pub state       : u32;
+    pub state : u32;
 
     /** `unsigned int button` — 1 left, 2 middle, 3 right, 4/5 wheel. */
-    pub button      : u32;
+    pub button : u32;
 
     /** `Bool same_screen`. */
     pub same_screen : i32;
@@ -155,46 +155,46 @@ pub extern "C" struct XButtonEvent {
 /** `XMotionEvent` — `MotionNotify`. */
 pub extern "C" struct XMotionEvent {
     /** `int type`. */
-    pub type_       : i32;
+    pub type_ : i32;
 
     /** `unsigned long serial`. */
-    pub serial      : i64;
+    pub serial : i64;
 
     /** `Bool send_event`. */
-    pub send_event  : i32;
+    pub send_event : i32;
 
     /** `Display *display`. */
-    pub display     : ptr;
+    pub display : ptr;
 
     /** `Window window`. */
-    pub window      : i64;
+    pub window : i64;
 
     /** `Window root`. */
-    pub root        : i64;
+    pub root : i64;
 
     /** `Window subwindow`. */
-    pub subwindow   : i64;
+    pub subwindow : i64;
 
     /** `Time time`. */
-    pub time        : i64;
+    pub time : i64;
 
     /** `int x`. */
-    pub x           : i32;
+    pub x : i32;
 
     /** `int y`. */
-    pub y           : i32;
+    pub y : i32;
 
     /** `int x_root`. */
-    pub x_root      : i32;
+    pub x_root : i32;
 
     /** `int y_root`. */
-    pub y_root      : i32;
+    pub y_root : i32;
 
     /** `unsigned int state`. */
-    pub state       : u32;
+    pub state : u32;
 
     /** `char is_hint` — always 0 under `PointerMotionMask`. */
-    pub is_hint     : u8;
+    pub is_hint : u8;
 
     /** `Bool same_screen`. */
     pub same_screen : i32;
@@ -209,40 +209,40 @@ pub extern "C" struct XMotionEvent {
  */
 pub extern "C" struct XConfigureEvent {
     /** `int type`. */
-    pub type_             : i32;
+    pub type_ : i32;
 
     /** `unsigned long serial`. */
-    pub serial            : i64;
+    pub serial : i64;
 
     /** `Bool send_event`. */
-    pub send_event        : i32;
+    pub send_event : i32;
 
     /** `Display *display`. */
-    pub display           : ptr;
+    pub display : ptr;
 
     /** `Window event` — the window the event was selected on. */
-    pub event             : i64;
+    pub event : i64;
 
     /** `Window window` — the window that was reconfigured. */
-    pub window            : i64;
+    pub window : i64;
 
     /** `int x`. */
-    pub x                 : i32;
+    pub x : i32;
 
     /** `int y`. */
-    pub y                 : i32;
+    pub y : i32;
 
     /** `int width` — the new client width. */
-    pub width             : i32;
+    pub width : i32;
 
     /** `int height`. */
-    pub height            : i32;
+    pub height : i32;
 
     /** `int border_width`. */
-    pub border_width      : i32;
+    pub border_width : i32;
 
     /** `Window above`. */
-    pub above             : i64;
+    pub above : i64;
 
     /** `Bool override_redirect`. */
     pub override_redirect : i32;
@@ -251,25 +251,25 @@ pub extern "C" struct XConfigureEvent {
 /** `XFocusChangeEvent` — `FocusIn` and `FocusOut`. */
 pub extern "C" struct XFocusChangeEvent {
     /** `int type`. */
-    pub type_      : i32;
+    pub type_ : i32;
 
     /** `unsigned long serial`. */
-    pub serial     : i64;
+    pub serial : i64;
 
     /** `Bool send_event`. */
     pub send_event : i32;
 
     /** `Display *display`. */
-    pub display    : ptr;
+    pub display : ptr;
 
     /** `Window window`. */
-    pub window     : i64;
+    pub window : i64;
 
     /** `int mode` — `NotifyNormal`, `NotifyGrab`, `NotifyUngrab`. */
-    pub mode       : i32;
+    pub mode : i32;
 
     /** `int detail`. */
-    pub detail     : i32;
+    pub detail : i32;
 }
 
 /**
@@ -282,28 +282,28 @@ pub extern "C" struct XFocusChangeEvent {
  */
 pub extern "C" struct XClientMessageEvent {
     /** `int type`. */
-    pub type_        : i32;
+    pub type_ : i32;
 
     /** `unsigned long serial`. */
-    pub serial       : i64;
+    pub serial : i64;
 
     /** `Bool send_event`. */
-    pub send_event   : i32;
+    pub send_event : i32;
 
     /** `Display *display`. */
-    pub display      : ptr;
+    pub display : ptr;
 
     /** `Window window`. */
-    pub window       : i64;
+    pub window : i64;
 
     /** `Atom message_type`. */
     pub message_type : i64;
 
     /** `int format` — 8, 16 or 32; the protocol messages use 32. */
-    pub format       : i32;
+    pub format : i32;
 
     /** `union { … long l[5]; } data`, as its widest member. */
-    pub data         : i64[5];
+    pub data : i64[5];
 }
 
 /**
@@ -312,19 +312,19 @@ pub extern "C" struct XClientMessageEvent {
  */
 pub extern "C" struct XSelectionRequestEvent {
     /** `int type`. */
-    pub type_     : i32;
+    pub type_ : i32;
 
     /** `unsigned long serial`. */
-    pub serial    : i64;
+    pub serial : i64;
 
     /** `Bool send_event`. */
     pub send_event : i32;
 
     /** `Display *display`. */
-    pub display   : ptr;
+    pub display : ptr;
 
     /** `Window owner` — this window. */
-    pub owner     : i64;
+    pub owner : i64;
 
     /** `Window requestor` — who asked, and where the answer goes. */
     pub requestor : i64;
@@ -333,28 +333,28 @@ pub extern "C" struct XSelectionRequestEvent {
     pub selection : i64;
 
     /** `Atom target` — the form wanted: `UTF8_STRING`, `TARGETS`. */
-    pub target    : i64;
+    pub target : i64;
 
     /** `Atom property` — the property of `requestor` to write the answer to. */
-    pub property  : i64;
+    pub property : i64;
 
     /** `Time time`. */
-    pub time      : i64;
+    pub time : i64;
 }
 
 /** `XSelectionEvent` — the owner's answer, sent to the requestor: `property` is `None` for a refusal. */
 pub extern "C" struct XSelectionEvent {
     /** `int type`. */
-    pub type_     : i32;
+    pub type_ : i32;
 
     /** `unsigned long serial`. */
-    pub serial    : i64;
+    pub serial : i64;
 
     /** `Bool send_event`. */
     pub send_event : i32;
 
     /** `Display *display`. */
-    pub display   : ptr;
+    pub display : ptr;
 
     /** `Window requestor`. */
     pub requestor : i64;
@@ -363,37 +363,37 @@ pub extern "C" struct XSelectionEvent {
     pub selection : i64;
 
     /** `Atom target`. */
-    pub target    : i64;
+    pub target : i64;
 
     /** `Atom property` — where the data is, or `None`. */
-    pub property  : i64;
+    pub property : i64;
 
     /** `Time time`. */
-    pub time      : i64;
+    pub time : i64;
 }
 
 /** `XSelectionClearEvent` — another client took a selection this window owned. */
 pub extern "C" struct XSelectionClearEvent {
     /** `int type`. */
-    pub type_     : i32;
+    pub type_ : i32;
 
     /** `unsigned long serial`. */
-    pub serial    : i64;
+    pub serial : i64;
 
     /** `Bool send_event`. */
     pub send_event : i32;
 
     /** `Display *display`. */
-    pub display   : ptr;
+    pub display : ptr;
 
     /** `Window window`. */
-    pub window    : i64;
+    pub window : i64;
 
     /** `Atom selection`. */
     pub selection : i64;
 
     /** `Time time`. */
-    pub time      : i64;
+    pub time : i64;
 }
 
 /**
@@ -414,70 +414,70 @@ pub extern "C" struct XSelectionClearEvent {
  */
 pub extern "C" struct XImage {
     /** `int width`. */
-    pub width            : i32;
+    pub width : i32;
 
     /** `int height`. */
-    pub height           : i32;
+    pub height : i32;
 
     /** `int xoffset` — 0; the buffer's first pixel is the image's. */
-    pub xoffset          : i32;
+    pub xoffset : i32;
 
     /** `int format` — `ZPixmap`. */
-    pub format           : i32;
+    pub format : i32;
 
     /** `char *data` — the pixels, owned by the caller. */
-    pub data             : ptr;
+    pub data : ptr;
 
     /** `int byte_order` — `LSBFirst`. */
-    pub byte_order       : i32;
+    pub byte_order : i32;
 
     /** `int bitmap_unit`. */
-    pub bitmap_unit      : i32;
+    pub bitmap_unit : i32;
 
     /** `int bitmap_bit_order`. */
     pub bitmap_bit_order : i32;
 
     /** `int bitmap_pad`. */
-    pub bitmap_pad       : i32;
+    pub bitmap_pad : i32;
 
     /** `int depth` — 24 colour bits in a 32-bit pixel. */
-    pub depth            : i32;
+    pub depth : i32;
 
     /** `int bytes_per_line` — the row stride, in bytes. */
-    pub bytes_per_line   : i32;
+    pub bytes_per_line : i32;
 
     /** `int bits_per_pixel` — 32. */
-    pub bits_per_pixel   : i32;
+    pub bits_per_pixel : i32;
 
     /** `unsigned long red_mask`. */
-    pub red_mask         : i64;
+    pub red_mask : i64;
 
     /** `unsigned long green_mask`. */
-    pub green_mask       : i64;
+    pub green_mask : i64;
 
     /** `unsigned long blue_mask`. */
-    pub blue_mask        : i64;
+    pub blue_mask : i64;
 
     /** `XPointer obdata`. */
-    pub obdata           : ptr;
+    pub obdata : ptr;
 
     /** `f.create_image`. */
-    pub f_create_image   : ptr;
+    pub f_create_image : ptr;
 
     /** `f.destroy_image`. */
-    pub f_destroy_image  : ptr;
+    pub f_destroy_image : ptr;
 
     /** `f.get_pixel`. */
-    pub f_get_pixel      : ptr;
+    pub f_get_pixel : ptr;
 
     /** `f.put_pixel`. */
-    pub f_put_pixel      : ptr;
+    pub f_put_pixel : ptr;
 
     /** `f.sub_image`. */
-    pub f_sub_image      : ptr;
+    pub f_sub_image : ptr;
 
     /** `f.add_pixel`. */
-    pub f_add_pixel      : ptr;
+    pub f_add_pixel : ptr;
 }
 
 /**
@@ -490,37 +490,37 @@ pub extern "C" struct XImage {
  */
 pub extern "C" struct XSizeHints {
     /** `long flags` — which members below are meaningful. */
-    pub flags        : i64;
+    pub flags : i64;
 
     /** `int x`. */
-    pub x            : i32;
+    pub x : i32;
 
     /** `int y`. */
-    pub y            : i32;
+    pub y : i32;
 
     /** `int width`. */
-    pub width        : i32;
+    pub width : i32;
 
     /** `int height`. */
-    pub height       : i32;
+    pub height : i32;
 
     /** `int min_width`. */
-    pub min_width    : i32;
+    pub min_width : i32;
 
     /** `int min_height`. */
-    pub min_height   : i32;
+    pub min_height : i32;
 
     /** `int max_width`. */
-    pub max_width    : i32;
+    pub max_width : i32;
 
     /** `int max_height`. */
-    pub max_height   : i32;
+    pub max_height : i32;
 
     /** `int width_inc`. */
-    pub width_inc    : i32;
+    pub width_inc : i32;
 
     /** `int height_inc`. */
-    pub height_inc   : i32;
+    pub height_inc : i32;
 
     /** `int min_aspect.x`. */
     pub min_aspect_x : i32;
@@ -535,13 +535,13 @@ pub extern "C" struct XSizeHints {
     pub max_aspect_y : i32;
 
     /** `int base_width`. */
-    pub base_width   : i32;
+    pub base_width : i32;
 
     /** `int base_height`. */
-    pub base_height  : i32;
+    pub base_height : i32;
 
     /** `int win_gravity`. */
-    pub win_gravity  : i32;
+    pub win_gravity : i32;
 }
 
 /**
@@ -554,17 +554,17 @@ pub extern "C" struct XSizeHints {
  */
 pub extern "C" struct MotifWmHints {
     /** Which of the members below are meaningful. */
-    pub flags       : i64;
+    pub flags : i64;
 
     /** Which functions the manager should offer. */
-    pub functions   : i64;
+    pub functions : i64;
 
     /** 0 for none, 1 for all. */
     pub decorations : i64;
 
     /** Input mode. */
-    pub input_mode  : i64;
+    pub input_mode : i64;
 
     /** Status. */
-    pub status      : i64;
+    pub status : i64;
 }

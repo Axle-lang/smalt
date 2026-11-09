@@ -38,7 +38,10 @@
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
 use crate::sys::win32_user::{DefWindowProcW, GetWindowLongPtrW, SendMessageW, SetCursor};
-use crate::video::win_const::{GWLP_USERDATA, HTCLIENT, SIZE_MINIMIZED, WM_CLOSE, WM_DESTROY, WM_KILLFOCUS, WM_SETCURSOR, WM_SETFOCUS, WM_SIZE};
+use crate::video::win_const::{
+    GWLP_USERDATA, HTCLIENT, SIZE_MINIMIZED, WM_CLOSE, WM_DESTROY, WM_KILLFOCUS, WM_SETCURSOR,
+    WM_SETFOCUS, WM_SIZE
+};
 
 /**
  * What the window procedure learned, waiting for the next pump.
@@ -54,37 +57,37 @@ use crate::video::win_const::{GWLP_USERDATA, HTCLIENT, SIZE_MINIMIZED, WM_CLOSE,
  */
 pub extern "C" struct WinProcState {
     /** The user asked to close the window — `WM_CLOSE` arrived. */
-    pub closePending    : i32;
+    pub closePending : i32;
 
     /** The window was destroyed — `WM_DESTROY` arrived. */
-    pub destroyed       : i32;
+    pub destroyed : i32;
 
     /** A `WM_SIZE` arrived; `width` / `height` carry its client size. */
-    pub sizePending     : i32;
+    pub sizePending : i32;
 
     /** Client width from the last `WM_SIZE`. */
-    pub width           : i32;
+    pub width : i32;
 
     /** Client height from the last `WM_SIZE`. */
-    pub height          : i32;
+    pub height : i32;
 
     /** Whether the window holds input focus, as of the last message. */
-    pub focused         : i32;
+    pub focused : i32;
 
     /** Whether the window is minimised, as of the last `WM_SIZE`. */
-    pub minimised       : i32;
+    pub minimised : i32;
 
     /** A focus edge is waiting to be reported. */
-    pub focusPending    : i32;
+    pub focusPending : i32;
 
     /** A minimise / restore edge is waiting to be reported. */
     pub minimisePending : i32;
 
     /** Whether the program has chosen a cursor; until it has, the class's arrow stands. */
-    pub cursorSet       : i32;
+    pub cursorSet : i32;
 
     /** The `HCURSOR` to show over the client area, or null for none. */
-    pub cursor          : ptr;
+    pub cursor : ptr;
 }
 
 /**
@@ -118,11 +121,11 @@ pub(crate) fn windowProc(hwnd : ptr, msg : u32, wParam : u64, lParam : i64) : i6
                 // with no chance to save, prompt, or refuse.
                 (*st).closePending = 1;
                 return 0;
-            }
+            },
             WM_DESTROY => {
                 (*st).destroyed = 1;
                 return 0;
-            }
+            },
             WM_SIZE => {
                 let mut minimised : i32 = 0;
                 if ((wParam as i64) == (SIZE_MINIMIZED as i64)) {
@@ -141,7 +144,7 @@ pub(crate) fn windowProc(hwnd : ptr, msg : u32, wParam : u64, lParam : i64) : i6
                     (*st).sizePending = 1;
                 }
                 return 0;
-            }
+            },
             WM_SETCURSOR => {
                 // Asked at every mouse move, and answered only over the
                 // client area: the frame and its buttons are the system's,
@@ -150,19 +153,20 @@ pub(crate) fn windowProc(hwnd : ptr, msg : u32, wParam : u64, lParam : i64) : i6
                     SetCursor((*st).cursor);
                     return 1;
                 }
-            }
+            },
             WM_SETFOCUS => {
                 (*st).focused = 1;
                 (*st).focusPending = 1;
                 return 0;
-            }
+            },
             WM_KILLFOCUS => {
                 (*st).focused = 0;
                 (*st).focusPending = 1;
                 return 0;
-            }
-            // Every message this does not recognise is the system's.
-            _ => {}
+            },
+            _ => {
+                // Every message this does not recognise is the system's.
+            },
         }
 
         return DefWindowProcW(hwnd, msg, wParam, lParam);

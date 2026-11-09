@@ -30,14 +30,18 @@ use crate::kernel::blob::Blob;
 use crate::kernel::codec::Codec;
 use crate::kernel::mem::Mem;
 use crate::kernel::raw::Raw;
-use crate::sys::posix_io::{O_CLOEXEC, O_NONBLOCK, pipe2, POLL_READABLE, POLL_WRITABLE, readFd, signal, SIG_IGN, SIGPIPE, writeFd};
+use crate::sys::posix_io::{
+    O_CLOEXEC, O_NONBLOCK, pipe2, POLL_READABLE, POLL_WRITABLE, readFd, signal, SIG_IGN, SIGPIPE,
+    writeFd
+};
 use crate::sys::wl_args::WlArgs;
 use crate::sys::wl_core::WlCore;
 use crate::sys::wl_lib::{wl_display_flush, wl_proxy_add_listener};
 use crate::sys::wl_libc::{closeFd, cstrcmp, poll, PollFd};
 use crate::sys::wl_request::{
-    WL_DATA_DEVICE_SET_SELECTION, WL_DATA_MANAGER_CREATE_DATA_SOURCE, WL_DATA_MANAGER_GET_DATA_DEVICE,
-    WL_DATA_OFFER_DESTROY, WL_DATA_OFFER_RECEIVE, WL_DATA_SOURCE_DESTROY, WL_DATA_SOURCE_OFFER,
+    WL_DATA_DEVICE_SET_SELECTION, WL_DATA_MANAGER_CREATE_DATA_SOURCE,
+    WL_DATA_MANAGER_GET_DATA_DEVICE, WL_DATA_OFFER_DESTROY, WL_DATA_OFFER_RECEIVE,
+    WL_DATA_SOURCE_DESTROY, WL_DATA_SOURCE_OFFER
 };
 use crate::sys::wl_token::WlApp;
 
@@ -68,44 +72,44 @@ pub extern "C" struct WlClipboard {
     pub source : ptr;
 
     /** What the source serves: UTF-8 bytes this record owns, and how many. */
-    pub sourceText : ptr;
+    pub sourceText  : ptr;
     pub sourceBytes : i64;
 
     /** The subscription blocks, one each — `libwayland` keeps their addresses. */
     pub deviceListener : ptr;
-    pub offerListener : ptr;
+    pub offerListener  : ptr;
     pub sourceListener : ptr;
 
     /** The best format the selection offer has, and the pending one: 1, 2 or 3 as above; 0 for none. */
-    pub offerMime : i32;
+    pub offerMime   : i32;
     pub pendingMime : i32;
 }
 
 /** `struct wl_data_device_listener`. */
 pub extern "C" struct DataDeviceListener {
     pub dataOffer : extern "C" (ptr, ptr, ptr) => void;
-    pub enter : extern "C" (ptr, ptr, u32, ptr, i32, i32, ptr) => void;
-    pub leave : extern "C" (ptr, ptr) => void;
-    pub motion : extern "C" (ptr, ptr, u32, i32, i32) => void;
-    pub drop : extern "C" (ptr, ptr) => void;
+    pub enter     : extern "C" (ptr, ptr, u32, ptr, i32, i32, ptr) => void;
+    pub leave     : extern "C" (ptr, ptr) => void;
+    pub motion    : extern "C" (ptr, ptr, u32, i32, i32) => void;
+    pub drop_     : extern "C" (ptr, ptr) => void;
     pub selection : extern "C" (ptr, ptr, ptr) => void;
 }
 
 /** `struct wl_data_offer_listener` — `offer`, and the two a later version adds. */
 pub extern "C" struct DataOfferListener {
-    pub offer : extern "C" (ptr, ptr, ptr) => void;
+    pub offer         : extern "C" (ptr, ptr, ptr) => void;
     pub sourceActions : extern "C" (ptr, ptr, u32) => void;
-    pub action : extern "C" (ptr, ptr, u32) => void;
+    pub action        : extern "C" (ptr, ptr, u32) => void;
 }
 
 /** `struct wl_data_source_listener`. */
 pub extern "C" struct DataSourceListener {
-    pub target : extern "C" (ptr, ptr, ptr) => void;
-    pub send : extern "C" (ptr, ptr, ptr, i32) => void;
-    pub cancelled : extern "C" (ptr, ptr) => void;
+    pub target           : extern "C" (ptr, ptr, ptr) => void;
+    pub send             : extern "C" (ptr, ptr, ptr, i32) => void;
+    pub cancelled        : extern "C" (ptr, ptr) => void;
     pub dndDropPerformed : extern "C" (ptr, ptr) => void;
-    pub dndFinished : extern "C" (ptr, ptr) => void;
-    pub action : extern "C" (ptr, ptr, u32) => void;
+    pub dndFinished      : extern "C" (ptr, ptr) => void;
+    pub action           : extern "C" (ptr, ptr, u32) => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -199,7 +203,15 @@ pub(crate) fn onOfferMime(data : ptr, offer : ptr, mime : ptr) : void {
  * A drag entered the window. This library takes no part in drag and drop, so the offer that came
  * with it is taken back at once; left alone it would be a proxy nobody ever destroys.
  */
-pub(crate) fn onDataEnter(data : ptr, device : ptr, serial : u32, surface : ptr, x : i32, y : i32, offer : ptr) : void {
+pub(crate) fn onDataEnter(
+    data : ptr,
+    device : ptr,
+    serial : u32,
+    surface : ptr,
+    x : i32,
+    y : i32,
+    offer : ptr
+) : void {
     unsafe {
         let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
         if (Raw::isNil(offer)) {
@@ -267,7 +279,11 @@ pub(crate) fn onSourceSend(data : ptr, source : ptr, mime : ptr, fd : i32) : voi
         let total : i64 = (*clip).sourceBytes;
         let mut waited : i32 = 0;
         while (sent < total && waited < PASTE_WAIT_MS) {
-            let wrote : i64 = writeFd(fd, Raw::at(Raw::addr((*clip).sourceText) + sent), total - sent);
+            let wrote : i64 = writeFd(
+                fd,
+                Raw::at(Raw::addr((*clip).sourceText) + sent),
+                total - sent
+            );
             if (wrote > 0) {
                 sent += wrote;
             } else {
@@ -309,7 +325,8 @@ pub(crate) fn openClipboard(app : ptr<WlApp>, args : WlArgs) : void {
             return;
         }
         let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
-        if (Raw::isNil((*core).dataDevice) || Raw::isNil((*core).dataSource) || Raw::isNil((*core).dataOffer)) {
+        if (Raw::isNil((*core).dataDevice) || Raw::isNil((*core).dataSource)
+            || Raw::isNil((*core).dataOffer)) {
             return;
         }
         // A paste whose reader closes its end early would otherwise raise SIGPIPE on the write that
@@ -327,7 +344,7 @@ pub(crate) fn openClipboard(app : ptr<WlApp>, args : WlArgs) : void {
         (*dl).enter = onDataEnter;
         (*dl).leave = onDataLeave;
         (*dl).motion = onDataMotion;
-        (*dl).drop = onDataDrop;
+        (*dl).drop_ = onDataDrop;
         (*dl).selection = onDataSelection;
 
         (*clip).offerListener = Raw::take(sizeof<DataOfferListener>());
@@ -348,7 +365,12 @@ pub(crate) fn openClipboard(app : ptr<WlApp>, args : WlArgs) : void {
         // `wl_data_device_manager.get_data_device` — "no": the new device, the seat.
         args.set(0, 0);
         args.setObject(1, (*app).seat);
-        (*clip).device = args.send((*app).dataManager, WL_DATA_MANAGER_GET_DATA_DEVICE, (*core).dataDevice, 1);
+        (*clip).device = args.send(
+            (*app).dataManager,
+            WL_DATA_MANAGER_GET_DATA_DEVICE,
+            (*core).dataDevice,
+            1
+        );
         if (Raw::isNil((*clip).device)) {
             return;
         }
@@ -389,7 +411,8 @@ pub(crate) fn hasClipboardText(app : ptr<WlApp>) : bool {
             return false;
         }
         let clip : ptr<WlClipboard> = (*app).clipboard as ptr<WlClipboard>;
-        return !Raw::isNil((*clip).source) || (!Raw::isNil((*clip).offer) && (*clip).offerMime != 0);
+        return !Raw::isNil((*clip).source)
+            || (!Raw::isNil((*clip).offer) && (*clip).offerMime != 0);
     }
 }
 
@@ -443,7 +466,11 @@ pub(crate) fn pasteText(app : ptr<WlApp>) : string {
             if (!ready(readEnd, POLL_READABLE, PASTE_STEP_MS)) {
                 waited += PASTE_STEP_MS;
             } else {
-                let got : i64 = readFd(readEnd, Raw::at(Raw::addr(buffer.at()) + total), PASTE_MAX_BYTES - total);
+                let got : i64 = readFd(
+                    readEnd,
+                    Raw::at(Raw::addr(buffer.at()) + total),
+                    PASTE_MAX_BYTES - total
+                );
                 if (got > 0) {
                     total += got;
                 } else {
@@ -491,7 +518,12 @@ pub(crate) fn copyText(app : ptr<WlApp>, serial : u32, text : string) : bool {
         Mem::internString(Raw::addr(copy), 0, text, bytes as i32);
 
         args.set(0, 0);
-        let source : ptr = args.send((*app).dataManager, WL_DATA_MANAGER_CREATE_DATA_SOURCE, (*core).dataSource, 1);
+        let source : ptr = args.send(
+            (*app).dataManager,
+            WL_DATA_MANAGER_CREATE_DATA_SOURCE,
+            (*core).dataSource,
+            1
+        );
         if (Raw::isNil(source)) {
             Raw::release(copy);
             return false;

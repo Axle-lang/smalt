@@ -35,8 +35,8 @@
 
 use crate::kernel::raw::Raw;
 use crate::sys::win32_kernel::GetModuleHandleW;
-use crate::sys::win32_mm::{timeBeginPeriod, timeEndPeriod};
 use crate::sys::win32_layout_check::Win32Layout;
+use crate::sys::win32_mm::{timeBeginPeriod, timeEndPeriod};
 use crate::video::win_class::WinClass;
 
 /** The scheduler granularity a frame pacer asks for, in milliseconds. */

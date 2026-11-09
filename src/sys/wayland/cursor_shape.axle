@@ -38,7 +38,7 @@ const DEVICE_REQUESTS : i64 = 2;
 /** The two tables the extension needs. */
 pub extern "C" struct CursorShapeTables {
     pub manager : ptr;
-    pub device : ptr;
+    pub device  : ptr;
 }
 
 /**
@@ -72,8 +72,16 @@ pub(crate) fn protocolShape(shape : i32) : i64 {
 pub(crate) fn buildCursorShapeTables(out : ptr<CursorShapeTables>, wlPointer : ptr) : void {
     unsafe {
         let block = Raw::take(2 * sizeof<WlInterface>());
-        let manager : ptr<WlInterface> = recordAt(block, 0, sizeof<WlInterface>()) as ptr<WlInterface>;
-        let device : ptr<WlInterface> = recordAt(block, 1, sizeof<WlInterface>()) as ptr<WlInterface>;
+        let manager : ptr<WlInterface> = recordAt(
+            block,
+            0,
+            sizeof<WlInterface>()
+        ) as ptr<WlInterface>;
+        let device : ptr<WlInterface> = recordAt(
+            block,
+            1,
+            sizeof<WlInterface>()
+        ) as ptr<WlInterface>;
         (*out).manager = manager as ptr;
         (*out).device = device as ptr;
 

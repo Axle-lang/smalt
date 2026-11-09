@@ -25,7 +25,7 @@
 use crate::kernel::raw::Raw;
 use crate::sys::vk::vk_const::{
     VK_ERROR_EXTENSION_NOT_PRESENT, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME,
-    VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
+    VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR
 };
 use crate::sys::vk::vk_table::VkTable;
 use crate::sys::wl_token::WlApp;

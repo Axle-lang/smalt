@@ -31,11 +31,11 @@ use crate::kernel::raw::Raw;
 use crate::sys::wl_args::WlArgs;
 use crate::sys::wl_lib::wl_proxy_add_listener;
 use crate::sys::wl_libc::{
-    closeFd, ftruncate, memfdCreate, mmap, munmap, MAP_SHARED, MFD_CLOEXEC, PROT_READ_WRITE,
+    closeFd, ftruncate, memfdCreate, mmap, munmap, MAP_SHARED, MFD_CLOEXEC, PROT_READ_WRITE
 };
 use crate::sys::wl_request::{
     WL_BUFFER_DESTROY, WL_SHM_CREATE_POOL, WL_SHM_FORMAT_XRGB8888, WL_SHM_POOL_CREATE_BUFFER,
-    WL_SHM_POOL_DESTROY, WL_SURFACE_ATTACH, WL_SURFACE_COMMIT, WL_SURFACE_DAMAGE,
+    WL_SHM_POOL_DESTROY, WL_SURFACE_ATTACH, WL_SURFACE_COMMIT, WL_SURFACE_DAMAGE
 };
 
 /** Bytes per pixel, `XRGB8888`. */
@@ -62,7 +62,7 @@ pub extern "C" struct BufferListener {
  * subscription's to remember rather than the callback's to work out.
  */
 pub extern "C" struct WlSlot {
-    pub proxy : ptr;
+    pub proxy  : ptr;
     pub pixels : ptr;
 
     /** Non-zero while the compositor may still be reading these pages. */
@@ -74,10 +74,10 @@ pub extern "C" struct WlSlot {
      * written here need only copy its own damage and this, because the rest
      * already matches. Empty (width 0) when nothing is stale.
      */
-    pub dirtyX : i32;
-    pub dirtyY : i32;
-    pub dirtyW : i32;
-    pub dirtyH : i32;
+    pub dirtyX   : i32;
+    pub dirtyY   : i32;
+    pub dirtyW   : i32;
+    pub dirtyH   : i32;
     pub reserved : i32;
 }
 
@@ -89,26 +89,26 @@ pub extern "C" struct WlSlot {
  * new ones with.
  */
 pub extern "C" struct WlDrawable {
-    pub display : ptr;
-    pub surface : ptr;
-    pub shm : ptr;
-    pub pool : ptr;
+    pub display      : ptr;
+    pub surface      : ptr;
+    pub shm          : ptr;
+    pub pool         : ptr;
     pub shmPoolIface : ptr;
-    pub bufferIface : ptr;
+    pub bufferIface  : ptr;
 
     /** `WL_BUFFER_COUNT` [`WlSlot`] records, and the listener they share. */
-    pub slots : ptr;
+    pub slots    : ptr;
     pub listener : ptr;
 
     /** The base of the mapping, which slot 0 starts at. */
     pub mapping : ptr;
 
-    pub fd : i32;
-    pub width : i32;
+    pub fd     : i32;
+    pub width  : i32;
     pub height : i32;
 
     /** Non-zero until a frame has been committed to buffers of this size: its damage is the whole of it. */
-    pub fresh : i32;
+    pub fresh    : i32;
     pub mapBytes : i64;
 
     /**
@@ -238,7 +238,14 @@ pub(crate) fn freeSlot(target : ptr<WlDrawable>) : i64 {
  * the two together: a copy that is a little too large is correct, one that
  * is too small is a smear on the screen.
  */
-pub(crate) fn staleAdd(target : ptr<WlDrawable>, index : i64, x : i32, y : i32, w : i32, h : i32) : void {
+pub(crate) fn staleAdd(
+    target : ptr<WlDrawable>,
+    index : i64,
+    x : i32,
+    y : i32,
+    w : i32,
+    h : i32
+) : void {
     unsafe {
         if (w <= 0 || h <= 0) {
             return;
@@ -326,7 +333,15 @@ pub(crate) fn commitFrame(target : ptr<WlDrawable>, args : WlArgs, index : i64) 
  * pages to make them current. The first frame of a set of buffers damages
  * all of it, whatever the caller said.
  */
-pub(crate) fn commitRegion(target : ptr<WlDrawable>, args : WlArgs, index : i64, x : i32, y : i32, w : i32, h : i32) : void {
+pub(crate) fn commitRegion(
+    target : ptr<WlDrawable>,
+    args : WlArgs,
+    index : i64,
+    x : i32,
+    y : i32,
+    w : i32,
+    h : i32
+) : void {
     unsafe {
         if (index < 0) {
             return;

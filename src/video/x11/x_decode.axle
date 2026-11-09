@@ -12,9 +12,11 @@ use crate::core::keyboard::{KeyboardState, Scancode};
 use crate::core::mouse::{MouseButton, MouseState};
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
+use crate::sys::x11_const::{
+    X_BUTTON_MIDDLE, X_BUTTON_RIGHT, X_BUTTON_WHEEL_DOWN, X_BUTTON_WHEEL_UP
+};
 use crate::sys::x11_lib::XLookupString;
 use crate::sys::x11_types::{XButtonEvent, XKeyEvent, XMotionEvent};
-use crate::sys::x11_const::{X_BUTTON_MIDDLE, X_BUTTON_RIGHT, X_BUTTON_WHEEL_DOWN, X_BUTTON_WHEEL_UP};
 use crate::video::sys_window::SysWindow;
 use crate::video::x_keymap::XKeymap;
 
@@ -102,9 +104,12 @@ pub(crate) fn handleKey(
         // 30, read off the state this library keeps instead.
         let repeat = keys.isDown(sc);
         keys.press(sc);
-        queue.push(
-            Event { kind: EventKind::KeyDown, timestamp: stamp, scancode: sc, repeat: repeat }
-        );
+        queue.push(Event {
+            kind: EventKind::KeyDown,
+            timestamp: stamp,
+            scancode: sc,
+            repeat: repeat,
+        });
         let cp = textOf(event, text, keysym);
         if (cp >= 0) {
             queue.push(Event { kind: EventKind::TextInput, timestamp: stamp, text: cp });
@@ -143,33 +148,34 @@ pub(crate) fn handleButton(
         let b = buttonOf(number);
         if (press) {
             mouse.press(b);
-            queue.push(
-                Event {
-                    kind: EventKind::MouseButtonDown,
-                    timestamp: stamp,
-                    button: b,
-                    x: (*btn).x,
-                    y: (*btn).y,
-                    clicks: mouse.countClick(b, stamp, (*btn).x, (*btn).y),
-                }
-            );
-            return;
-        }
-        mouse.release(b);
-        queue.push(
-            Event {
-                kind: EventKind::MouseButtonUp,
+            queue.push(Event {
+                kind: EventKind::MouseButtonDown,
                 timestamp: stamp,
                 button: b,
                 x: (*btn).x,
                 y: (*btn).y,
-            }
-        );
+                clicks: mouse.countClick(b, stamp, (*btn).x, (*btn).y),
+            });
+            return;
+        }
+        mouse.release(b);
+        queue.push(Event {
+            kind: EventKind::MouseButtonUp,
+            timestamp: stamp,
+            button: b,
+            x: (*btn).x,
+            y: (*btn).y,
+        });
     }
 }
 
 /** Turn one motion event into a position and a delta. */
-pub(crate) fn handleMotion(event : ptr, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
+pub(crate) fn handleMotion(
+    event : ptr,
+    stamp : i64,
+    queue : EventQueue,
+    mouse : MouseState
+) : void {
     unsafe {
         let motion : ptr<XMotionEvent> = event as ptr<XMotionEvent>;
         let nx = (*motion).x;
@@ -198,7 +204,13 @@ pub(crate) fn handleMotion(event : ptr, stamp : i64, queue : EventQueue, mouse :
  * including the ones a grab makes: a drag that ends outside the window ends with a `LeaveNotify`,
  * and that is the pointer leaving. The state, not the event, decides whether it is news.
  */
-pub(crate) fn handleCrossing(event : ptr, entered : bool, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
+pub(crate) fn handleCrossing(
+    event : ptr,
+    entered : bool,
+    stamp : i64,
+    queue : EventQueue,
+    mouse : MouseState
+) : void {
     unsafe {
         let at : ptr<XMotionEvent> = event as ptr<XMotionEvent>;
         if (entered == mouse.isInside()) {
@@ -206,7 +218,12 @@ pub(crate) fn handleCrossing(event : ptr, entered : bool, stamp : i64, queue : E
         }
         mouse.setInside(entered);
         if (entered) {
-            queue.push(Event { kind: EventKind::MouseEntered, timestamp: stamp, x: (*at).x, y: (*at).y });
+            queue.push(Event {
+                kind: EventKind::MouseEntered,
+                timestamp: stamp,
+                x: (*at).x,
+                y: (*at).y,
+            });
             return;
         }
         queue.push(Event { kind: EventKind::MouseLeft, timestamp: stamp });

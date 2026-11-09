@@ -30,12 +30,12 @@ use crate::core::keyboard::KeyboardState;
 use crate::core::mouse::{MouseButton, MouseState};
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
-use crate::sys::wl_token::WlApp;
 use crate::sys::wl_lib::{
     wl_display_cancel_read, wl_display_dispatch_pending, wl_display_flush, wl_display_get_error,
-    wl_display_get_fd, wl_display_prepare_read, wl_display_read_events, wl_proxy_add_listener,
+    wl_display_get_fd, wl_display_prepare_read, wl_display_read_events, wl_proxy_add_listener
 };
 use crate::sys::wl_libc::{closeFd, poll, PollFd, POLL_IN};
+use crate::sys::wl_token::WlApp;
 use crate::video::evdev_keymap::EvdevKeymap;
 use crate::video::wayland::wl_win_state::{WlWinState, WL_RING_STRIDE, WL_RING_WORDS};
 
@@ -78,11 +78,11 @@ const FIXED_SHIFT : i32 = 8;
 
 /** `struct wl_keyboard_listener` — six slots, the last for a v4 binding. */
 pub extern "C" struct KeyboardListener {
-    pub keymap : extern "C" (ptr, ptr, u32, i32, u32) => void;
-    pub enter : extern "C" (ptr, ptr, u32, ptr, ptr) => void;
-    pub leave : extern "C" (ptr, ptr, u32, ptr) => void;
-    pub key : extern "C" (ptr, ptr, u32, u32, u32, u32) => void;
-    pub modifiers : extern "C" (ptr, ptr, u32, u32, u32, u32, u32) => void;
+    pub keymap     : extern "C" (ptr, ptr, u32, i32, u32) => void;
+    pub enter      : extern "C" (ptr, ptr, u32, ptr, ptr) => void;
+    pub leave      : extern "C" (ptr, ptr, u32, ptr) => void;
+    pub key        : extern "C" (ptr, ptr, u32, u32, u32, u32) => void;
+    pub modifiers  : extern "C" (ptr, ptr, u32, u32, u32, u32, u32) => void;
     pub repeatInfo : extern "C" (ptr, ptr, i32, i32) => void;
 }
 
@@ -95,16 +95,16 @@ pub extern "C" struct KeyboardListener {
  * against a read past the end of the struct.
  */
 pub extern "C" struct PointerListener {
-    pub enter : extern "C" (ptr, ptr, u32, ptr, i32, i32) => void;
-    pub leave : extern "C" (ptr, ptr, u32, ptr) => void;
-    pub motion : extern "C" (ptr, ptr, u32, i32, i32) => void;
-    pub button : extern "C" (ptr, ptr, u32, u32, u32, u32) => void;
-    pub axis : extern "C" (ptr, ptr, u32, u32, i32) => void;
-    pub frame : extern "C" (ptr, ptr) => void;
-    pub axisSource : extern "C" (ptr, ptr, u32) => void;
-    pub axisStop : extern "C" (ptr, ptr, u32, u32) => void;
-    pub axisDiscrete : extern "C" (ptr, ptr, u32, i32) => void;
-    pub axisValue120 : extern "C" (ptr, ptr, u32, i32) => void;
+    pub enter                 : extern "C" (ptr, ptr, u32, ptr, i32, i32) => void;
+    pub leave                 : extern "C" (ptr, ptr, u32, ptr) => void;
+    pub motion                : extern "C" (ptr, ptr, u32, i32, i32) => void;
+    pub button                : extern "C" (ptr, ptr, u32, u32, u32, u32) => void;
+    pub axis                  : extern "C" (ptr, ptr, u32, u32, i32) => void;
+    pub frame                 : extern "C" (ptr, ptr) => void;
+    pub axisSource            : extern "C" (ptr, ptr, u32) => void;
+    pub axisStop              : extern "C" (ptr, ptr, u32, u32) => void;
+    pub axisDiscrete          : extern "C" (ptr, ptr, u32, i32) => void;
+    pub axisValue120          : extern "C" (ptr, ptr, u32, i32) => void;
     pub axisRelativeDirection : extern "C" (ptr, ptr, u32, u32) => void;
 }
 
@@ -125,7 +125,13 @@ pub(crate) fn onKeymap(data : ptr, keyboard : ptr, format : u32, fd : i32, size 
     }
 }
 
-pub(crate) fn onKeyEnter(data : ptr, keyboard : ptr, serial : u32, surface : ptr, keys : ptr) : void {
+pub(crate) fn onKeyEnter(
+    data : ptr,
+    keyboard : ptr,
+    serial : u32,
+    surface : ptr,
+    keys : ptr
+) : void {
     unsafe {
         (*(data as ptr<WlWinState>)).inputSerial = serial;
         push(data as ptr<WlWinState>, RING_ENTER, 0, 0);
@@ -138,7 +144,14 @@ pub(crate) fn onKeyLeave(data : ptr, keyboard : ptr, serial : u32, surface : ptr
     }
 }
 
-pub(crate) fn onKey(data : ptr, keyboard : ptr, serial : u32, time : u32, key : u32, state : u32) : void {
+pub(crate) fn onKey(
+    data : ptr,
+    keyboard : ptr,
+    serial : u32,
+    time : u32,
+    key : u32,
+    state : u32
+) : void {
     unsafe {
         (*(data as ptr<WlWinState>)).inputSerial = serial;
         push(data as ptr<WlWinState>, RING_KEY, state as i32, key as i32);
@@ -153,8 +166,7 @@ pub(crate) fn onModifiers(
     latched : u32,
     locked : u32,
     group : u32
-) : void {
-}
+) : void {}
 
 /**
  * How fast the client should repeat a held key.
@@ -165,8 +177,7 @@ pub(crate) fn onModifiers(
  * answers for. The X11 backend gets repeats from the server instead, so
  * the two ports differ here and the difference is the protocol's.
  */
-pub(crate) fn onRepeatInfo(data : ptr, keyboard : ptr, rate : i32, delay : i32) : void {
-}
+pub(crate) fn onRepeatInfo(data : ptr, keyboard : ptr, rate : i32, delay : i32) : void {}
 
 pub(crate) fn onPointerEnter(
     data : ptr,
@@ -243,7 +254,12 @@ pub(crate) fn onAxisSource(data : ptr, pointer : ptr, source : u32) : void {}
 pub(crate) fn onAxisStop(data : ptr, pointer : ptr, time : u32, axis : u32) : void {}
 pub(crate) fn onAxisDiscrete(data : ptr, pointer : ptr, axis : u32, discrete : i32) : void {}
 pub(crate) fn onAxisValue120(data : ptr, pointer : ptr, axis : u32, value : i32) : void {}
-pub(crate) fn onAxisRelativeDirection(data : ptr, pointer : ptr, axis : u32, direction : u32) : void {}
+pub(crate) fn onAxisRelativeDirection(
+    data : ptr,
+    pointer : ptr,
+    axis : u32,
+    direction : u32
+) : void {}
 
 // ── What the drain does with it ─────────────────────────────────────
 
@@ -354,36 +370,45 @@ pub(crate) fn drainRing(
             (*st).tail = ((tail + WL_RING_STRIDE) % WL_RING_WORDS) as i32;
 
             match kind {
-                RING_KEY => { emitKey(a, b, stamp, queue, keys); }
-                RING_BUTTON => { emitButton(a, b, stamp, queue, mouse); }
-                RING_MOTION => { emitMotion(a, b, stamp, queue, mouse); }
+                RING_KEY => {
+                    emitKey(a, b, stamp, queue, keys);
+                },
+                RING_BUTTON => {
+                    emitButton(a, b, stamp, queue, mouse);
+                },
+                RING_MOTION => {
+                    emitMotion(a, b, stamp, queue, mouse);
+                },
                 RING_WHEEL => {
                     mouse.scroll(a);
-                    queue.push(
-                        Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: a }
-                    );
-                }
+                    queue.push(Event { kind: EventKind::MouseWheel, timestamp: stamp, wheel: a });
+                },
                 RING_POINTER_IN => {
                     if (!mouse.isInside()) {
                         mouse.setInside(true);
-                        queue.push(Event { kind: EventKind::MouseEntered, timestamp: stamp, x: a, y: b });
+                        queue.push(Event {
+                            kind: EventKind::MouseEntered,
+                            timestamp: stamp,
+                            x: a,
+                            y: b,
+                        });
                     }
-                }
+                },
                 RING_POINTER_OUT => {
                     if (mouse.isInside()) {
                         mouse.setInside(false);
                         queue.push(Event { kind: EventKind::MouseLeft, timestamp: stamp });
                     }
-                }
+                },
                 RING_ENTER => {
                     (*st).focused = 1;
                     (*st).focusPending = 1;
-                }
+                },
                 RING_LEAVE => {
                     (*st).focused = 0;
                     (*st).focusPending = 1;
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
     }
@@ -436,22 +461,24 @@ fn emitButton(state : i32, code : i32, stamp : i64, queue : EventQueue, mouse : 
     let y = mouse.posY();
     if (state != KEY_PRESSED) {
         mouse.release(b);
-        queue.push(
-            Event { kind: EventKind::MouseButtonUp, timestamp: stamp, button: b, x: x, y: y }
-        );
-        return;
-    }
-    mouse.press(b);
-    queue.push(
-        Event {
-            kind: EventKind::MouseButtonDown,
+        queue.push(Event {
+            kind: EventKind::MouseButtonUp,
             timestamp: stamp,
             button: b,
             x: x,
             y: y,
-            clicks: mouse.countClick(b, stamp, x, y),
-        }
-    );
+        });
+        return;
+    }
+    mouse.press(b);
+    queue.push(Event {
+        kind: EventKind::MouseButtonDown,
+        timestamp: stamp,
+        button: b,
+        x: x,
+        y: y,
+        clicks: mouse.countClick(b, stamp, x, y),
+    });
 }
 
 /** A motion record: a surface-local position in whole pixels. */
