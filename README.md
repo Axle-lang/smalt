@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://axle-lang.dev"><img alt="Powered by Axle" src="https://img.shields.io/badge/powered%20by-Axle-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
-  <a href="https://axle-lang.dev"><img alt="Axle 0.18.0+" src="https://img.shields.io/badge/axle-0.18.0%2B-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
+  <a href="https://axle-lang.dev"><img alt="Axle 0.20.0+" src="https://img.shields.io/badge/axle-0.20.0%2B-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
 </p>
 <p align="center">
   <img alt="Rendering: CPU or Vulkan" src="https://img.shields.io/badge/rendering-CPU%20%C2%B7%20Vulkan-FF7A45?style=flat-square&labelColor=1b1b2b">
@@ -161,25 +161,28 @@ That is the whole setup. No DLL beside the binary, no `[link]` section — `gdi3
 
 ### Prerequisite
 
-Only the Axle compiler, **v0.18.0 or newer**:
+Only the Axle compiler, **v0.20.0 or newer**:
 
 ```bash
-axle --version      # must print 0.18.0 or higher
+axle --version      # must print 0.20.0 or higher
 ```
 
-0.18 is a floor, not a preference: it spells annotations as values —
-`@layout(packed)`, `@link(symbol = "…")` — refuses the older
-`@packed` / `@link_name`, and rejects a write through a pointer bound
-with a plain `let` (**E0004**), so every binding smalt writes through is
-`let mut`. An older compiler does not know the new spellings, so there is
-no version that builds both.
+0.20 is a floor, not a preference. It spells annotations as values —
+`@layout(packed)`, `@link(symbol = "…")` — and an array is made with
+`new T[n]` (there is no `malloc<T>`); a shared object is `share new X(…)`;
+memory released by hand is the statement `drop value;` (`free` is gone, and
+`drop` is a keyword, so a field that mirrors a C name is spelled `drop_`).
+`let mut` is for a binding that is itself assigned (`x = …`, `x[i] = …`,
+`x.field = …`) and nowhere else: a plain `let` is enough to call a `mut self`
+method or to pass a struct to a `mut` parameter. An older compiler does not
+know these spellings, so there is no version that builds both.
 
 <details>
 <summary><b>Missing or older? Install / upgrade Axle →</b></summary>
 
 <br>
 
-- **Windows** — install the x64 `.msi` from the `v0.18.0` (or newer) release; it puts `axle.exe` in `C:\Program Files (x86)\Axle\` and on your `PATH`.
+- **Windows** — install the x64 `.msi` from the `v0.20.0` (or newer) release; it puts `axle.exe` in `C:\Program Files (x86)\Axle\` and on your `PATH`.
 - **Other platforms** — see [axle-lang.dev](https://axle-lang.dev).
 
 On Linux, the X11 port needs `libx11-dev` and `libasound2-dev`; the
@@ -585,8 +588,8 @@ Six language rules shape the signatures here:
 - **A constant is a `static` field on the class it belongs to.** This used to read the other way round: a `static` field did not cross a crate boundary, so a published constant had to be a `pub const` with the class spelled into its name — `WINDOW_RESIZABLE` rather than `Window::RESIZABLE`. Axle 0.12.1 fixed that, one day after the commit here that wrote the old rule down. So the flags are `Window::RESIZABLE` and friends now, and the prefix is the scope it was imitating. Both forms take a literal, so a constant derived from another is a `static fn` — `AudioFormat::frameBytes()`.
 - **A field's default belongs on the field.** `focusedNow : bool = true;` runs at every construction, so a constructor carries only what depends on an argument, and nine classes here have none at all.
 - **Storing a parameter into a field or an array element needs `own`** (**E0513** otherwise) when the parameter is a *reference* or a value that owns a resource. A plain value struct — `Vertex`, `Vec3`, `Event` — is copied into the slot and needs no keyword.
-- **An object has one owner, or a `Shared` handle.** Since 0.14 a field read out of a borrowed parameter and stored into a field (`self.store = m.store`) is **E0513** like storing `m` itself, and a field of `self` handed to a new owner is **E0765** — both used to compile and free the object twice at teardown. smalt itself never needs a second owner, but a game will — one `WorkerPool` its renderer and its sky pass both run on — and that is a `Shared<T>` (`new shared WorkerPool(n)`); an array held that way is `Shared::wrap(malloc<T>(n))`.
-- **`mut` on a class parameter is rejected as never-mutated** (**E0281**): calling a mutating method through it is not a mutation *of the binding*.
+- **An object has one owner, or a `Shared` handle.** Since 0.14 a field read out of a borrowed parameter and stored into a field (`self.store = m.store`) is **E0513** like storing `m` itself, and a field of `self` handed to a new owner is **E0765** — both used to compile and free the object twice at teardown. smalt itself never needs a second owner, but a game will — one `WorkerPool` its renderer and its sky pass both run on — and that is a `Shared<T>` (`share new WorkerPool(n)`); an array held that way is `Shared::wrap(new T[n])`.
+- **`mut` is the callee's permission, not the binding's.** A plain `let` binding of a class or a struct can call a `mut self` method or be passed to a `mut` parameter; `let mut` is only for a binding that is assigned (**E0004** otherwise). A `self` method may not call a `mut self` one (**E0283**).
 
 An annotation says what it is about in its own words: `@layout(packed)` on a record, `@link(symbol = "…")` on an import, `@float(fast)` on a function. Anything else — an old spelling, a typo, one on a site it does not concern — is an error rather than a no-op, and `tools/check_seam.sh` looks for `@link(` outside the port directories as it looks for `extern "C" from`.
 

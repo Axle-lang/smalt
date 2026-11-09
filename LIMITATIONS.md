@@ -249,14 +249,15 @@ return Mat4 { m00: 1.0 };   // ★ src/math/mat.axle — `identity()`
 
 ### 2.3 Some ordinary names are reserved
 
-`free(arr)` is a built-in and `of` is the `for … of` keyword, so neither
+`drop` (the statement that releases a value by hand) and `of` (the `for … of` keyword) are reserved, so neither
 can name a method. Both were found the same way — by writing the obvious
 name and reading a parse error that points at the name rather than
 saying it is taken:
 
 | Wanted | Is | Named instead |
 |---|---|---|
-| `BytePool::free()` | the deallocator | `BytePool::spare()` |
+| `BytePool::free()` | the old deallocator's name | `BytePool::spare()` |
+| `drop : extern "C" (…)` | the release statement | `drop_` |
 | `BitmapFont::of(face)` | `for (x **of** xs)` | `BitmapFont::baked(face)` |
 
 ### 2.4 No operator overloading
