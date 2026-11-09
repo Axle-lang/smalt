@@ -35,14 +35,14 @@
 // held. A GPU that is lost mid-run (`isLost`) is answered the way the documentation says:
 // the renderer is dropped and the scene carries on with `Backend::Software`.
 
+use std::lang::IndexOutOfBoundsException;
+use std::sys::process::{argc, argAt};
+
 use smalt::{
     Platform, PlatformError, Window, Clock, FramePacer, Events, EventKind, Scancode, Color, Camera,
     Primitives, Texture, Material, DirectionalLight, Mat4, Vec3, Rect, BitmapFont, Face, Renderer,
-    RendererDesc, Backend, Scene, MeshBuilder, Image, SamplerDesc, PointLight, Fog, Bmp,
-    FramePixels,
+    RendererDesc, Backend, Scene, MeshBuilder, Image, SamplerDesc, PointLight, Fog, Bmp, FramePixels
 };
-use std::sys::process::{argc, argAt};
-use std::lang::IndexOutOfBoundsException;
 
 /** Client width at startup. */
 const VIEW_W : i32 = 1024;
@@ -128,9 +128,12 @@ fn smokeRun() : bool {
 
 /** The crate's texture: a checker, sampled nearest. */
 fn crateImage() : Image {
-    return Image::fromTexture(
-        Texture::checker(128, 8, Color::rgb(0.9, 0.62, 0.28), Color::rgb(0.34, 0.22, 0.12))
-    );
+    return Image::fromTexture(Texture::checker(
+        128,
+        8,
+        Color::rgb(0.9, 0.62, 0.28),
+        Color::rgb(0.34, 0.22, 0.12)
+    ));
 }
 
 /** A vertical wall in the XY plane at depth `z`, its four corners four colours. */
@@ -204,15 +207,16 @@ fn session(
     let pane = gfx.uploadMesh(MeshBuilder::fromMesh(Primitives::ground(2.5, 1.0)));
 
     let mut crate1 = gfx.uploadTexture(crateImage(), SamplerDesc { nearest: true, anisotropy: 8 });
-    let tiles = gfx.uploadTexture(
-        Image::fromTexture(
-            Texture::checker(128, 2, Color::rgb(0.3, 0.33, 0.38), Color::rgb(0.18, 0.2, 0.24))
-        ),
-        SamplerDesc { anisotropy: 8 }
-    );
+    let tiles = gfx.uploadTexture(Image::fromTexture(Texture::checker(
+        128,
+        2,
+        Color::rgb(0.3, 0.33, 0.38),
+        Color::rgb(0.18, 0.2, 0.24)
+    )), SamplerDesc { anisotropy: 8 });
     // A none handle is an upload that did not happen: the draw is skipped, the program
     // runs on. Said once rather than discovered as a missing crate.
-    if (cube.isNone() || ground.isNone() || wall.isNone() || pane.isNone() || crate1.isNone() || tiles.isNone()) {
+    if (cube.isNone() || ground.isNone() || wall.isNone() || pane.isNone() || crate1.isNone()
+        || tiles.isNone()) {
         println("  (some of the scene could not be uploaded; it is drawn without it)");
     }
 
@@ -298,13 +302,11 @@ fn session(
         scene.add(cube, crate1, cubeMaterial, cubeModel(spin));
         scene.add(wall, gfx.whiteTexture(), wallMaterial, Mat4::identity());
         scene.add(pane, gfx.whiteTexture(), glass, paneModel());
-        scene.addLight(
-            PointLight::make(
-                Vec3::make(spin.cos() * 2.6, 1.4, spin.sin() * 2.6),
-                Color::rgb(1.0, 0.55, 0.2).scaled(1.6),
-                6.0
-            )
-        );
+        scene.addLight(PointLight::make(
+            Vec3::make(spin.cos() * 2.6, 1.4, spin.sin() * 2.6),
+            Color::rgb(1.0, 0.55, 0.2).scaled(1.6),
+            6.0
+        ));
 
         // The 2-D layer: the same `Frame` a `Surface` program draws on. It is composited
         // over the 3-D frame by `render`, and is empty again the next time it is taken.
@@ -383,9 +385,9 @@ fn checkCapture(px : FramePixels) : i32 {
 
 /** The crate's transform: turning about Y, nodding about X, held above the floor. */
 fn cubeModel(spin : f64) : Mat4 {
-    return Mat4::translation(
-        Vec3::make(0.0, 1.1, 0.0)
-    ).mul(Mat4::rotationY(spin)).mul(Mat4::rotationX(spin * 0.55));
+    return Mat4::translation(Vec3::make(0.0, 1.1, 0.0))
+        .mul(Mat4::rotationY(spin))
+        .mul(Mat4::rotationX(spin * 0.55));
 }
 
 /** The glass pane: standing on the floor beside the crate, turned to face the start. */

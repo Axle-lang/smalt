@@ -15,7 +15,7 @@
 use smalt::{
     Vec3, Vec4, Mat4, Camera, Color, Aabb, Mem, Mesh, Primitives, Texture, Material,
     DirectionalLight, MeshBuilder, Image, HandleTable, MeshHandle, TextureHandle, Scene, PointLight,
-    Fog, GpuCheck, ShaderHandle, RawVertex, Vec2,
+    Fog, GpuCheck, ShaderHandle, RawVertex, Vec2
 };
 
 fn near(a : f64, b : f64) : bool {
@@ -64,7 +64,9 @@ fn checkBuilder() : i32 {
     // The 32-byte layout the vertex shader declares, read back at the literal offsets the
     // shader's comment gives — not at the named ones, which are what is being checked.
     fails += expect(
-        MeshBuilder::POSITION_AT == 0 && MeshBuilder::UV_AT == 12 && MeshBuilder::NORMAL_AT == 20 && MeshBuilder::COLOR_AT == 24 && MeshBuilder::LAYER_AT == 28,
+        MeshBuilder::POSITION_AT == 0 && MeshBuilder::UV_AT == 12 && MeshBuilder::NORMAL_AT == 20
+            && MeshBuilder::COLOR_AT == 24
+            && MeshBuilder::LAYER_AT == 28,
         "the named vertex offsets are the shader's 0, 12, 20, 24, 28"
     );
     let mut base = b.vertexBase();
@@ -109,7 +111,9 @@ fn checkBuilder() : i32 {
             0.0,
             white,
             0
-        ) == -1 && r.vertex(0.0, inf, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, white, 0) == -1,
+        )
+            == -1
+            && r.vertex(0.0, inf, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, white, 0) == -1,
         "a NaN or infinite position is refused"
     );
     let nn = r.vertex(0.0, 0.0, 0.0, nan, 0.0, 1.0, 0.0, 0.0, white, MeshBuilder::MAX_LAYER);
@@ -132,7 +136,10 @@ fn checkBuilder() : i32 {
         ri == 0 && Mem::dwordAt(raw.vertexBase(), 28) == word,
         "vertexRaw keeps the layer word whole, the program's bits with the layer"
     );
-    fails += expect(Mem::byteAt(raw.vertexBase(), 23) == 127, "vertexRaw stores nw = 1 as the normal's fourth byte");
+    fails += expect(
+        Mem::byteAt(raw.vertexBase(), 23) == 127,
+        "vertexRaw stores nw = 1 as the normal's fourth byte"
+    );
 
     let bb = b.bounds();
     fails += expect(
@@ -344,7 +351,10 @@ fn checkMips() : i32 {
     bw.put(1, 1, 0, Image::pack(255, 255, 255, 255));
     let byteMean : i32 = (bw.mipTail(2, 0.0)[0] >>> 16) & 0xFF;
     let lightMean : i32 = (bw.mipTailOf(2, 0.0, true)[0] >>> 16) & 0xFF;
-    fails += expect(byteMean == 128 && lightMean == 188, "an sRGB mip averages linear light (${byteMean}, ${lightMean})");
+    fails += expect(
+        byteMean == 128 && lightMean == 188,
+        "an sRGB mip averages linear light (${byteMean}, ${lightMean})"
+    );
     fails += expect(
         Image::mipLevels(8, 4) == 4 && Image::mipLevels(1, 1) == 1,
         "levels count halvings"
@@ -575,7 +585,8 @@ fn checkBlocks() : i32 {
         near(
             Mem::floatOf(block, (160 + 16) / 4),
             4.0
-        ) && near(Mem::floatOf(block, (160 + 16) / 4 + 3), 7.0),
+        )
+            && near(Mem::floatOf(block, (160 + 16) / 4 + 3), 7.0),
         "lamp 1 starts 16 bytes after lamp 0"
     );
     fails += expect(
@@ -587,21 +598,25 @@ fn checkBlocks() : i32 {
         near(
             Mem::floatOf(block, 416 / 4 + 1),
             0.25
-        ) && near(Mem::floatOf(block, 416 / 4 + 3), 0.75),
+        )
+            && near(Mem::floatOf(block, 416 / 4 + 3), 0.75),
         "the sky light colour rides in counts.yzw"
     );
     fails += expect(
-        near(Mem::floatOf(block, 496 / 4), 640.0) && near(Mem::floatOf(block, 496 / 4 + 3), 1.0 / 400.0),
+        near(Mem::floatOf(block, 496 / 4), 640.0)
+            && near(Mem::floatOf(block, 496 / 4 + 3), 1.0 / 400.0),
         "target = (w, h, 1/w, 1/h) at byte 496"
     );
     fails += expect(
-        near(Mem::floatOf(block, (512 + 48) / 4), 1.5) && near(Mem::floatOf(block, (512 + 48) / 4 + 3), 4.5),
+        near(Mem::floatOf(block, (512 + 48) / 4), 1.5)
+            && near(Mem::floatOf(block, (512 + 48) / 4 + 3), 4.5),
         "user vector 3 at byte 560"
     );
     // With no camera, viewProj is the identity, so invViewProj is the clip fix's inverse:
     // it maps Vulkan depth 0 back to OpenGL's -1, and flips Y back.
     fails += expect(
-        near(Mem::floatOf(block, 432 / 4 + 5), -1.0) && near(Mem::floatOf(block, 432 / 4 + 10), 2.0),
+        near(Mem::floatOf(block, 432 / 4 + 5), -1.0)
+            && near(Mem::floatOf(block, 432 / 4 + 10), 2.0),
         "invViewProj at byte 432 undoes the clip fix"
     );
 
@@ -648,10 +663,15 @@ fn checkBlocks() : i32 {
 /** A matrix times its inverse is the identity — a projection as much as a rotation. */
 fn checkInverse() : i32 {
     let mut fails : i32 = 0;
-    let m = Mat4::perspective(1.1, 1.6, 0.05, 300.0).mul(
-        Mat4::lookAt(Vec3::make(3.0, 70.0, -2.0), Vec3::make(5.0, 69.0, 4.0), Vec3::make(0.0, 1.0, 0.0))
+    let m = Mat4::perspective(1.1, 1.6, 0.05, 300.0).mul(Mat4::lookAt(
+        Vec3::make(3.0, 70.0, -2.0),
+        Vec3::make(5.0, 69.0, 4.0),
+        Vec3::make(0.0, 1.0, 0.0)
+    ));
+    fails += expect(
+        isIdentity(m.mul(m.inverse())),
+        "a view-projection times its inverse is the identity"
     );
-    fails += expect(isIdentity(m.mul(m.inverse())), "a view-projection times its inverse is the identity");
     fails += expect(isIdentity(m.inverse().mul(m)), "its inverse times it is the identity");
     let flat = Mat4 { m00: 0.0, m11: 0.0 };
     fails += expect(near(flat.inverse().m00, 1.0), "a singular matrix inverts to the identity");
@@ -660,7 +680,8 @@ fn checkInverse() : i32 {
 
 /** Whether every entry of `p` is the identity's. */
 fn isIdentity(p : Mat4) : bool {
-    let mut ok : bool = near(p.m00, 1.0) && near(p.m01, 0.0) && near(p.m02, 0.0) && near(p.m03, 0.0);
+    let mut ok : bool = near(p.m00, 1.0) && near(p.m01, 0.0) && near(p.m02, 0.0)
+        && near(p.m03, 0.0);
     ok = ok && near(p.m10, 0.0) && near(p.m11, 1.0) && near(p.m12, 0.0) && near(p.m13, 0.0);
     ok = ok && near(p.m20, 0.0) && near(p.m21, 0.0) && near(p.m22, 1.0) && near(p.m23, 0.0);
     return ok && near(p.m30, 0.0) && near(p.m31, 0.0) && near(p.m32, 0.0) && near(p.m33, 1.0);
@@ -677,7 +698,10 @@ fn checkShading() : i32 {
     scene.useShader(mine);
     scene.setDrawUser(Vec4::make(1.0, 2.0, 3.0, 4.0));
     scene.add(m, t, Material::textured(), Mat4::identity());
-    fails += expect(GpuCheck::item(scene, 0).shader.isNone(), "a draw before useShader is built-in");
+    fails += expect(
+        GpuCheck::item(scene, 0).shader.isNone(),
+        "a draw before useShader is built-in"
+    );
     fails += expect(
         GpuCheck::item(scene, 1).shader.index == 2 && near(GpuCheck::item(scene, 1).user.w, 4.0),
         "a draw after useShader carries the shader and the draw vector"
@@ -691,7 +715,10 @@ fn checkShading() : i32 {
     fails += expect(scene.passCount() == Scene::MAX_PASSES, "passes up to MAX_PASSES are taken");
     fails += expect(!scene.addPass(mine, t, false), "one more pass is refused");
     let roomy : Scene = new Scene(4);
-    fails += expect(!roomy.addPass(ShaderHandle::none(), t, false), "a pass with no shader is refused");
+    fails += expect(
+        !roomy.addPass(ShaderHandle::none(), t, false),
+        "a pass with no shader is refused"
+    );
 
     scene.reset();
     fails += expect(scene.passCount() == 0, "reset drops the passes");

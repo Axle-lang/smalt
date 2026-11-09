@@ -20,12 +20,13 @@
 // be checked without anyone standing over the machine at the right
 // moment — and so this example is a test rather than only a demo.
 
-use smalt::{
-    Platform, PlatformError, WindowDesc, Clock, Events, EventKind, MouseButton, Scancode,
-    Surface, Frame, BitmapFont, Face, Scratch, Color, Rect, Bmp,
-};
-use std::sys::process::{argc, argAt};
 use std::lang::IndexOutOfBoundsException;
+use std::sys::process::{argc, argAt};
+
+use smalt::{
+    Platform, PlatformError, WindowDesc, Clock, Events, EventKind, MouseButton, Scancode, Surface,
+    Frame, BitmapFont, Face, Scratch, Color, Rect, Bmp
+};
 
 /** Client width. */
 const VIEW_W : i32 = 720;
@@ -71,9 +72,7 @@ fn buttonRect() : Rect {
 fn run() : i32 ! PlatformError {
     let platform = new Platform();
     defer platform.close();
-    let win = platform.open(
-        WindowDesc { title: "smalt — ui panel", w: VIEW_W, h: VIEW_H }
-    );
+    let win = platform.open(WindowDesc { title: "smalt — ui panel", w: VIEW_W, h: VIEW_H });
     defer win.close();
 
     let clock = new Clock();
@@ -109,7 +108,9 @@ fn run() : i32 ! PlatformError {
         while (events.hasNext()) {
             let e = events.next();
             match e.kind {
-                EventKind::Quit => { running = false; },
+                EventKind::Quit => {
+                    running = false;
+                },
                 EventKind::KeyDown => {
                     if (e.scancode == Scancode::Escape) {
                         running = false;
@@ -131,7 +132,9 @@ fn run() : i32 ! PlatformError {
                         dirty = true;
                     }
                 },
-                EventKind::WindowResized => { dirty = true; },
+                EventKind::WindowResized => {
+                    dirty = true;
+                },
                 _ => {},
             }
         }
@@ -197,7 +200,15 @@ fn paint(
 
     scratch.reset();
     scratch.grouped(clicks);
-    let pen = big.drawBytes(inner, card.x + 18, card.y + 74, scratch.at(), 0, scratch.length(), C_TEXT);
+    let pen = big.drawBytes(
+        inner,
+        card.x + 18,
+        card.y + 74,
+        scratch.at(),
+        0,
+        scratch.length(),
+        C_TEXT
+    );
     ui.draw(inner, pen + 8, card.y + 74, "so far", C_DIM);
 
     inner.hLine(card.x + 18, card.y + 92, card.w - 36, C_LINE);

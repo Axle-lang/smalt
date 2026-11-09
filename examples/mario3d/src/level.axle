@@ -5,9 +5,9 @@
 // Out of bounds is a wall on the left and open air elsewhere, so the
 // player can fall into a pit (and die) but not walk off the start.
 
+use config::Tile;
 use config::levelCols;
 use config::levelRows;
-use config::Tile;
 
 /** Whether tile `t` blocks movement (everything but empty air). */
 fn isSolid(t : Tile) : bool {
@@ -35,7 +35,7 @@ class Level {
     /** A fresh level: all empty air, then the course is painted in. */
     constructor() {
         let n : i32 = levelCols * levelRows;
-        self.grid = malloc<i32>(n);
+        self.grid = new i32[n];
         let mut i : i32 = 0;
         while (i < n) {
             self.grid[i] = Tile::Empty as i32;
@@ -106,7 +106,9 @@ class Level {
         // Ground with pits.
         let mut col : i32 = 0;
         while (col < cols) {
-            let pit : bool = (col >= 40 && col <= 43) || (col >= 78 && col <= 81) || (col >= 120 && col <= 123) || (col >= 160 && col <= 163);
+            let pit : bool = (col >= 40 && col <= 43) || (col >= 78 && col <= 81)
+                || (col >= 120 && col <= 123)
+                || (col >= 160 && col <= 163);
             if (!pit) {
                 self.setTile(col, g0, Tile::Ground);
                 self.setTile(col, g0 + 1, Tile::Ground);

@@ -14,12 +14,16 @@
 //
 // Build & run:  axle run            (nothing to ship — smalt is Win32)
 
-use smalt::{Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode, SoftDevice};
+use config::frameRate;
+use config::screenH;
+use config::screenW;
 use game::World;
 use render::render;
-use config::screenW;
-use config::screenH;
-use config::frameRate;
+
+use smalt::{
+    Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode,
+    SoftDevice
+};
 
 fn main() : i32 {
     try {

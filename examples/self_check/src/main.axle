@@ -17,8 +17,8 @@
 // unattended. Exit code is the number of failures; zero means green.
 
 use smalt::{
-    Vec3, Mat4, Quat, Aabb, Frustum, Camera, Clock, FramePacer,
-    Surface, Rect, Color, BitmapFont, Face, Scratch, Mem, BytePool, SlotIndex,
+    Vec3, Mat4, Quat, Aabb, Frustum, Camera, Clock, FramePacer, Surface, Rect, Color, BitmapFont,
+    Face, Scratch, Mem, BytePool, SlotIndex
 };
 
 /** The rate the pacing assertions run at — 5 ms a frame. */
@@ -416,7 +416,7 @@ fn checkFrame() : i32 {
     // Bound to `i32[]` first: an array literal in argument position is a
     // fixed `i32[N]`, and the two do not coerce there — only through a
     // `let` with the type written, or a `return`.
-    let myGlyphs : i32[] = [3, 0, 3, 0, 3, 0, 0, 0, 0, 0, 0, 0];  // 'A' lit, 'B' blank
+    let myGlyphs : i32[] = [3, 0, 3, 0, 3, 0, 0, 0, 0, 0, 0, 0]; // 'A' lit, 'B' blank
     let myWidths : i32[] = [5, 7];
     let mine = BitmapFont::fromTables(myGlyphs, myWidths, 3, -3, 65);
     if (mine.advance(65) != 5 || mine.advance(66) != 7) {
@@ -518,15 +518,33 @@ fn checkFmt() : i32 {
 fn expectFmt(sc : Scratch, want : string, n : i32) : i32 {
     sc.reset();
     match n {
-        1 => { sc.decimal(0); },
-        2 => { sc.decimal(-1); },
-        3 => { sc.grouped(1234567); },
-        4 => { sc.tenths(123); },
-        5 => { sc.byteCount(1024); },
-        6 => { sc.elapsed(250000); },
-        7 => { sc.hex(255, 4); },
-        8 => { sc.fixed(3.14159, 2); },
-        _ => { sc.clock(125000); },
+        1 => {
+            sc.decimal(0);
+        },
+        2 => {
+            sc.decimal(-1);
+        },
+        3 => {
+            sc.grouped(1234567);
+        },
+        4 => {
+            sc.tenths(123);
+        },
+        5 => {
+            sc.byteCount(1024);
+        },
+        6 => {
+            sc.elapsed(250000);
+        },
+        7 => {
+            sc.hex(255, 4);
+        },
+        8 => {
+            sc.fixed(3.14159, 2);
+        },
+        _ => {
+            sc.clock(125000);
+        },
     }
     if (sameBytes(sc, want)) {
         return 0;
@@ -623,7 +641,7 @@ fn checkTicks() : i32 {
     let mut fails : i32 = 0;
     let clock = new Clock();
     let pacer = new FramePacer(0);
-    pacer.setTickRate(100);              // 10 ms a step
+    pacer.setTickRate(100); // 10 ms a step
 
     // The first tick is the origin and earns nothing.
     pacer.tick(clock);
@@ -683,8 +701,8 @@ fn checkWide() : i32 {
         println("FAIL wideFrom wrote ${n} bytes for 4 chars + NUL, wanted 10");
         fails += 1;
     }
-    if (Mem::wordAt(block, 0) != 99 || Mem::wordAt(block, 2) != 97
-        || Mem::wordAt(block, 4) != 102 || Mem::wordAt(block, 6) != 233) {
+    if (Mem::wordAt(block, 0) != 99 || Mem::wordAt(block, 2) != 97 || Mem::wordAt(block, 4) != 102
+        || Mem::wordAt(block, 6) != 233) {
         println("FAIL wideFrom did not transcode café");
         fails += 1;
     }

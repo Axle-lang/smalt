@@ -4,27 +4,28 @@
 // and the side-scrolling camera. Coins and enemies are kept in raw
 // parallel buffers; everything is pixel-space.
 
-use smalt::{Events, Scancode};
-use level::Level;
-use player::Player;
-use config::screenW;
-use config::screenH;
-use config::tile;
-use config::levelCols;
-use config::levelRows;
-use config::playerW;
-use config::playerH;
-use config::coinSize;
-use config::enemyW;
-use config::enemyH;
-use config::enemySpeed;
-use config::jumpBufferFrames;
-use config::coyoteFrames;
-use config::startLives;
 use config::GameState;
 use config::Tile;
+use config::coinSize;
+use config::coyoteFrames;
+use config::enemyH;
+use config::enemySpeed;
+use config::enemyW;
+use config::jumpBufferFrames;
+use config::levelCols;
+use config::levelRows;
 use config::maxCoins;
 use config::maxEnemies;
+use config::playerH;
+use config::playerW;
+use config::screenH;
+use config::screenW;
+use config::startLives;
+use config::tile;
+use level::Level;
+use player::Player;
+
+use smalt::{Events, Scancode};
 
 /**
  * The whole run: the level, the hero, the coins and enemies (in raw
@@ -69,17 +70,17 @@ class World {
         self.jumpBuffer = 0;
         self.coyote = 0;
 
-        self.cx = malloc<f64>(maxCoins);
-        self.cy = malloc<f64>(maxCoins);
-        self.cAlive = malloc<i32>(maxCoins);
+        self.cx = new f64[maxCoins];
+        self.cy = new f64[maxCoins];
+        self.cAlive = new i32[maxCoins];
         self.nCoins = 0;
 
-        self.eX = malloc<f64>(maxEnemies);
-        self.eY = malloc<f64>(maxEnemies);
-        self.eDir = malloc<f64>(maxEnemies);
-        self.eMinX = malloc<f64>(maxEnemies);
-        self.eMaxX = malloc<f64>(maxEnemies);
-        self.eAlive = malloc<i32>(maxEnemies);
+        self.eX = new f64[maxEnemies];
+        self.eY = new f64[maxEnemies];
+        self.eDir = new f64[maxEnemies];
+        self.eMinX = new f64[maxEnemies];
+        self.eMaxX = new f64[maxEnemies];
+        self.eAlive = new i32[maxEnemies];
         self.nEnemies = 0;
 
         let t : f64 = tile as f64;
@@ -154,9 +155,8 @@ class World {
         }
         self.player.accelerate(dir);
 
-        let jumpHeld : bool = events.isKeyDown(
-            Scancode::Space
-        ) || events.isKeyDown(Scancode::W) || events.isKeyDown(Scancode::Up);
+        let jumpHeld : bool = events.isKeyDown(Scancode::Space) || events.isKeyDown(Scancode::W)
+            || events.isKeyDown(Scancode::Up);
         if (jumpHeld) {
             self.jumpBuffer = jumpBufferFrames;
         }

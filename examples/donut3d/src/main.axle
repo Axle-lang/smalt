@@ -11,14 +11,18 @@
 //
 // Build & run:  axle run            (nothing to ship — smalt is Win32)
 
-use smalt::{Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode, SoftDevice};
-use scene::clearFrame;
-use scene::renderTorus;
-use config::screenW;
+use config::frameRate;
 use config::screenH;
+use config::screenW;
 use config::spinX;
 use config::spinZ;
-use config::frameRate;
+use scene::clearFrame;
+use scene::renderTorus;
+
+use smalt::{
+    Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode,
+    SoftDevice
+};
 
 fn main() : i32 {
     try {
@@ -47,7 +51,7 @@ fn run() : i32 ! PlatformError {
     // The depth buffer is the one allocation this program owns. The colour
     // buffer is the device's, so there is nothing to allocate for it and
     // nothing to copy at the end of a frame.
-    let zb : f64[] = malloc<f64>((w as i64) * (h as i64));
+    let zb : f64[] = new f64[(w as i64) * (h as i64)];
 
     let mut a : f64 = 0.0;
     let mut b : f64 = 0.0;
@@ -83,6 +87,6 @@ fn run() : i32 ! PlatformError {
         b = b + spinZ;
     }
 
-    free(zb);
+    drop zb;
     return 0;
 }

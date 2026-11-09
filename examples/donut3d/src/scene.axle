@@ -10,15 +10,16 @@
 // the window's worth of pixels, and no pointer arithmetic to get either
 // wrong.
 
-use smalt::Color;
-use config::halfW;
 use config::halfH;
-use config::tubeR;
-use config::ringR;
-use config::viewDist;
-use config::projScale;
-use config::thetaStep;
+use config::halfW;
 use config::phiStep;
+use config::projScale;
+use config::ringR;
+use config::thetaStep;
+use config::tubeR;
+use config::viewDist;
+
+use smalt::Color;
 
 /** A full turn in radians — the upper bound of both surface sweeps. */
 const twoPi : f64 = 6.283185307;

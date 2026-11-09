@@ -3,18 +3,19 @@
 // hero is a little multi-colour sprite. A small HUD shows coins, lives
 // and the outcome banner.
 
-use smalt::Color;
-use game::World;
-use config::screenW;
-use config::levelRows;
-use config::tile;
-use config::playerW;
-use config::playerH;
-use config::coinSize;
-use config::enemyW;
-use config::enemyH;
-use config::Tile;
 use config::GameState;
+use config::Tile;
+use config::coinSize;
+use config::enemyH;
+use config::enemyW;
+use config::levelRows;
+use config::playerH;
+use config::playerW;
+use config::screenW;
+use config::tile;
+use game::World;
+
+use smalt::Color;
 
 /** Fill an axis-aligned rectangle (screen pixels), clipped to the view. */
 fn fillRect(
@@ -133,8 +134,8 @@ fn render(world : World, px : i32[], w : i32, h : i32) : void {
     let mut i : i32 = 0;
     while (i < world.nCoins) {
         if (world.cAlive[i] == 1) {
-            let x : i32 = (world.cx[i]).floorToInt() as i32 - camI;
-            let y : i32 = (world.cy[i]).floorToInt() as i32;
+            let x : i32 = world.cx[i].floorToInt() as i32 - camI;
+            let y : i32 = world.cy[i].floorToInt() as i32;
             fillRect(px, w, h, x, y, cs, cs, Color::packBytes(248, 216, 72));
             fillRect(px, w, h, x + cs / 2 - 2, y + 3, 4, cs - 6, Color::packBytes(200, 150, 30));
         }
@@ -147,8 +148,8 @@ fn render(world : World, px : i32[], w : i32, h : i32) : void {
     let mut e : i32 = 0;
     while (e < world.nEnemies) {
         if (world.eAlive[e] == 1) {
-            let x : i32 = (world.eX[e]).floorToInt() as i32 - camI;
-            let y : i32 = (world.eY[e]).floorToInt() as i32;
+            let x : i32 = world.eX[e].floorToInt() as i32 - camI;
+            let y : i32 = world.eY[e].floorToInt() as i32;
             fillRect(px, w, h, x, y, ew, eh, Color::packBytes(150, 92, 50));
             fillRect(px, w, h, x, y + eh - 6, ew, 6, Color::packBytes(70, 44, 24));  // feet
             fillRect(px, w, h, x + 5, y + 7, 5, 6, Color::packBytes(245, 245, 245)); // eyes

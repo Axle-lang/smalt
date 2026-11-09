@@ -4,18 +4,18 @@
 // resolve against the tiles it overlaps, then the next — so the player
 // slides along walls and lands cleanly.
 
+use config::friction;
+use config::gravity;
+use config::jumpVel;
+use config::maxFall;
+use config::maxRun;
+use config::moveAccel;
+use config::playerH;
+use config::playerW;
+use config::stompBounce;
+use config::tile;
 use level::Level;
 use level::isSolid;
-use config::tile;
-use config::playerW;
-use config::playerH;
-use config::moveAccel;
-use config::maxRun;
-use config::friction;
-use config::jumpVel;
-use config::gravity;
-use config::maxFall;
-use config::stompBounce;
 
 /** The hero: a pixel-space AABB with run/jump physics and a bonk record. */
 class Player {
@@ -139,6 +139,7 @@ class Player {
 
     /** AABB overlap of the player box with world rect (rx, ry, rw, rh). */
     pub(crate) fn overlapsRect(self, rx : f64, ry : f64, rw : f64, rh : f64) : bool {
-        return self.x < rx + rw && self.x + playerW > rx && self.y < ry + rh && self.y + playerH > ry;
+        return self.x < rx + rw && self.x + playerW > rx && self.y < ry + rh
+            && self.y + playerH > ry;
     }
 }

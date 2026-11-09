@@ -19,10 +19,11 @@
 // Shaders: `shaders/`, compiled into `src/shaders.axle` by `build_shaders.sh`.
 
 use smalt::{
-    Platform, PlatformError, Clock, Events, Renderer, RendererDesc, Backend, Scene,
-    MeshBuilder, Image, SamplerDesc, Material, Mat4, Vec2, Vec3, Vec4, ShaderDesc,
-    ShaderKind, ShaderHandle, FramePixels, Bmp, RawVertex,
+    Platform, PlatformError, Clock, Events, Renderer, RendererDesc, Backend, Scene, MeshBuilder,
+    Image, SamplerDesc, Material, Mat4, Vec2, Vec3, Vec4, ShaderDesc, ShaderKind, ShaderHandle,
+    FramePixels, Bmp, RawVertex
 };
+
 use crate::shaders::Shaders;
 
 /** The window's size. */
@@ -104,7 +105,8 @@ fn check(px : FramePixels, back : i32) : i32 {
     let br : i32 = (back >> 16) & 0xFF;
     let bg : i32 = (back >> 8) & 0xFF;
     let bb : i32 = back & 0xFF;
-    if (!close((corner >> 16) & 0xFF, br) || !close((corner >> 8) & 0xFF, bg) || !close(corner & 0xFF, bb)) {
+    if (!close((corner >> 16) & 0xFF, br) || !close((corner >> 8) & 0xFF, bg)
+        || !close(corner & 0xFF, bb)) {
         println("gpu_shaders: the corner reads ${corner & 0xFFFFFF}, not the background ${back & 0xFFFFFF}");
         fails += 1;
     }
@@ -112,7 +114,8 @@ fn check(px : FramePixels, back : i32) : i32 {
     let mr : i32 = ((1.0 - QUAD_R) * 255.0).round() as i32;
     let mg : i32 = ((1.0 - QUAD_G) * 255.0).round() as i32;
     let mb : i32 = ((1.0 - QUAD_B) * 255.0).round() as i32;
-    if (!close((middle >> 16) & 0xFF, mr) || !close((middle >> 8) & 0xFF, mg) || !close(middle & 0xFF, mb)) {
+    if (!close((middle >> 16) & 0xFF, mr) || !close((middle >> 8) & 0xFF, mg)
+        || !close(middle & 0xFF, mb)) {
         println("gpu_shaders: the middle reads ${middle & 0xFFFFFF}, not the inverted quad");
         fails += 1;
     }
@@ -165,7 +168,10 @@ fn run() : i32 ! PlatformError {
         return 1;
     }
 
-    let backTex = gfx.uploadTexture(solid2(backColor(0)), SamplerDesc { nearest: true, mipmaps: false });
+    let backTex = gfx.uploadTexture(solid2(backColor(0)), SamplerDesc {
+        nearest: true,
+        mipmaps: false,
+    });
     let mesh = gfx.uploadMesh(quad());
     let mut flat = Material::baked();
     flat.cullBackface = false;

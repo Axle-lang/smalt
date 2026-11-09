@@ -7,7 +7,10 @@
 // Controls: WASD to move, Space and Shift for up and down, Tab to
 // capture the mouse and look around, Escape to quit.
 
-use smalt::{Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode, Color, SoftDevice, Camera, Mesh, Primitives, Texture, Material, DirectionalLight, Mat4, Vec3};
+use smalt::{
+    Platform, PlatformError, Window, Clock, FramePacer, Events, Event, EventKind, Scancode, Color,
+    SoftDevice, Camera, Mesh, Primitives, Texture, Material, DirectionalLight, Mat4, Vec3
+};
 
 /** Client width at startup. */
 const VIEW_W : i32 = 1024;
@@ -130,9 +133,9 @@ fn run() : i32 ! PlatformError {
 
 /** The cube's transform: turning about Y, nodding about X, held above the floor. */
 fn cubeModel(spin : f64) : Mat4 {
-    return Mat4::translation(
-        Vec3::make(0.0, 1.1, 0.0)
-    ).mul(Mat4::rotationY(spin)).mul(Mat4::rotationX(spin * 0.55));
+    return Mat4::translation(Vec3::make(0.0, 1.1, 0.0))
+        .mul(Mat4::rotationY(spin))
+        .mul(Mat4::rotationX(spin * 0.55));
 }
 
 /** Move the camera from the held keys, framerate-independently. */
