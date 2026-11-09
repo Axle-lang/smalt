@@ -36,40 +36,29 @@
 // pulled into the build by the seam file that imports them, which is
 // what keeps this header from having to know they exist.
 
-use crate::kernel::{raw, blob, mem, store, codec};
-
-use crate::sys::dib;
-
-use crate::platform::audio_format;
-use crate::platform::{sys_clock, sys_app, sys_screen, sys_blit, sys_audio, sys_gpu_loader};
+use std::numeric::math;
 
 use crate::audio::{clip, mixer, bank};
-
 use crate::core::{error, init, timer, pool, event, keyboard, mouse, pump};
-
-use crate::video::{
-    window, display, cursor, cursor_art, scancode_set1, sys_window, sys_drain, sys_cursor, sys_clipboard,
-    sys_vk_surface,
-};
-
-use crate::render::color;
-use crate::render::soft::{target, present, device_soft};
-
-use crate::math::{vec, mat};
-
-use crate::render::{device, vertex, texture, mesh, camera, frame, glyphs, text, surface, damage};
-use crate::render::soft::{shade, raster};
-
-use crate::math::{quat, geom};
-
-use crate::io::{file, fmt, bmp};
-
-use crate::sys::vk::{vk_const, vk_types, vk_out, vk_table, vk_layout_check};
-
 use crate::gpu::{handle, light, image, mesh_builder, scene, shader, backend, renderer};
 use crate::gpu::soft::backend_soft;
 use crate::gpu::vk::{spirv, vk_error, vk_frame, vk_context, vk_heap, vk_mem, vk_graveyard};
+use crate::gpu::vk::{vk_backend, vk_check};
 use crate::gpu::vk::{vk_cmd, vk_pipelines, vk_textures, vk_meshes, vk_swapchain, vk_overlay};
 use crate::gpu::vk::{vk_targets, vk_shaders, vk_uploads, vk_readback};
-use crate::gpu::vk::{vk_backend, vk_check};
-use std::numeric::math;
+use crate::io::{file, fmt, bmp};
+use crate::kernel::{raw, blob, mem, store, codec};
+use crate::math::{quat, geom};
+use crate::math::{vec, mat};
+use crate::platform::audio_format;
+use crate::platform::{sys_clock, sys_app, sys_screen, sys_blit, sys_audio, sys_gpu_loader};
+use crate::render::color;
+use crate::render::{device, vertex, texture, mesh, camera, frame, glyphs, text, surface, damage};
+use crate::render::soft::{shade, raster};
+use crate::render::soft::{target, present, device_soft};
+use crate::sys::dib;
+use crate::sys::vk::{vk_const, vk_types, vk_out, vk_table, vk_layout_check};
+use crate::video::{
+    window, display, cursor, cursor_art, scancode_set1, sys_window, sys_drain, sys_cursor,
+    sys_clipboard, sys_vk_surface
+};

@@ -10,9 +10,10 @@
 // which falls out of the observation that a point is inside the frustum
 // exactly when its clip-space coordinates satisfy `-w <= c <= w`.
 
+use std::numeric::math;
+
 use crate::math::mat::Mat4;
 use crate::math::vec::Vec3;
-use std::numeric::math;
 
 /** Below this, a plane normal has no direction and the plane is skipped. */
 const GEOM_EPSILON : f64 = 0.000000001;
@@ -129,7 +130,7 @@ pub struct Plane {
     pub normal : Vec3;
 
     /** Signed distance from the origin along the normal. */
-    pub d      : f64;
+    pub d : f64;
 
     /** A plane from the four coefficients of `ax + by + cz + d = 0`, normalised. */
     pub static fn coefficients(a : f64, b : f64, c : f64, d : f64) : Plane {
@@ -156,22 +157,22 @@ pub struct Plane {
  */
 pub struct Frustum {
     /** Left plane. */
-    pub left   : Plane;
+    pub left : Plane;
 
     /** Right plane. */
-    pub right  : Plane;
+    pub right : Plane;
 
     /** Bottom plane. */
     pub bottom : Plane;
 
     /** Top plane. */
-    pub top    : Plane;
+    pub top : Plane;
 
     /** Near plane. */
-    pub near   : Plane;
+    pub near : Plane;
 
     /** Far plane. */
-    pub far    : Plane;
+    pub far : Plane;
 
     /**
      * The frustum of a view-projection matrix.

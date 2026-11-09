@@ -18,9 +18,9 @@
 // one window, and a process may have more than one.
 
 use crate::core::event::{Event, EventKind, EventQueue};
-use crate::core::timer::Clock;
 use crate::core::keyboard::{KeyboardState, Scancode};
 use crate::core::mouse::{MouseButton, MouseState};
+use crate::core::timer::Clock;
 use crate::kernel::blob::Blob;
 use crate::video::sys_cursor::SysCursor;
 use crate::video::sys_drain::SysDrain;
@@ -46,11 +46,11 @@ use crate::video::window::Window;
  * with an answer right now.
  */
 pub class Events : Closeable {
-    queue         : EventQueue = new EventQueue();
-    keys          : KeyboardState = new KeyboardState();
-    mouse         : MouseState = new MouseState();
-    msg           : Blob = SysDrain::newScratch();
-    sentQuit      : bool = false;
+    queue    : EventQueue = new EventQueue();
+    keys     : KeyboardState = new KeyboardState();
+    mouse    : MouseState = new MouseState();
+    msg      : Blob = SysDrain::newScratch();
+    sentQuit : bool = false;
 
     /**
      * A relative-mouse change waiting for a window to apply it to.
@@ -204,14 +204,12 @@ pub class Events : Closeable {
         }
 
         if (win.syncSize()) {
-            self.queue.push(
-                Event {
-                    kind: EventKind::WindowResized,
-                    timestamp: stamp,
-                    width: win.width(),
-                    height: win.height(),
-                }
-            );
+            self.queue.push(Event {
+                kind: EventKind::WindowResized,
+                timestamp: stamp,
+                width: win.width(),
+                height: win.height(),
+            });
         }
 
         let focused = win.focused();

@@ -38,8 +38,9 @@
 // — a caller genuinely holding sixteen numbers in row order writes the
 // literal, and gets each one checked against the cell it names.
 
-use crate::math::vec::{Vec3, Vec4};
 use std::numeric::math;
+
+use crate::math::vec::{Vec3, Vec4};
 
 /** Below this, a divisor is treated as zero and the safe fallback is used. */
 const MAT_EPSILON : f64 = 0.000000001;
@@ -241,9 +242,18 @@ pub struct Mat4 {
         }
         let trueUp = right.cross(forward);
         return Mat4 {
-            m00: right.x,  m01: right.y,  m02: right.z,  m03: -right.dot(eye),
-            m10: trueUp.x, m11: trueUp.y, m12: trueUp.z, m13: -trueUp.dot(eye),
-            m20: -forward.x, m21: -forward.y, m22: -forward.z, m23: forward.dot(eye),
+            m00: right.x,
+            m01: right.y,
+            m02: right.z,
+            m03: -right.dot(eye),
+            m10: trueUp.x,
+            m11: trueUp.y,
+            m12: trueUp.z,
+            m13: -trueUp.dot(eye),
+            m20: -forward.x,
+            m21: -forward.y,
+            m22: -forward.z,
+            m23: forward.dot(eye),
         };
     }
 
@@ -292,10 +302,22 @@ pub struct Mat4 {
     /** The transpose — the inverse of a rotation, and the normal matrix's half. */
     pub fn transposed(self) : Mat4 {
         return Mat4 {
-            m00: self.m00,  m01: self.m10,  m02: self.m20,  m03: self.m30,
-            m10: self.m01,  m11: self.m11,  m12: self.m21,  m13: self.m31,
-            m20: self.m02,  m21: self.m12,  m22: self.m22,  m23: self.m32,
-            m30: self.m03,  m31: self.m13,  m32: self.m23,  m33: self.m33,
+            m00: self.m00,
+            m01: self.m10,
+            m02: self.m20,
+            m03: self.m30,
+            m10: self.m01,
+            m11: self.m11,
+            m12: self.m21,
+            m13: self.m31,
+            m20: self.m02,
+            m21: self.m12,
+            m22: self.m22,
+            m23: self.m32,
+            m30: self.m03,
+            m31: self.m13,
+            m32: self.m23,
+            m33: self.m33,
         };
     }
 

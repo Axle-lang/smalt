@@ -27,10 +27,11 @@
 // because it never reaches zero and a game needs a distance past which a
 // sound is gone.
 
-use crate::kernel::raw::Raw;
-use crate::audio::clip::Clip;
 use std::concurrent::AtomicBoolean;
 use std::sys::sleep;
+
+use crate::audio::clip::Clip;
+use crate::kernel::raw::Raw;
 use crate::platform::audio_format::AUDIO_CHANNELS;
 use crate::platform::sys_audio::SysAudio;
 
@@ -42,34 +43,34 @@ use crate::platform::sys_audio::SysAudio;
  */
 struct Voice {
     /** Where the clip's samples are; 0 for a slot that holds none. */
-    base       : i64 = 0;
+    base : i64 = 0;
 
     /** Frames in the clip. */
-    frames     : i32 = 0;
+    frames : i32 = 0;
 
     /** How many of them have been mixed. */
-    cursor     : i32 = 0;
+    cursor : i32 = 0;
 
     /** The gain before the listener distance is applied. */
-    gain       : f64 = 0.0;
+    gain : f64 = 0.0;
 
     /** Whether the three coordinates below mean anything. */
     positional : bool = false;
 
     /** Where the sound is, when it is positional. */
-    x          : f64 = 0.0;
+    x : f64 = 0.0;
 
     /** Where the sound is, when it is positional. */
-    y          : f64 = 0.0;
+    y : f64 = 0.0;
 
     /** Where the sound is, when it is positional. */
-    z          : f64 = 0.0;
+    z : f64 = 0.0;
 
     /** Distance at which a positional voice has faded to nothing. */
-    range      : f64 = 0.0;
+    range : f64 = 0.0;
 
     /** Whether this slot is playing. */
-    active     : bool = false;
+    active : bool = false;
 }
 
 /**
@@ -92,7 +93,7 @@ pub class Mixer : Closeable {
     pub(file) static CLAMP : i32 = 32767;
 
     audio  : SysAudio = new SysAudio();
-    voices : Voice[] = malloc<Voice>(Mixer::VOICES as i64);
+    voices : Voice[] = new Voice[Mixer::VOICES as i64];
     lx     : f64 = 0.0;
     ly     : f64 = 0.0;
     lz     : f64 = 0.0;
@@ -111,7 +112,7 @@ pub class Mixer : Closeable {
      * more than the work it guards. It is `pub(file)` so nothing outside
      * can hold it across a call that takes it again.
      */
-    lock   : AtomicBoolean = new AtomicBoolean(false);
+    lock : AtomicBoolean = new AtomicBoolean(false);
 
     /**
      * Whether `mixerLoop` should keep going.
@@ -120,7 +121,7 @@ pub class Mixer : Closeable {
      * read by the one pumping it, and a plain `bool` read across two
      * threads is a read the optimiser may hoist out of the loop.
      */
-    alive  : AtomicBoolean = new AtomicBoolean(true);
+    alive : AtomicBoolean = new AtomicBoolean(true);
 
     /** Open the device and start with every voice idle. */
     constructor() {
@@ -131,8 +132,7 @@ pub class Mixer : Closeable {
 
     /** Spin until this thread owns the lock. */
     pub(file) fn acquire(self) : void {
-        while (!self.lock.compareAndSet(false, true)) {
-        }
+        while (!self.lock.compareAndSet(false, true)) {}
     }
 
     /** Give the lock back. */
@@ -197,7 +197,15 @@ pub class Mixer : Closeable {
     }
 
     /** Start `clip` at a world position, fading to nothing at `range`. */
-    pub fn playAt(mut self, clip : Clip, gain : f64, x : f64, y : f64, z : f64, range : f64) : void {
+    pub fn playAt(
+        mut self,
+        clip : Clip,
+        gain : f64,
+        x : f64,
+        y : f64,
+        z : f64,
+        range : f64
+    ) : void {
         if (!clip.loaded() || range <= 0.0) {
             return;
         }
@@ -348,7 +356,6 @@ pub class Mixer : Closeable {
 
     /** Stop the device. The clips are the bank's to release. */
     pub fn close(self) : void {
-        drop self.voices;
         self.audio.close();
     }
 }

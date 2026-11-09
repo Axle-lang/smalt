@@ -41,7 +41,7 @@ pub class SoundBank : Closeable {
             n = 1;
         }
         self.cap = n;
-        self.clips = malloc<Clip>(n as i64);
+        self.clips = new Clip[n as i64];
     }
 
     /**
@@ -127,6 +127,5 @@ pub class SoundBank : Closeable {
         for (i of 0..self.count) {
             self.clips[i].close();
         }
-        drop self.clips;
     }
 }

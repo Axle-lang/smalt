@@ -329,25 +329,25 @@ pub class Mem {
             // end of a truncated string falls through to the replacement
             // character rather than reading past it.
             match b0 {
-                0x00..=0x7F => { cp = b0; }
+                0x00..=0x7F => {
+                    cp = b0;
+                },
                 0xC2..=0xDF if i + 1 < bytes => {
                     cp = ((b0 & 0x1F) << 6) | Mem::tailBits(s, i + 1);
                     taken = 2;
-                }
+                },
                 0xE0..=0xEF if i + 2 < bytes => {
-                    cp = ((b0 & 0x0F) << 12)
-                        | (Mem::tailBits(s, i + 1) << 6)
+                    cp = ((b0 & 0x0F) << 12) | (Mem::tailBits(s, i + 1) << 6)
                         | Mem::tailBits(s, i + 2);
                     taken = 3;
-                }
+                },
                 0xF0..=0xF4 if i + 3 < bytes => {
-                    cp = ((b0 & 0x07) << 18)
-                        | (Mem::tailBits(s, i + 1) << 12)
+                    cp = ((b0 & 0x07) << 18) | (Mem::tailBits(s, i + 1) << 12)
                         | (Mem::tailBits(s, i + 2) << 6)
                         | Mem::tailBits(s, i + 3);
                     taken = 4;
-                }
-                _ => {}
+                },
+                _ => {},
             }
 
             if (cp < Mem::SUPPLEMENTARY) {

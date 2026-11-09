@@ -15,6 +15,8 @@
 // be impossible to miss on screen and must not take the frame down with
 // it.
 
+use std::ffi::libc::fs;
+
 use crate::io::file::AssetFile;
 use crate::kernel::blob::Blob;
 use crate::kernel::mem::Mem;
@@ -23,7 +25,6 @@ use crate::render::color::Color;
 use crate::render::frame::Frame;
 use crate::render::texture::Texture;
 use crate::sys::dib::BITMAPINFOHEADER;
-use std::ffi::libc::fs;
 
 /**
  * `BITMAPFILEHEADER` — the 14 bytes a `.bmp` opens with.
@@ -37,10 +38,10 @@ use std::ffi::libc::fs;
 @layout(packed)
 extern "C" struct BITMAPFILEHEADER {
     /** `WORD bfType` — `BM`, little-endian, so `0x4D42`. */
-    bfType      : u16;
+    bfType : u16;
 
     /** `DWORD bfSize` — the whole file. */
-    bfSize      : u32;
+    bfSize : u32;
 
     /** `WORD bfReserved1`. */
     bfReserved1 : u16;
@@ -49,7 +50,7 @@ extern "C" struct BITMAPFILEHEADER {
     bfReserved2 : u16;
 
     /** `DWORD bfOffBits` — where the pixel rows begin. */
-    bfOffBits   : u32;
+    bfOffBits : u32;
 }
 
 /**
@@ -154,7 +155,13 @@ pub class Bmp {
      * Split from `load` so the header validation reads as a list of
      * refusals and the pixel walk as a loop.
      */
-    pub(file) static fn decode(data : Blob, width : i32, height : i32, topDown : bool, bpp : i32) : Texture {
+    pub(file) static fn decode(
+        data : Blob,
+        width : i32,
+        height : i32,
+        topDown : bool,
+        bpp : i32
+    ) : Texture {
         let bytesPerPixel : i32 = bpp / 8;
         let rowBytes = Bmp::stride(width, bytesPerPixel);
         let mut start : i64 = 0;
@@ -167,7 +174,7 @@ pub class Bmp {
             return Bmp::missing();
         }
 
-        let tex = new Texture(width, height);
+        let mut tex = new Texture(width, height);
         for (y of 0..height) {
             // A positive `biHeight` means the first row in the file is
             // the *bottom* of the image, which is the default and the

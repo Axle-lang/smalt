@@ -431,7 +431,6 @@ pub class Scratch : Closeable {
     /** Bytes a scratch takes when the caller does not say. */
     pub(file) static DEFAULT_BYTES : i32 = 256;
 
-
     block : i64;
     cap   : i32;
     used  : i32 = 0;

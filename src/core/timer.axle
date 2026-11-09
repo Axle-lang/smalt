@@ -167,13 +167,13 @@ pub class FramePacer {
     rate         : f64 = 0.0;
 
     /** Microseconds one simulation step stands for; 0 leaves `steps` off. */
-    stepUs       : i64 = 0;
+    stepUs : i64 = 0;
 
     /** Whether `setTickRate` was called, so `setRate` stops following it. */
-    tickPinned   : bool = false;
+    tickPinned : bool = false;
 
     /** Real time owed to the simulation and not yet handed out as steps. */
-    accUs        : i64 = 0;
+    accUs : i64 = 0;
 
     /**
      * A pacer targeting `fps` frames per second; `0` leaves it uncapped.

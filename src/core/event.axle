@@ -97,50 +97,50 @@ pub enum EventKind : i8 {
  */
 pub struct Event {
     /** What happened. Every other field is read through this. */
-    pub kind      : EventKind;
+    pub kind : EventKind;
 
     /** Milliseconds since the library was initialised. */
     pub timestamp : i64;
 
     /** The physical key, for `KeyDown` / `KeyUp`. */
-    pub scancode  : Scancode = Scancode::Unknown;
+    pub scancode : Scancode = Scancode::Unknown;
 
     /** Whether a `KeyDown` is the hardware auto-repeat rather than a fresh press. */
-    pub repeat    : bool = false;
+    pub repeat : bool = false;
 
     /** The Unicode codepoint, for `TextInput`. */
-    pub text      : i32 = 0;
+    pub text : i32 = 0;
 
     /** The button, for the button kinds. */
-    pub button    : MouseButton = MouseButton::Left;
+    pub button : MouseButton = MouseButton::Left;
 
     /** Pointer x in client pixels, for the mouse kinds. */
-    pub x         : i32 = 0;
+    pub x : i32 = 0;
 
     /** Pointer y in client pixels, for the mouse kinds. */
-    pub y         : i32 = 0;
+    pub y : i32 = 0;
 
     /** Horizontal motion since the previous event, for `MouseMotion`. */
-    pub dx        : i32 = 0;
+    pub dx : i32 = 0;
 
     /** Vertical motion since the previous event, for `MouseMotion`. */
-    pub dy        : i32 = 0;
+    pub dy : i32 = 0;
 
     /**
      * For `MouseButtonDown`: how many presses of this button, close together in time and place,
      * this one makes — 1 for a single click, 2 for a double click, 3 for a triple. The interval
      * and distance are fixed (half a second, four pixels), not the desktop's setting.
      */
-    pub clicks    : i32 = 1;
+    pub clicks : i32 = 1;
 
     /** Wheel notches, for `MouseWheel`; positive is away from the user. */
-    pub wheel     : i32 = 0;
+    pub wheel : i32 = 0;
 
     /** New client width, for `WindowResized`. */
-    pub width     : i32 = 0;
+    pub width : i32 = 0;
 
     /** New client height, for `WindowResized`. */
-    pub height    : i32 = 0;
+    pub height : i32 = 0;
 
     /** The empty event — what an exhausted queue answers. */
     pub static fn none() : Event {
@@ -164,7 +164,7 @@ pub class EventQueue {
     /** Events the queue can hold; a full queue drops the oldest. */
     pub(file) static SLOTS : i64 = 256;
 
-    items : Event[] = malloc<Event>(EventQueue::SLOTS);
+    items : Event[] = new Event[EventQueue::SLOTS];
     head  : i32 = 0;
     count : i32 = 0;
 

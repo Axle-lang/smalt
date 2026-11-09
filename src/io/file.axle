@@ -14,10 +14,11 @@
 // Opening a file to find out whether it exists is the expensive way to
 // ask a cheap question.
 
-use crate::kernel::blob::Blob;
-use crate::kernel::raw::Raw;
 use std::ffi::libc::fs;
 use std::io::path::Path;
+
+use crate::kernel::blob::Blob;
+use crate::kernel::raw::Raw;
 
 /** Whole-file reads. */
 pub class AssetFile {

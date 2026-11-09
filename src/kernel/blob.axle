@@ -26,8 +26,9 @@
 // vocabulary (byte / word / dword / qword) rather than the Axle one, because
 // `i32` and `i64` are language keywords and cannot name a method.
 
-use crate::kernel::raw::Raw;
 use std::ffi::runtime::panicMsg;
+
+use crate::kernel::raw::Raw;
 
 /**
  * A fixed-size, zero-initialised block of libc memory.

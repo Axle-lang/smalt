@@ -27,7 +27,7 @@
 // ownership of it every frame, which means allocating one. Attaching says what
 // is true: the passes a frame runs are the same passes every frame.
 
-use std::concurrent::{ AtomicBoolean, AtomicI32, Semaphore };
+use std::concurrent::{AtomicBoolean, AtomicI32, Semaphore};
 
 /**
  * Workers one pool may hold.
@@ -62,8 +62,7 @@ pub trait Job {
  * can be a value type here at all.
  */
 class IdlePass : Job {
-    fn run(mut self, share : i32, shares : i32) : void {
-    }
+    fn run(mut self, share : i32, shares : i32) : void {}
 }
 
 /**
@@ -76,10 +75,10 @@ class IdlePass : Job {
  */
 class PoolCore {
     /** Permits released to let a pass begin: one per worker the pass wants. */
-    pub(file) begin : Semaphore = new Semaphore(0),
+    pub(file) begin : Semaphore = new Semaphore(0);
 
     /** And one released back by each worker as its share returns. */
-    pub(file) ended : Semaphore = new Semaphore(0),
+    pub(file) ended : Semaphore = new Semaphore(0);
 
     /**
      * Which share the next worker to wake should take.
@@ -89,25 +88,25 @@ class PoolCore {
      * `incrementAndGet` hands the first claimant 1 — share 0 belongs to the
      * caller.
      */
-    pub(file) ticket : AtomicI32 = new AtomicI32(0),
+    pub(file) ticket : AtomicI32 = new AtomicI32(0);
 
     /** How many shares the pass in flight was cut into. */
-    pub(file) shares : AtomicI32 = new AtomicI32(0),
+    pub(file) shares : AtomicI32 = new AtomicI32(0);
 
     /** Which attached pass is in flight. */
-    pub(file) active : AtomicI32 = new AtomicI32(0),
+    pub(file) active : AtomicI32 = new AtomicI32(0);
 
     /** Cleared by `close`, so a woken worker returns instead of asking for work. */
-    pub(file) alive : AtomicBoolean = new AtomicBoolean(true),
+    pub(file) alive : AtomicBoolean = new AtomicBoolean(true);
 
     /** The attached passes, held for the pool's life. */
-    pub(file) jobs : dyn Job[],
-    pub(file) nJobs : i32,
+    pub(file) jobs  : dyn Job[];
+    pub(file) nJobs : i32;
 
     /** Every slot holding the idle pass until something is attached there. */
     constructor() {
         self.nJobs = 0;
-        self.jobs = malloc<dyn Job>(POOL_JOBS as i64);
+        self.jobs = new dyn Job[POOL_JOBS as i64];
         for (i of 0..POOL_JOBS) {
             self.jobs[i] = new IdlePass();
         }
@@ -137,10 +136,10 @@ class PoolCore {
  */
 pub class WorkerPool : Closeable {
     /** What the crew reads; the handles to the crew are kept apart from it. */
-    pub(file) core : PoolCore,
+    pub(file) core : PoolCore;
 
-    pub(file) crew : Future<i32>[31],
-    pub(file) n : i32,
+    pub(file) crew : Future<i32>[31];
+    pub(file) n    : i32;
 
     /**
      * Start `crew` workers and park them.

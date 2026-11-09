@@ -20,9 +20,9 @@
 // sound file should lose that sound, not fail to start — so every
 // failure lands on the same silent no-op and no caller writes a branch.
 
+use crate::io::file::AssetFile;
 use crate::kernel::blob::Blob;
 use crate::kernel::raw::Raw;
-use crate::io::file::AssetFile;
 use crate::platform::audio_format::AUDIO_RATE;
 
 /** Offset of the first chunk header — past `RIFF` size `WAVE`. */
@@ -45,10 +45,14 @@ fn fourCC(base : ptr, off : i64) : i32 {
     return Raw::u8At(
         base,
         off
-    ) | (Raw::u8At(
-        base,
-        off + 1
-    ) << 8) | (Raw::u8At(base, off + 2) << 16) | (Raw::u8At(base, off + 3) << 24);
+    )
+        | (Raw::u8At(
+            base,
+            off + 1
+        )
+            << 8)
+        | (Raw::u8At(base, off + 2) << 16)
+        | (Raw::u8At(base, off + 3) << 24);
 }
 
 /** `'R','I','F','F'` packed as `fourCC` packs it. */
@@ -113,7 +117,7 @@ pub class Clip : Closeable {
      * preceding chunk has been stepped over.
      */
     pub static fn load(path : string) : Clip {
-        let out = new Clip();
+        let mut out = new Clip();
         try {
             let file = AssetFile::readAll(path);
             // Closed on the ordinary path rather than by `defer`: a

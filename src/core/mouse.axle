@@ -122,8 +122,11 @@ pub class MouseState {
      * second and four pixels, 3 for the next, and so on.
      */
     pub(crate) fn countClick(mut self, b : MouseButton, stamp : i64, x : i32, y : i32) : i32 {
-        let near : bool = (x - self.lastX).abs() <= CLICK_SLOP && (y - self.lastY).abs() <= CLICK_SLOP;
-        if (self.clickRun > 0 && (b as i32) == self.lastButton && stamp - self.lastStamp <= CLICK_INTERVAL_MS && near) {
+        let near : bool = (x - self.lastX).abs() <= CLICK_SLOP
+            && (y - self.lastY).abs() <= CLICK_SLOP;
+        if (self.clickRun > 0 && (b as i32) == self.lastButton
+            && stamp - self.lastStamp <= CLICK_INTERVAL_MS
+            && near) {
             self.clickRun += 1;
         } else {
             self.clickRun = 1;
