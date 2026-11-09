@@ -11,13 +11,15 @@
 // area, and until it is, `Presenter` scales the old framebuffer so no
 // frame is dropped for want of a buffer.
 
+use std::numeric::math;
+
 use crate::kernel::mem::Mem;
 use crate::math::mat::Mat4;
 use crate::math::vec::{Vec3, Vec4};
 use crate::render::camera::Camera;
-use crate::render::frame::Frame;
 use crate::render::color::Color;
 use crate::render::device::RenderDevice;
+use crate::render::frame::Frame;
 use crate::render::mesh::Mesh;
 use crate::render::soft::present::Presenter;
 use crate::render::soft::raster::{ClipVertex, Raster};
@@ -26,7 +28,6 @@ use crate::render::soft::target::RenderTarget;
 use crate::render::texture::Texture;
 use crate::render::vertex::{DirectionalLight, Material, Vertex};
 use crate::video::window::Window;
-use std::numeric::math;
 
 /**
  * A CPU rasteriser drawing into its own framebuffer.
@@ -187,7 +188,13 @@ pub class SoftDevice : RenderDevice, Closeable {
     }
 
     /** Draw `mesh` positioned by `model`, sampling `tex`. */
-    pub fn drawMesh(mut self, mesh : Mesh, model : Mat4, tex : Texture, material : Material) : void {
+    pub fn drawMesh(
+        mut self,
+        mesh : Mesh,
+        model : Mat4,
+        tex : Texture,
+        material : Material
+    ) : void {
         let mvp = self.viewProj.mul(model);
         let sh = Shading::make(material, self.light, Vec3::make(self.eyeX, self.eyeY, self.eyeZ));
         let count = mesh.triangles();

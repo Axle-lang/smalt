@@ -11,9 +11,10 @@
 // direction becomes parallel to the up axis and `lookAt` has no basis to
 // build from.
 
+use std::numeric::math;
+
 use crate::math::mat::Mat4;
 use crate::math::vec::Vec3;
-use std::numeric::math;
 
 /** A perspective viewer. */
 pub class Camera {

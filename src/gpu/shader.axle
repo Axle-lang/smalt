@@ -45,16 +45,16 @@ pub enum ShaderKind : i8 {
  */
 pub struct ShaderDesc {
     /** Where it runs. */
-    pub kind      : ShaderKind = ShaderKind::Mesh;
+    pub kind : ShaderKind = ShaderKind::Mesh;
 
     /** The vertex stage's SPIR-V, for a `Mesh` shader; unread for the full-screen kinds. */
-    pub vert      : i32[] = [0];
+    pub vert : i32[] = [0];
 
     /** Its size in bytes. */
     pub vertBytes : i64 = 0;
 
     /** The fragment stage's SPIR-V. */
-    pub frag      : i32[] = [0];
+    pub frag : i32[] = [0];
 
     /** Its size in bytes. */
     pub fragBytes : i64 = 0;

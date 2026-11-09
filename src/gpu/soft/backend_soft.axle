@@ -76,11 +76,11 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
         self.device = new SoftDevice(w, h);
         self.meshCap = maxMeshes.max(1);
         self.texCap = maxTextures.max(1);
-        self.meshes = malloc<Mesh>(self.meshCap as i64);
-        self.textures = malloc<Texture>(self.texCap as i64);
-        self.meshLive = malloc<i32>(self.meshCap as i64);
-        self.texLive = malloc<i32>(self.texCap as i64);
-        self.texDims = malloc<i32>((self.texCap as i64) * 4);
+        self.meshes = new Mesh[self.meshCap as i64];
+        self.textures = new Texture[self.texCap as i64];
+        self.meshLive = new i32[self.meshCap as i64];
+        self.texLive = new i32[self.texCap as i64];
+        self.texDims = new i32[(self.texCap as i64) * 4];
         for (i of 0..self.meshCap) {
             self.meshLive[i as i64] = 0;
         }
@@ -210,7 +210,8 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
         }
         let at : i64 = (slot as i64) * 4;
         if (self.texDims[at] != image.width() || self.texDims[at + 1] != image.height()
-            || self.texDims[at + 2] != image.layerCount() || self.texDims[at + 3] != 1) {
+            || self.texDims[at + 2] != image.layerCount()
+            || self.texDims[at + 3] != 1) {
             return false;
         }
         self.textures[slot as i64] = image.toTexture(0);
@@ -223,8 +224,7 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
     }
 
     /** Nothing was made, so nothing is released. */
-    pub(crate) fn destroyShader(mut self, slot : i32) : void {
-    }
+    pub(crate) fn destroyShader(mut self, slot : i32) : void {}
 
     /** Read back the pixels of the next frame. */
     pub(crate) fn captureNext(mut self) : void {
@@ -290,7 +290,8 @@ pub(crate) class SoftBackend : GpuBackend, Closeable {
         let n : i32 = scene.drawCount();
         for (k of 0..n) {
             let it : DrawItem = scene.item(scene.orderAt(k));
-            let mut ok : bool = it.meshSlot >= 0 && it.meshSlot < self.meshCap && it.texSlot >= 0 && it.texSlot < self.texCap;
+            let mut ok : bool = it.meshSlot >= 0 && it.meshSlot < self.meshCap && it.texSlot >= 0
+                && it.texSlot < self.texCap;
             if (ok) {
                 ok = self.meshLive[it.meshSlot as i64] != 0 && self.texLive[it.texSlot as i64] != 0;
             }

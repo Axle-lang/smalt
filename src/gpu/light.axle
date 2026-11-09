@@ -20,10 +20,10 @@ pub struct PointLight {
     pub position : Vec3;
 
     /** Its colour times its intensity; components may exceed 1. */
-    pub color    : Color;
+    pub color : Color;
 
     /** The distance at which it has faded to nothing. */
-    pub range    : f64;
+    pub range : f64;
 
     /** A light of `color` at `position`, reaching `range`. */
     pub static fn make(position : Vec3, color : Color, range : f64) : PointLight {
@@ -45,7 +45,7 @@ pub struct Fog {
     pub start : f64;
 
     /** Distance from the eye at which it is complete. */
-    pub end   : f64;
+    pub end : f64;
 
     /** No fog. */
     pub static fn none() : Fog {

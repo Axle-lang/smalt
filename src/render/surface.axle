@@ -47,7 +47,7 @@ pub class Surface : Closeable {
     constructor(w : i32, h : i32) {
         self.w = w;
         self.h = h;
-        self.colour = malloc<i32>((w as i64) * h);
+        self.colour = new i32[(w as i64) * h];
     }
 
     /** Framebuffer width, in pixels. */
@@ -123,8 +123,7 @@ pub class Surface : Closeable {
         }
         self.w = w;
         self.h = h;
-        drop self.colour;
-        self.colour = malloc<i32>((w as i64) * h);
+        self.colour = new i32[(w as i64) * h];
     }
 
     /** Fill every pixel with `packed`. */

@@ -36,9 +36,9 @@
 // a box that looks like a character the font *does* have.
 
 use crate::kernel::mem::Mem;
-use crate::render::frame::Frame;
-use crate::render::glyphs;
 use crate::math::geom::Rect;
+use crate::render::glyphs;
+use crate::render::frame::Frame;
 
 /** Pixels one glyph-row word carries — see `render::glyphs`. */
 const TEXT_WORD_PIXELS : i32 = 14;
@@ -83,7 +83,7 @@ pub enum Face : i32 {
 pub class BitmapFont {
     glyphs : i32[];
     widths : i32[];
-    map    : i32[] = malloc<i32>(TEXT_MAP_SLOTS);
+    map    : i32[] = new i32[TEXT_MAP_SLOTS];
     rows   : i32;
     top    : i32;
 
@@ -146,7 +146,7 @@ pub class BitmapFont {
      * `bigIndex`'s.
      */
     pub(file) static fn headline() : BitmapFont {
-        let f = new BitmapFont(
+        let mut f = new BitmapFont(
             glyphs::bigGlyphs(),
             glyphs::bigWidths(),
             glyphs::BIG_H,
@@ -433,7 +433,15 @@ pub class BitmapFont {
         len : i32,
         ink : i32
     ) : i32 {
-        return self.drawBytes(f, right - self.widthBytes(buf, off, len), baseline, buf, off, len, ink);
+        return self.drawBytes(
+            f,
+            right - self.widthBytes(buf, off, len),
+            baseline,
+            buf,
+            off,
+            len,
+            ink
+        );
     }
 
     /**

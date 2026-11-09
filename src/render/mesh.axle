@@ -4,7 +4,7 @@
 // index buffer would be, because that is the shape the rasteriser wants
 // to walk and the shape a loader would produce.
 //
-// The arrays are `T[]` from `malloc<T>(n)`: bounds-checked, and reclaimed
+// The arrays are `T[]` from `new T[n]`: bounds-checked, and reclaimed
 // by the synthesised destructor, so unlike the OS handles elsewhere in
 // the library a mesh is not `Closeable` and needs no release.
 //
@@ -12,9 +12,10 @@
 // geometry what the BMP decoder is for images: enough to see something
 // on screen and to test the pipeline, not an asset system.
 
+use std::numeric::math;
+
 use crate::math::vec::{Vec2, Vec3};
 use crate::render::vertex::Vertex;
-use std::numeric::math;
 
 /** Indexed triangle geometry. */
 pub class Mesh {
@@ -30,8 +31,8 @@ pub class Mesh {
     constructor(vertices : i32, indices : i32) {
         self.vertexCount = vertices.max(1);
         self.indexCount = indices.max(Mesh::TRIANGLE_CORNERS);
-        self.verts = malloc<Vertex>(self.vertexCount as i64);
-        self.indices = malloc<i32>(self.indexCount as i64);
+        self.verts = new Vertex[self.vertexCount as i64];
+        self.indices = new i32[self.indexCount as i64];
     }
 
     /** Corners in the mesh. */
@@ -98,7 +99,7 @@ pub class Primitives {
      * by handing out UVs beyond 1 (the sampler wraps).
      */
     pub static fn ground(size : f64, tiles : f64) : Mesh {
-        let m = new Mesh(4, 6);
+        let mut m = new Mesh(4, 6);
         let half = size * 0.5;
         let up = Vec3::unitY();
         m.setVertex(0, Vertex::make(Vec3::make(-half, 0.0, -half), up, Vec2::make(0.0, 0.0)));
@@ -144,7 +145,7 @@ pub class Primitives {
      * sphere.
      */
     pub static fn cube(size : f64) : Mesh {
-        let m = new Mesh(24, 36);
+        let mut m = new Mesh(24, 36);
         let h = size * 0.5;
         for (face of 0..6) {
             let normal = Primitives::faceNormal(face);
@@ -179,7 +180,7 @@ pub class Primitives {
     pub static fn sphere(r : f64, segments : i32, rings : i32) : Mesh {
         let segs = segments.max(3);
         let rows = rings.max(2);
-        let m = new Mesh((segs + 1) * (rows + 1), segs * rows * 6);
+        let mut m = new Mesh((segs + 1) * (rows + 1), segs * rows * 6);
         let pi = math::pi();
 
         for (row of 0..=rows) {

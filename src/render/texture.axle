@@ -27,7 +27,7 @@ pub class Texture {
     constructor(w : i32, h : i32) {
         self.w = w.max(Texture::UNIT_SIZE);
         self.h = h.max(Texture::UNIT_SIZE);
-        self.texels = malloc<i32>((self.w as i64) * (self.h as i64));
+        self.texels = new i32[(self.w as i64) * (self.h as i64)];
     }
 
     /** Texture width, in texels. */
@@ -103,7 +103,7 @@ pub class Texture {
 
     /** A one-texel white texture — what an untextured material binds. */
     pub static fn white() : Texture {
-        let t = new Texture(Texture::UNIT_SIZE, Texture::UNIT_SIZE);
+        let mut t = new Texture(Texture::UNIT_SIZE, Texture::UNIT_SIZE);
         t.fill(Color::packBytes(255, 255, 255));
         return t;
     }
@@ -114,7 +114,7 @@ pub class Texture {
      * correction are right.
      */
     pub static fn checker(size : i32, cells : i32, a : Color, b : Color) : Texture {
-        let t = new Texture(size, size);
+        let mut t = new Texture(size, size);
         let packedA = a.packed();
         let packedB = b.packed();
         let step = (size / cells).max(1);

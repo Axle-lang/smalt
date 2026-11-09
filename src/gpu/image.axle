@@ -30,10 +30,10 @@ use crate::render::texture::Texture;
 /** How a texture is sampled once it is on the GPU. */
 pub struct SamplerDesc {
     /** Pick the nearest texel instead of blending four — pixel art, a checker. */
-    pub nearest    : bool = false;
+    pub nearest : bool = false;
 
     /** Build and use a mip chain, so a distant surface averages instead of shimmering. */
-    pub mipmaps    : bool = true;
+    pub mipmaps : bool = true;
 
     /**
      * The alpha-test threshold the texture will be drawn with (`Material::cutoff`),
@@ -41,13 +41,13 @@ pub struct SamplerDesc {
      * the full-size image has, so foliage and fences do not thin out with distance.
      * 0 (the default) averages alpha plainly, which is right for blended glass.
      */
-    pub cutout     : f64 = 0.0;
+    pub cutout : f64 = 0.0;
 
     /** Anisotropic taps, 1..16; 1 is off. Used where the device supports it. */
     pub anisotropy : i32 = 1;
 
     /** Repeat past the edge (a tiled floor); false clamps to the edge texel. */
-    pub repeat     : bool = true;
+    pub repeat : bool = true;
 
     /**
      * The texels are sRGB-encoded colours, to be read as linear light: the GPU decodes
@@ -56,15 +56,15 @@ pub struct SamplerDesc {
      * darkening as its texels are averaged as bytes. Off by default: the bytes are read
      * as they are, which is what the built-in shading expects.
      */
-    pub srgb       : bool = false;
+    pub srgb : bool = false;
 }
 
 /** One mip level of one layer: `w` x `h` texels of `words`, from `at`. */
 struct MipPlane {
-    words : i32[],
-    at    : i64,
-    w     : i32,
-    h     : i32,
+    words : i32[];
+    at    : i64;
+    w     : i32;
+    h     : i32;
 
     /** The texel at (`x`, `y`), clamped to the plane's last row and column. */
     fn texel(self, x : i32, y : i32) : i32 {
@@ -86,13 +86,13 @@ pub class Image {
      * read as a signed 32-bit value. A literal because a shift of 255 into the
      * sign bit is the kind of expression a constant folder is entitled to refuse.
      */
-    pub static OPAQUE     : i32 = -16777216;
+    pub static OPAQUE : i32 = -16777216;
 
     /** The most layers an image may have — the guaranteed floor of `maxImageArrayLayers`. */
     pub static MAX_LAYERS : i32 = 256;
 
     /** The widest or tallest image: what desktop GPUs take, and 1 GiB at 16384 x 16384. */
-    pub static MAX_SIDE   : i32 = 16384;
+    pub static MAX_SIDE : i32 = 16384;
 
     /** The most texels an image holds, all layers counted: 1 GiB of storage. */
     pub static MAX_TEXELS : i64 = 268435456;
@@ -117,7 +117,7 @@ pub class Image {
         let fit : i64 = (Image::MAX_TEXELS / plane).max(1);
         self.layers = (layers.max(1).min(Image::MAX_LAYERS) as i64).min(fit) as i32;
         let count : i64 = plane * (self.layers as i64);
-        self.words = malloc<i32>(count);
+        self.words = new i32[count];
         for (i of 0..count) {
             self.words[i] = 0;
         }
@@ -165,7 +165,9 @@ pub class Image {
 
     /** A packed texel from four 0..255 channels. */
     pub static fn pack(r : i32, g : i32, b : i32, a : i32) : i32 {
-        let wide : i64 = (((a & 0xFF) as i64) << 24) | (((r & 0xFF) as i64) << 16) | (((g & 0xFF) as i64) << 8) | ((b & 0xFF) as i64);
+        let wide : i64 = (((a & 0xFF) as i64) << 24) | (((r & 0xFF) as i64) << 16)
+            | (((g & 0xFF) as i64) << 8)
+            | ((b & 0xFF) as i64);
         return wide as i32;
     }
 
@@ -174,7 +176,8 @@ pub class Image {
         if (x < 0 || y < 0 || layer < 0 || x >= self.w || y >= self.h || layer >= self.layers) {
             return;
         }
-        let at : i64 = (layer as i64) * self.layerWords() + (y as i64) * (self.w as i64) + (x as i64);
+        let at : i64 = (layer as i64) * self.layerWords() + (y as i64) * (self.w as i64)
+            + (x as i64);
         self.words[at] = argb;
     }
 
@@ -183,7 +186,8 @@ pub class Image {
         if (x < 0 || y < 0 || layer < 0 || x >= self.w || y >= self.h || layer >= self.layers) {
             return 0;
         }
-        let at : i64 = (layer as i64) * self.layerWords() + (y as i64) * (self.w as i64) + (x as i64);
+        let at : i64 = (layer as i64) * self.layerWords() + (y as i64) * (self.w as i64)
+            + (x as i64);
         return self.words[at];
     }
 
@@ -200,7 +204,7 @@ pub class Image {
      * an untextured draw binds.
      */
     pub static fn solid(argb : i32) : Image {
-        let img = new Image(1, 1, 1);
+        let mut img = new Image(1, 1, 1);
         img.fill(argb);
         return img;
     }
@@ -210,7 +214,7 @@ pub class Image {
      * byte set to 255.
      */
     pub static fn fromTexture(t : Texture) : Image {
-        let img = new Image(t.width(), t.height(), 1);
+        let mut img = new Image(t.width(), t.height(), 1);
         for (y of 0..t.height()) {
             for (x of 0..t.width()) {
                 img.put(x, y, 0, Image::OPAQUE | (t.texel(x, y) & 0xFFFFFF));
@@ -232,7 +236,7 @@ pub class Image {
     pub static fn fromStrip(strip : Image, tile : i32) : Image {
         let side : i32 = tile.max(1);
         let count : i32 = (strip.height() / side).max(1).min(Image::MAX_LAYERS);
-        let img = new Image(side, side, count);
+        let mut img = new Image(side, side, count);
         for (l of 0..count) {
             for (y of 0..side) {
                 for (x of 0..side) {
@@ -320,7 +324,7 @@ pub class Image {
      * texture sampled with `SamplerDesc::srgb`.
      */
     pub fn mipTailOf(self, levels : i32, cutout : f64, srgb : bool) : i32[] {
-        let tail : i32[] = malloc<i32>(self.mipTailWords(levels).max(1));
+        let tail : i32[] = new i32[self.mipTailWords(levels).max(1)];
         let lin : f64[] = Image::decodeTable(srgb);
         let cut : i32 = (cutout.max(0.0).min(1.0) * 255.0 + 0.5).floorToInt() as i32;
         let mut at : i64 = 0;
@@ -358,7 +362,6 @@ pub class Image {
             sw = dw;
             sh = dh;
         }
-        drop lin;
         return tail;
     }
 
@@ -370,7 +373,7 @@ pub class Image {
         if (!srgb) {
             return [0.0];
         }
-        let mut t : f64[] = malloc<f64>(256);
+        let mut t : f64[] = new f64[256];
         for (i of 0..256) {
             let s : f64 = (i as f64) / 255.0;
             if (s <= 0.04045) {
@@ -520,7 +523,7 @@ pub class Image {
 
     /** Layer `layer` as a CPU texture, alpha dropped — what the software device samples. */
     pub fn toTexture(self, layer : i32) : Texture {
-        let t = new Texture(self.w, self.h);
+        let mut t = new Texture(self.w, self.h);
         let l : i32 = layer.max(0).min(self.layers - 1);
         for (y of 0..self.h) {
             for (x of 0..self.w) {

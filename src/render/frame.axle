@@ -52,10 +52,11 @@
 // is why `fillRect` is the call to reach for and `plot` the one to reach
 // for last.
 
+use std::numeric::math;
+
 use crate::kernel::mem::Mem;
 use crate::math::geom::Rect;
 use crate::render::color::Color;
-use std::numeric::math;
 
 /** Coverage denominator of the anti-aliased primitives — four levels, 0..3. */
 const FRAME_COVERAGE : i32 = 3;
@@ -72,7 +73,7 @@ const FRAME_RING_STEPS : i32 = 64;
  */
 pub struct Frame {
     /** Address of the plane's first pixel. Not an owner. */
-    px  : i64;
+    px : i64;
 
     /** Plane width, in pixels — the row stride. */
     pub w : i32;

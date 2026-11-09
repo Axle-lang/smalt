@@ -9,11 +9,12 @@
 // one directional light, plus a constant ambient term so surfaces facing
 // away are not pure black, plus an optional Blinn-Phong highlight.
 
+use std::numeric::math;
+
 use crate::math::vec::Vec3;
 use crate::render::color::Color;
 use crate::render::texture::Texture;
 use crate::render::vertex::{DirectionalLight, Material};
-use std::numeric::math;
 
 /**
  * Everything a fragment needs that does not vary across it: the surface
@@ -28,10 +29,10 @@ pub struct Shading {
     pub material : Material;
 
     /** The one light in the scene. */
-    pub light    : DirectionalLight;
+    pub light : DirectionalLight;
 
     /** Where the camera is, for the specular term. */
-    pub eye      : Vec3;
+    pub eye : Vec3;
 
     /** The shading state for a material, a light and a viewpoint. */
     pub static fn make(material : Material, light : DirectionalLight, eye : Vec3) : Shading {

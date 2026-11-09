@@ -20,6 +20,8 @@
 // `SoftDevice` is held concretely by whoever owns it, and passed as a
 // `RenderDevice` to code that does not care which backend it is.
 
+use std::numeric::math;
+
 use crate::math::mat::Mat4;
 use crate::render::camera::Camera;
 use crate::render::color::Color;
@@ -27,7 +29,6 @@ use crate::render::mesh::Mesh;
 use crate::render::texture::Texture;
 use crate::render::vertex::Material;
 use crate::video::window::Window;
-use std::numeric::math;
 
 /**
  * What a rendering backend must be able to do.

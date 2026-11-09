@@ -56,37 +56,37 @@ use crate::render::vertex::{DirectionalLight, Material};
 /** One thing to draw. */
 pub struct DrawItem {
     /** The geometry. */
-    pub mesh     : MeshHandle;
+    pub mesh : MeshHandle;
 
     /** The texture it samples. */
-    pub tex      : TextureHandle;
+    pub tex : TextureHandle;
 
     /** How it answers light. */
     pub material : Material;
 
     /** Mesh space into world space. */
-    pub model    : Mat4;
+    pub model : Mat4;
 
     /** The backend's mesh slot, written by the renderer in `render`; -1 until then. */
     pub meshSlot : i32 = -1;
 
     /** The backend's texture slot, written by the renderer in `render`; -1 until then. */
-    pub texSlot  : i32 = -1;
+    pub texSlot : i32 = -1;
 
     /** Where a blended draw is sorted from: the model's origin, or its box's centre. */
-    pub centre   : Vec3;
+    pub centre : Vec3;
 
     /** Squared distance from the camera to `centre`, written by `prepare`. */
-    pub depth    : f64 = 0.0;
+    pub depth : f64 = 0.0;
 
     /** The program's shader it is drawn with; none for the built-in shading. */
-    pub shader   : ShaderHandle = ShaderHandle { index: -1, gen: 0 };
+    pub shader : ShaderHandle = ShaderHandle { index: -1, gen: 0 };
 
     /** The backend's shader slot, written by the renderer in `render`; -1 for built-in. */
     pub shaderSlot : i32 = -1;
 
     /** The program's per-draw vector, read by its shader as `dr.user`. */
-    pub user     : Vec4 = Vec4 { x: 0.0, y: 0.0, z: 0.0, w: 0.0 };
+    pub user : Vec4 = Vec4 { x: 0.0, y: 0.0, z: 0.0, w: 0.0 };
 }
 
 /** The backend slots the renderer resolves a draw's handles to; -1 for none. */
@@ -99,22 +99,22 @@ pub(crate) struct DrawSlots {
 /** A full-screen draw: a background behind the scene, or a pass over it. */
 pub struct PassItem {
     /** The `Background` or `Pass` shader. */
-    pub shader     : ShaderHandle = ShaderHandle { index: -1, gen: 0 };
+    pub shader : ShaderHandle = ShaderHandle { index: -1, gen: 0 };
 
     /** The texture it samples as set 1; none for the white texel. */
-    pub tex        : TextureHandle = TextureHandle { index: -1, gen: 0 };
+    pub tex : TextureHandle = TextureHandle { index: -1, gen: 0 };
 
     /** For a pass: whether what it draws becomes `baseColor` for the passes after it. */
-    pub keep       : bool = false;
+    pub keep : bool = false;
 
     /** The backend's shader slot, written by the renderer in `render`; -1 until then. */
     pub shaderSlot : i32 = -1;
 
     /** The backend's texture slot, written by the renderer in `render`; -1 until then. */
-    pub texSlot    : i32 = -1;
+    pub texSlot : i32 = -1;
 
     /** The program's per-pass vector, read by its shader as `dr.user`. */
-    pub user       : Vec4 = Vec4 { x: 0.0, y: 0.0, z: 0.0, w: 0.0 };
+    pub user : Vec4 = Vec4 { x: 0.0, y: 0.0, z: 0.0, w: 0.0 };
 }
 
 /** The description of one frame. */
@@ -123,16 +123,16 @@ pub class Scene {
     pub static MAX_POINT_LIGHTS : i32 = 8;
 
     /** Draws a scene will hold; one more is refused rather than grown into. */
-    pub static MAX_DRAWS        : i32 = 65536;
+    pub static MAX_DRAWS : i32 = 65536;
 
     /** Vectors of four a frame hands its shaders as `fr.user`. */
-    pub static USER_VECTORS     : i32 = 32;
+    pub static USER_VECTORS : i32 = 32;
 
     /** Full-screen passes a frame may run after its draws. */
-    pub static MAX_PASSES       : i32 = 12;
+    pub static MAX_PASSES : i32 = 12;
 
-    items       : DrawItem[];
-    order       : i32[];
+    items : DrawItem[];
+    order : i32[];
 
     /** Scratch the size of `order`, for the merge sort of the blended draws. */
     spare       : i32[];
@@ -147,41 +147,41 @@ pub class Scene {
     frustum     : Frustum;
 
     /** Whether a camera has been set: before one is, `addBounded` has nothing to cull against. */
-    hasCamera   : bool = false;
-    sun         : DirectionalLight = DirectionalLight::noon();
-    ambientCol  : Color = Color::white();
-    skyCol      : Color = Color::white();
-    fogState    : Fog = Fog::none();
-    clearCol    : Color = Color::rgb(0.05, 0.06, 0.1);
+    hasCamera  : bool = false;
+    sun        : DirectionalLight = DirectionalLight::noon();
+    ambientCol : Color = Color::white();
+    skyCol     : Color = Color::white();
+    fogState   : Fog = Fog::none();
+    clearCol   : Color = Color::rgb(0.05, 0.06, 0.1);
 
     /** `USER_VECTORS` x 4 values, the frame's `fr.user`. */
-    userVals    : f64[];
+    userVals : f64[];
 
     /** The shader and per-draw vector the next draws are added with. */
-    curShader   : ShaderHandle = ShaderHandle::none();
-    curUser     : Vec4 = Vec4::zero();
+    curShader : ShaderHandle = ShaderHandle::none();
+    curUser   : Vec4 = Vec4::zero();
 
     /** The full-screen draw behind every other, when `hasBack`. */
-    back        : PassItem = PassItem { keep: false };
-    hasBack     : bool = false;
+    back    : PassItem = PassItem { keep: false };
+    hasBack : bool = false;
 
     /** The passes after the draws, in order. */
-    passes      : PassItem[];
-    passN       : i32 = 0;
+    passes : PassItem[];
+    passN  : i32 = 0;
 
     /** An empty scene with room for `draws` draws to start with. */
     constructor(draws : i32) {
         self.cap = draws.max(16).min(Scene::MAX_DRAWS);
-        self.items = malloc<DrawItem>(self.cap as i64);
-        self.order = malloc<i32>(self.cap as i64);
-        self.spare = malloc<i32>(self.cap as i64);
-        self.lamps = malloc<PointLight>(Scene::MAX_POINT_LIGHTS as i64);
+        self.items = new DrawItem[self.cap as i64];
+        self.order = new i32[self.cap as i64];
+        self.spare = new i32[self.cap as i64];
+        self.lamps = new PointLight[Scene::MAX_POINT_LIGHTS as i64];
         self.frustum = Frustum::ofMatrix(Mat4::identity());
-        self.userVals = malloc<f64>((Scene::USER_VECTORS * 4) as i64);
+        self.userVals = new f64[(Scene::USER_VECTORS * 4) as i64];
         for (i of 0..(Scene::USER_VECTORS * 4)) {
             self.userVals[i as i64] = 0.0;
         }
-        self.passes = malloc<PassItem>(Scene::MAX_PASSES as i64);
+        self.passes = new PassItem[Scene::MAX_PASSES as i64];
     }
 
     /**
@@ -386,9 +386,9 @@ pub class Scene {
             return false;
         }
         let bigger : i32 = (self.cap * 2).min(Scene::MAX_DRAWS);
-        let mut items : DrawItem[] = malloc<DrawItem>(bigger as i64);
-        let order : i32[] = malloc<i32>(bigger as i64);
-        let spare : i32[] = malloc<i32>(bigger as i64);
+        let mut items : DrawItem[] = new DrawItem[bigger as i64];
+        let order : i32[] = new i32[bigger as i64];
+        let spare : i32[] = new i32[bigger as i64];
         for (i of 0..self.count) {
             items[i] = self.items[i];
         }
@@ -645,7 +645,8 @@ pub class Scene {
             if (j < end) {
                 right = self.runAt(fromOrder, j);
             }
-            let takeLeft : bool = j >= end || (i < mid && !(self.items[left as i64].depth < self.items[right as i64].depth));
+            let takeLeft : bool = j >= end
+                || (i < mid && !(self.items[left as i64].depth < self.items[right as i64].depth));
             let mut pick : i32 = right;
             if (takeLeft) {
                 pick = left;

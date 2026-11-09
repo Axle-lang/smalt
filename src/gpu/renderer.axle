@@ -101,14 +101,14 @@ const RENDERER_SHADERS : i32 = 64;
 
 /** Draws scenes, on a GPU when there is one. */
 pub class Renderer : Closeable {
-    backends  : dyn GpuBackend[];
-    meshes    : HandleTable;
-    textures  : HandleTable;
-    shaders   : HandleTable;
-    white     : TextureHandle = TextureHandle::none();
+    backends : dyn GpuBackend[];
+    meshes   : HandleTable;
+    textures : HandleTable;
+    shaders  : HandleTable;
+    white    : TextureHandle = TextureHandle::none();
 
     /** The window this renderer draws to, by its native handle. */
-    winId     : i64 = 0;
+    winId : i64 = 0;
 
     /** The 2-D layer: a raw block of `layerCap` words, `layerW` x `layerH` of them in use. */
     layer     : i64 = 0;
@@ -118,8 +118,8 @@ pub class Renderer : Closeable {
     layerUsed : bool = false;
 
     /** Blocks the layer outgrew, kept for any `Frame` still pointing into one. */
-    retired   : i64[];
-    retiredN  : i32 = 0;
+    retired  : i64[];
+    retiredN : i32 = 0;
 
     reason : string = "";
     closed : bool = false;
@@ -141,8 +141,8 @@ pub class Renderer : Closeable {
         self.meshes = new HandleTable(meshSlots, seed);
         self.textures = new HandleTable(textureSlots, seed ^ 0x5A5A5A);
         self.shaders = new HandleTable(RENDERER_SHADERS, seed ^ 0x3C3C3C);
-        self.backends = malloc<dyn GpuBackend>(1);
-        self.retired = malloc<i64>(RENDERER_RETIRED as i64);
+        self.backends = new dyn GpuBackend[1];
+        self.retired = new i64[RENDERER_RETIRED as i64];
         self.winId = Raw::addr(win.sys.handle());
         self.layerW = win.width().max(1);
         self.layerH = win.height().max(1);
@@ -167,10 +167,10 @@ pub class Renderer : Closeable {
             }
         }
         if (opened) {
-            self.white = self.uploadTexture(
-                Image::solid(-1),
-                SamplerDesc { nearest: true, mipmaps: false }
-            );
+            self.white = self.uploadTexture(Image::solid(-1), SamplerDesc {
+                nearest: true,
+                mipmaps: false,
+            });
             if (self.white.isNone()) {
                 // Without it every untextured draw would be skipped for the renderer's
                 // whole life: a GPU that cannot hold one texel is not one to draw with.
@@ -187,15 +187,13 @@ pub class Renderer : Closeable {
         if (!opened) {
             // Handed straight to `adopt`: a named binding passed to an `own` parameter
             // still reads as unclosed to the E0511 check.
-            self.adopt(
-                new SoftBackend(self.layerW, self.layerH, meshSlots, textureSlots)
-            );
+            self.adopt(new SoftBackend(self.layerW, self.layerH, meshSlots, textureSlots));
         }
         if (self.white.isNone()) {
-            self.white = self.uploadTexture(
-                Image::solid(-1),
-                SamplerDesc { nearest: true, mipmaps: false }
-            );
+            self.white = self.uploadTexture(Image::solid(-1), SamplerDesc {
+                nearest: true,
+                mipmaps: false,
+            });
         }
     }
 
@@ -591,14 +589,11 @@ pub class Renderer : Closeable {
             if (it.tex.isNone() || !it.material.textured) {
                 texSlot = whiteSlot;
             }
-            scene.bind(
-                i,
-                DrawSlots {
-                    mesh: meshSlot,
-                    tex: texSlot,
-                    shader: self.shaderSlot(it.shader),
-                }
-            );
+            scene.bind(i, DrawSlots {
+                mesh: meshSlot,
+                tex: texSlot,
+                shader: self.shaderSlot(it.shader),
+            });
         }
         if (scene.hasBackground()) {
             scene.bindBackground(self.passSlots(scene.background(), whiteSlot));

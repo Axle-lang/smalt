@@ -10,9 +10,10 @@
 // other half of the same question — a fragment's colour is a vertex
 // attribute meeting a material meeting a light.
 
+use std::numeric::math;
+
 use crate::math::vec::{Vec2, Vec3};
 use crate::render::color::Color;
-use std::numeric::math;
 
 /** One corner of a triangle. */
 pub struct Vertex {
@@ -20,10 +21,10 @@ pub struct Vertex {
     pub position : Vec3;
 
     /** Unit normal, in the mesh's own space. */
-    pub normal   : Vec3;
+    pub normal : Vec3;
 
     /** Texture coordinate; (0,0) is the top-left texel. */
-    pub uv       : Vec2;
+    pub uv : Vec2;
 
     /** A vertex from its three attributes. */
     pub static fn make(position : Vec3, normal : Vec3, uv : Vec2) : Vertex {
@@ -45,19 +46,19 @@ pub struct Vertex {
  */
 pub struct Material {
     /** Base colour, multiplied with the texel when `textured`. */
-    pub albedo       : Color;
+    pub albedo : Color;
 
     /** How much of the albedo survives with no light on it, 0..1. */
-    pub ambient      : f64;
+    pub ambient : f64;
 
     /** Strength of the specular highlight, 0 for a matte surface. */
-    pub specular     : f64;
+    pub specular : f64;
 
     /** Tightness of the highlight; larger is smaller and sharper. */
-    pub shininess    : f64;
+    pub shininess : f64;
 
     /** Whether to sample the bound texture. */
-    pub textured     : bool;
+    pub textured : bool;
 
     /** Whether to discard triangles facing away from the camera. */
     pub cullBackface : bool;
@@ -66,7 +67,7 @@ pub struct Material {
      * How opaque the surface is, 0..1. Below 1 a GPU device blends it over
      * what is behind; the software device draws it opaque.
      */
-    pub opacity      : f64 = 1.0;
+    pub opacity : f64 = 1.0;
 
     /**
      * Alpha-test threshold, 0..1: a fragment whose alpha falls below it is not
@@ -75,7 +76,7 @@ pub struct Material {
      * cutoff of 0.5 discards everything but fully opaque texels. 0 means no test.
      * GPU devices only.
      */
-    pub cutoff       : f64 = 0.0;
+    pub cutoff : f64 = 0.0;
 
     /**
      * How much of the sun reaches the surface, 0..1 — its diffuse term and its
@@ -85,14 +86,14 @@ pub struct Material {
      * can only switch the sun on or off, so it reads below 0.5 as 0 and the rest
      * as 1; `SoftDevice` used directly ignores it.
      */
-    pub directLight  : f64 = 1.0;
+    pub directLight : f64 = 1.0;
 
     /**
      * How much of the scene's point lights reaches the surface, 0..1, apart
      * from the sun: a torch lights a voxel face whose sky light is baked into
      * its vertices. GPU devices only — the CPU has no point lights.
      */
-    pub lampLight    : f64 = 1.0;
+    pub lampLight : f64 = 1.0;
 
     /**
      * Whether the vertex colour carries *baked light with a sky channel*.
@@ -103,7 +104,7 @@ pub struct Material {
      * is the scene's per-frame sky colour (`Scene::setSkyLight`). The vertices are
      * written once; the time of day is one colour. GPU devices only.
      */
-    pub skyLight     : bool = false;
+    pub skyLight : bool = false;
 
     /** A matte, untextured surface of colour `albedo`. */
     pub static fn matte(albedo : Color) : Material {
@@ -198,7 +199,7 @@ pub struct DirectionalLight {
     pub direction : Vec3;
 
     /** The light's colour and intensity. */
-    pub color     : Color;
+    pub color : Color;
 
     /** A light of `color` travelling along `direction`. */
     pub static fn make(direction : Vec3, color : Color) : DirectionalLight {

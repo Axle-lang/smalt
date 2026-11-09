@@ -25,11 +25,12 @@
 //      that then loses the depth test is the single largest waste in a
 //      software rasteriser drawing a closed mesh.
 
+use std::numeric::math;
+
 use crate::math::vec::Vec3;
 use crate::render::soft::shade::{Shader, Shading};
 use crate::render::soft::target::RenderTarget;
 use crate::render::texture::Texture;
-use std::numeric::math;
 
 /**
  * A vertex after transformation, before projection.
@@ -70,10 +71,10 @@ pub struct ClipVertex {
     pub nz : f64;
 
     /** Texture coordinate u. */
-    pub u  : f64;
+    pub u : f64;
 
     /** Texture coordinate v. */
-    pub v  : f64;
+    pub v : f64;
 
     /** A clip vertex from its parts. */
     pub static fn make(
@@ -138,37 +139,37 @@ pub struct ClipVertex {
  */
 pub struct ScreenVertex {
     /** Pixel x. */
-    pub sx   : f64;
+    pub sx : f64;
 
     /** Pixel y. */
-    pub sy   : f64;
+    pub sy : f64;
 
     /** Reciprocal depth, 1/w — the value the depth buffer stores. */
     pub invW : f64;
 
     /** World x, divided by w. */
-    pub wx   : f64;
+    pub wx : f64;
 
     /** World y, divided by w. */
-    pub wy   : f64;
+    pub wy : f64;
 
     /** World z, divided by w. */
-    pub wz   : f64;
+    pub wz : f64;
 
     /** Normal x, divided by w. */
-    pub nx   : f64;
+    pub nx : f64;
 
     /** Normal y, divided by w. */
-    pub ny   : f64;
+    pub ny : f64;
 
     /** Normal z, divided by w. */
-    pub nz   : f64;
+    pub nz : f64;
 
     /** Texture u, divided by w. */
-    pub u    : f64;
+    pub u : f64;
 
     /** Texture v, divided by w. */
-    pub v    : f64;
+    pub v : f64;
 }
 
 /** Clipping, projection, and the scanline fill. */
@@ -301,15 +302,18 @@ pub class Raster {
             for (x of minX..=maxX) {
                 let px : f64 = (x as f64) + 0.5;
 
-                let e0 : f64 = ((c.sx - b.sx) * (py - b.sy) - (c.sy - b.sy) * (px - b.sx)) * invArea;
+                let e0 : f64 = ((c.sx - b.sx) * (py - b.sy) - (c.sy - b.sy) * (px - b.sx))
+                    * invArea;
                 if (e0 < 0.0) {
                     continue;
                 }
-                let e1 : f64 = ((a.sx - c.sx) * (py - c.sy) - (a.sy - c.sy) * (px - c.sx)) * invArea;
+                let e1 : f64 = ((a.sx - c.sx) * (py - c.sy) - (a.sy - c.sy) * (px - c.sx))
+                    * invArea;
                 if (e1 < 0.0) {
                     continue;
                 }
-                let e2 : f64 = ((b.sx - a.sx) * (py - a.sy) - (b.sy - a.sy) * (px - a.sx)) * invArea;
+                let e2 : f64 = ((b.sx - a.sx) * (py - a.sy) - (b.sy - a.sy) * (px - a.sx))
+                    * invArea;
                 if (e2 < 0.0) {
                     continue;
                 }
@@ -440,17 +444,32 @@ pub class Raster {
         v2 : ClipVertex
     ) : void {
         match Raster::nearMask(v0, v1, v2) {
-            0b111 => { Raster::emit(target, tex, sh, v0, v1, v2); }
-            0b001 => { Raster::clipOne(target, tex, sh, v0, v1, v2); }
-            0b010 => { Raster::clipOne(target, tex, sh, v1, v2, v0); }
-            0b100 => { Raster::clipOne(target, tex, sh, v2, v0, v1); }
-            0b110 => { Raster::clipTwo(target, tex, sh, v1, v2, v0); }
-            0b101 => { Raster::clipTwo(target, tex, sh, v2, v0, v1); }
-            0b011 => { Raster::clipTwo(target, tex, sh, v0, v1, v2); }
-            // `0b000` — nothing is in front of the plane. The mask is
-            // three bits, so this arm is the exhaustiveness rule's and
-            // covers no other value.
-            _ => {}
+            0b111 => {
+                Raster::emit(target, tex, sh, v0, v1, v2);
+            },
+            0b001 => {
+                Raster::clipOne(target, tex, sh, v0, v1, v2);
+            },
+            0b010 => {
+                Raster::clipOne(target, tex, sh, v1, v2, v0);
+            },
+            0b100 => {
+                Raster::clipOne(target, tex, sh, v2, v0, v1);
+            },
+            0b110 => {
+                Raster::clipTwo(target, tex, sh, v1, v2, v0);
+            },
+            0b101 => {
+                Raster::clipTwo(target, tex, sh, v2, v0, v1);
+            },
+            0b011 => {
+                Raster::clipTwo(target, tex, sh, v0, v1, v2);
+            },
+            _ => {
+                // `0b000` — nothing is in front of the plane. The mask is
+                // three bits, so this arm is the exhaustiveness rule's and
+                // covers no other value.
+            },
         }
     }
 }

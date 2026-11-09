@@ -51,19 +51,19 @@ use crate::render::vertex::Vertex;
  */
 pub struct RawVertex {
     /** Where the corner is, in mesh space. */
-    pub pos    : Vec3;
+    pub pos : Vec3;
 
     /** The face's normal in xyz; w is the program's. */
     pub normal : Vec4;
 
     /** The texture coordinate. */
-    pub uv     : Vec2;
+    pub uv : Vec2;
 
     /** The colour, as `MeshBuilder::rgba` packs it. */
-    pub color  : i32;
+    pub color : i32;
 
     /** The layer word: the layer in bits 0 .. 7, the program's bits above. */
-    pub word   : i32;
+    pub word : i32;
 }
 
 /** Triangle geometry in the GPU's vertex format. */
@@ -75,26 +75,26 @@ pub class MeshBuilder {
     pub static VERTEX_BYTES : i32 = 32;
 
     /** Byte offset of the position, three `f32`. */
-    pub static POSITION_AT  : i32 = 0;
+    pub static POSITION_AT : i32 = 0;
 
     /** Byte offset of the texture coordinate, two `f32`. */
-    pub static UV_AT        : i32 = 12;
+    pub static UV_AT : i32 = 12;
 
     /** Byte offset of the normal, four `snorm8`. */
-    pub static NORMAL_AT    : i32 = 20;
+    pub static NORMAL_AT : i32 = 20;
 
     /** Byte offset of the colour, four `unorm8`, red first. */
-    pub static COLOR_AT     : i32 = 24;
+    pub static COLOR_AT : i32 = 24;
 
     /** Byte offset of the texture-array layer, one `u32`. */
-    pub static LAYER_AT     : i32 = 28;
+    pub static LAYER_AT : i32 = 28;
 
     /**
      * The most texture-array layers a vertex may name: what an `Image` holds. A
      * layer past it is refused like an index past the vertices — the GPU would
      * clamp it to the last tile and show the wrong block without a word.
      */
-    pub static MAX_LAYER    : i32 = 255;
+    pub static MAX_LAYER : i32 = 255;
 
     /**
      * The most vertices one builder will hold.
@@ -106,7 +106,7 @@ pub class MeshBuilder {
     pub static MAX_VERTICES : i32 = 4194304;
 
     /** The most indices one builder will hold. */
-    pub static MAX_INDICES  : i32 = 16777216;
+    pub static MAX_INDICES : i32 = 16777216;
 
     verts   : i32[];
     indices : i32[];
@@ -125,8 +125,8 @@ pub class MeshBuilder {
     constructor(vertices : i32, indices : i32) {
         self.vcap = vertices.max(4).min(MeshBuilder::MAX_VERTICES);
         self.icap = indices.max(6).min(MeshBuilder::MAX_INDICES);
-        self.verts = malloc<i32>((self.vcap as i64) * (MeshBuilder::VERTEX_WORDS as i64));
-        self.indices = malloc<i32>(self.icap as i64);
+        self.verts = new i32[(self.vcap as i64) * (MeshBuilder::VERTEX_WORDS as i64)];
+        self.indices = new i32[self.icap as i64];
     }
 
     /** Vertices appended so far. */
@@ -211,13 +211,12 @@ pub class MeshBuilder {
             cap = (cap * 2).min(MeshBuilder::MAX_VERTICES);
         }
         let words : i64 = (cap as i64) * (MeshBuilder::VERTEX_WORDS as i64);
-        let next : i32[] = malloc<i32>(words);
+        let next : i32[] = new i32[words];
         Mem::copy(
             Mem::addressOf(next),
             Mem::addressOf(self.verts),
             (self.vcount as i64) * (MeshBuilder::VERTEX_BYTES as i64)
         );
-        drop self.verts;
         self.verts = next;
         self.vcap = cap;
         return true;
@@ -232,9 +231,8 @@ pub class MeshBuilder {
         while (cap < needed) {
             cap = (cap * 2).min(MeshBuilder::MAX_INDICES);
         }
-        let next : i32[] = malloc<i32>(cap as i64);
+        let next : i32[] = new i32[cap as i64];
         Mem::copy(Mem::addressOf(next), Mem::addressOf(self.indices), (self.icount as i64) * 4);
-        drop self.indices;
         self.indices = next;
         self.icap = cap;
         return true;
@@ -260,7 +258,9 @@ pub class MeshBuilder {
 
     /** A four-component normal as four `snorm8`, x in the low byte. */
     pub(file) static fn snorm4(n : Vec4) : i32 {
-        return MeshBuilder::snorm(n.x) | (MeshBuilder::snorm(n.y) << 8) | (MeshBuilder::snorm(n.z) << 16) | (MeshBuilder::snorm(n.w) << 24);
+        return MeshBuilder::snorm(n.x) | (MeshBuilder::snorm(n.y) << 8)
+            | (MeshBuilder::snorm(n.z) << 16)
+            | (MeshBuilder::snorm(n.w) << 24);
     }
 
     /** Whether `v` is a number and not an infinity. */
@@ -277,7 +277,9 @@ pub class MeshBuilder {
      * Build a vertex colour with this or `rgbaOf`, never from one of those words.
      */
     pub static fn rgba(r : i32, g : i32, b : i32, a : i32) : i32 {
-        let wide : i64 = (((a & 0xFF) as i64) << 24) | (((b & 0xFF) as i64) << 16) | (((g & 0xFF) as i64) << 8) | ((r & 0xFF) as i64);
+        let wide : i64 = (((a & 0xFF) as i64) << 24) | (((b & 0xFF) as i64) << 16)
+            | (((g & 0xFF) as i64) << 8)
+            | ((r & 0xFF) as i64);
         return wide as i32;
     }
 
@@ -351,7 +353,11 @@ pub class MeshBuilder {
         Mem::putFloatOf(base, pos + 2, p.z);
         Mem::putFloatOf(base, uv, raw.uv.x);
         Mem::putFloatOf(base, uv + 1, raw.uv.y);
-        Mem::putWordOf(base, at + ((MeshBuilder::NORMAL_AT / 4) as i64), MeshBuilder::snorm4(raw.normal));
+        Mem::putWordOf(
+            base,
+            at + ((MeshBuilder::NORMAL_AT / 4) as i64),
+            MeshBuilder::snorm4(raw.normal)
+        );
         Mem::putWordOf(base, at + ((MeshBuilder::COLOR_AT / 4) as i64), raw.color);
         Mem::putWordOf(base, at + ((MeshBuilder::LAYER_AT / 4) as i64), raw.word);
         if (self.vcount == 0) {
@@ -410,7 +416,9 @@ pub class MeshBuilder {
      * triangles is made first, so a full builder never keeps half a quad.
      */
     pub fn quad(mut self, a : i32, b : i32, c : i32, d : i32) : bool {
-        if (a < 0 || b < 0 || c < 0 || d < 0 || a >= self.vcount || b >= self.vcount || c >= self.vcount || d >= self.vcount) {
+        if (a < 0 || b < 0 || c < 0 || d < 0 || a >= self.vcount || b >= self.vcount
+            || c >= self.vcount
+            || d >= self.vcount) {
             return false;
         }
         if (self.icount + 6 > self.icap && !self.growIndices(self.icount + 6)) {
@@ -524,7 +532,7 @@ pub class MeshBuilder {
 
     /** A builder holding a copy of `mesh`; empty if `mesh` is past the builder's bounds. */
     pub static fn fromMesh(mesh : Mesh) : MeshBuilder {
-        let b = new MeshBuilder(mesh.vertices(), mesh.indexSlots());
+        let mut b = new MeshBuilder(mesh.vertices(), mesh.indexSlots());
         b.append(mesh);
         return b;
     }
@@ -571,7 +579,7 @@ pub class MeshBuilder {
 
     /** This geometry as a CPU `Mesh` — position, normal and uv; the colour and layer are dropped. */
     pub fn toMesh(self) : Mesh {
-        let m = new Mesh(self.vcount.max(1), self.icount.max(3));
+        let mut m = new Mesh(self.vcount.max(1), self.icount.max(3));
         for (i of 0..self.vcount) {
             m.setVertex(i, self.vertexOut(i));
         }

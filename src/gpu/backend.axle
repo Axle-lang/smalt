@@ -46,19 +46,19 @@ pub enum Backend : i8 {
  */
 pub struct RendererDesc {
     /** Which backend; `Auto` takes the GPU and falls back to the CPU. */
-    pub backend        : Backend = Backend::Auto;
+    pub backend : Backend = Backend::Auto;
 
     /** Wait for the display's refresh (no tearing); false presents as fast as it can. */
-    pub vsync          : bool = true;
+    pub vsync : bool = true;
 
     /** Meshes that may exist at once (at least one; a negative count is read as zero). */
-    pub maxMeshes      : i32 = 16384;
+    pub maxMeshes : i32 = 16384;
 
     /**
      * Textures the program may have at once. The renderer's own white texel is on top of
      * them, and so is anything a backend needs for itself (the GPU's overlay).
      */
-    pub maxTextures    : i32 = 256;
+    pub maxTextures : i32 = 256;
 
     /**
      * Accept a Vulkan device that is itself a CPU (lavapipe, SwiftShader).
@@ -70,10 +70,10 @@ pub struct RendererDesc {
     pub softwareVulkan : bool = false;
 
     /** Ask the Vulkan loader for its validation layer (a debugging aid; needs it installed). */
-    pub validation     : bool = false;
+    pub validation : bool = false;
 
     /** The application's name, as the driver is told it. */
-    pub appName        : string = "smalt";
+    pub appName : string = "smalt";
 }
 
 /** Where a frame was drawn, as the 2-D layer sees it. */
@@ -82,10 +82,10 @@ pub struct OverlayView {
     pub base : i64 = 0;
 
     /** Width in pixels. */
-    pub w    : i32 = 0;
+    pub w : i32 = 0;
 
     /** Height in pixels. */
-    pub h    : i32 = 0;
+    pub h : i32 = 0;
 
     /** Whether the program drew on the layer this frame; false means it is not uploaded or composited. */
     pub used : bool = false;
@@ -97,10 +97,10 @@ pub struct FramePixels {
     pub base : i64 = 0;
 
     /** Width in pixels. */
-    pub w    : i32 = 0;
+    pub w : i32 = 0;
 
     /** Height in pixels. */
-    pub h    : i32 = 0;
+    pub h : i32 = 0;
 
     /** Whether there are pixels to read. */
     pub fn isEmpty(self) : bool {

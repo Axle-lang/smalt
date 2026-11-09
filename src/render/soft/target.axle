@@ -1,7 +1,7 @@
 // target — the colour and depth buffers the rasteriser writes.
 //
 // Both are flat `T[]` addressed `y * width + x`: Axle has no 2D array,
-// and a flat buffer is what the blit wants anyway. `malloc<T>(n)` yields
+// and a flat buffer is what the blit wants anyway. `new T[n]` yields
 // a bounds-checked array that the synthesised destructor reclaims, so
 // unlike the `Blob`s that carry Win32 structs, these are not `Closeable`.
 //
@@ -50,8 +50,8 @@ pub class RenderTarget {
         self.w = w;
         self.h = h;
         let count = (w as i64) * h;
-        self.color = malloc<i32>(count);
-        self.depth = malloc<f32>(count);
+        self.color = new i32[count];
+        self.depth = new f32[count];
     }
 
     /** Frame width, in pixels. */
@@ -97,9 +97,8 @@ pub class RenderTarget {
         self.w = w;
         self.h = h;
         let count = (w as i64) * h;
-        drop self.color;
-        self.color = malloc<i32>(count);
-        self.depth = malloc<f32>(count);
+        self.color = new i32[count];
+        self.depth = new f32[count];
     }
 
     /** Fill the colour buffer with `packed` and empty the depth buffer. */

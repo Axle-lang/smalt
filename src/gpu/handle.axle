@@ -29,7 +29,7 @@ pub struct MeshHandle {
     pub index : i32 = -1;
 
     /** The generation `index` was handed out at. */
-    pub gen   : i32 = 0;
+    pub gen : i32 = 0;
 
     /** The handle that names no mesh — what a failed upload answers. */
     pub static fn none() : MeshHandle {
@@ -48,7 +48,7 @@ pub struct TextureHandle {
     pub index : i32 = -1;
 
     /** The generation `index` was handed out at. */
-    pub gen   : i32 = 0;
+    pub gen : i32 = 0;
 
     /** The handle that names no texture — what a failed upload answers. */
     pub static fn none() : TextureHandle {
@@ -67,7 +67,7 @@ pub struct ShaderHandle {
     pub index : i32 = -1;
 
     /** The generation `index` was handed out at. */
-    pub gen   : i32 = 0;
+    pub gen : i32 = 0;
 
     /** The handle that names no shader: a draw made with it uses smalt's own. */
     pub static fn none() : ShaderHandle {
@@ -96,13 +96,13 @@ pub class HandleTable {
     pub static EMPTY : i32 = -2;
 
     /** The backend slot each live entry maps to (or `EMPTY`), -1 when the entry is free. */
-    slots            : i32[];
+    slots : i32[];
 
     /** The generation each entry is currently at. */
-    gens             : i32[];
+    gens : i32[];
 
     /** For a free entry, the next free one; -1 ends the list. */
-    links            : i32[];
+    links : i32[];
 
     cap      : i32;
     freeHead : i32 = -1;
@@ -117,9 +117,9 @@ pub class HandleTable {
         self.cap = capacity.max(1);
         let start : i32 = seed & 0x3FFFFFFF;
         let n : i64 = self.cap as i64;
-        self.slots = malloc<i32>(n);
-        self.gens = malloc<i32>(n);
-        self.links = malloc<i32>(n);
+        self.slots = new i32[n];
+        self.gens = new i32[n];
+        self.links = new i32[n];
         for (i of 0..n) {
             self.slots[i] = -1;
             self.gens[i] = start;
