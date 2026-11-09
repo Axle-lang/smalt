@@ -29,20 +29,17 @@ use crate::sys::vk::vk_const::{
     VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM,
     VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT,
     VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-    VK_PIPELINE_STAGE_TRANSFER_BIT,
+    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT
 };
 use crate::sys::vk::vk_table::VkAddr;
-use crate::sys::vk::vk_types::{
-    VkBufferImageCopy, VkExtent3D, VkImageSubresourceLayers, VkOffset3D,
-};
+use crate::sys::vk::vk_types::{VkBufferImageCopy, VkExtent3D, VkImageSubresourceLayers, VkOffset3D};
 
 /** The image a frame was drawn into, its size and its format. */
 pub(crate) struct ReadSource {
-    pub(crate) image  : i64,
-    pub(crate) w      : i32,
-    pub(crate) h      : i32,
-    pub(crate) format : i32,
+    pub(crate) image  : i64;
+    pub(crate) w      : i32;
+    pub(crate) h      : i32;
+    pub(crate) format : i32;
 }
 
 /** How the bytes of a texel the copy can take are ordered: nothing else is read back. */
@@ -58,33 +55,40 @@ pub(crate) class VkReadback {
     pub(crate) wanted : bool = false;
 
     /** Whether the frame being recorded copies itself out. */
-    pending           : bool = false;
+    pending : bool = false;
 
-    buffer            : GpuBuffer;
-    bufferBytes       : i64 = 0;
+    buffer      : GpuBuffer;
+    bufferBytes : i64 = 0;
 
     /** The pixels last read, `0x00RRGGBB`, and their size; 0 until a frame was. */
-    pixels            : i64 = 0;
-    pixelBytes        : i64 = 0;
-    w                 : i32 = 0;
-    h                 : i32 = 0;
+    pixels     : i64 = 0;
+    pixelBytes : i64 = 0;
+    w          : i32 = 0;
+    h          : i32 = 0;
 
     /** The byte order of the texels being copied. */
-    bgra              : bool = true;
+    bgra : bool = true;
 
-    copyArr           : VkBufferImageCopy[];
+    copyArr : VkBufferImageCopy[];
 
     /** Nothing asked for, nothing read. */
     constructor() {
         self.buffer = GpuBuffer::none();
-        self.copyArr = malloc<VkBufferImageCopy>(1);
+        self.copyArr = new VkBufferImageCopy[1];
     }
 
     /**
      * Record, at the end of a frame (its image just out of the present pass), the image's
      * copy into the buffer — when one was asked for and the buffer can be had.
      */
-    pub(crate) fn record(mut self, ctx : VkContext, heap : GpuHeap, cmd : VkCmd, cb : i64, src : ReadSource) : void {
+    pub(crate) fn record(
+        mut self,
+        ctx : VkContext,
+        heap : GpuHeap,
+        cmd : VkCmd,
+        cb : i64,
+        src : ReadSource
+    ) : void {
         self.pending = false;
         let image : i64 = src.image;
         let w : i32 = src.w;

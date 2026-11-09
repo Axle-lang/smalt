@@ -68,10 +68,10 @@ use crate::kernel::mem::Mem;
 use crate::kernel::raw::Raw;
 use crate::sys::vk::vk_const::{
     VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, VK_FORMAT_B8G8R8A8_UNORM,
-    VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-    VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_VIEW_TYPE_2D, VK_PRESENT_MODE_FIFO_KHR,
-    VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_MAILBOX_KHR, VK_SHARING_MODE_EXCLUSIVE,
-    VK_SUCCESS, VK_NOT_READY, VK_ERROR_INITIALIZATION_FAILED, VK_ERROR_OUT_OF_HOST_MEMORY,
+    VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+    VK_IMAGE_VIEW_TYPE_2D, VK_PRESENT_MODE_FIFO_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR,
+    VK_PRESENT_MODE_MAILBOX_KHR, VK_SHARING_MODE_EXCLUSIVE, VK_SUCCESS, VK_NOT_READY,
+    VK_ERROR_INITIALIZATION_FAILED, VK_ERROR_OUT_OF_HOST_MEMORY
 };
 use crate::sys::vk::vk_out::{
     VKO_SURFACE_CAPABILITIES_KHR_BYTES, VKO_SURFACE_CAPABILITIES_KHR_CURRENT_EXTENT,
@@ -80,11 +80,11 @@ use crate::sys::vk::vk_out::{
     VKO_SURFACE_CAPABILITIES_KHR_MIN_IMAGE_EXTENT,
     VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_COMPOSITE_ALPHA,
     VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_USAGE_FLAGS, VKO_SURFACE_FORMAT_KHR_BYTES,
-    VKO_SURFACE_FORMAT_KHR_COLOR_SPACE, VKO_SURFACE_FORMAT_KHR_FORMAT,
+    VKO_SURFACE_FORMAT_KHR_COLOR_SPACE, VKO_SURFACE_FORMAT_KHR_FORMAT
 };
 use crate::sys::vk::vk_table::VkAddr;
 use crate::sys::vk::vk_types::{
-    VkExtent2D, VkFramebufferCreateInfo, VkInit, VkSwapchainCreateInfoKHR,
+    VkExtent2D, VkFramebufferCreateInfo, VkInit, VkSwapchainCreateInfoKHR
 };
 
 /** Most images a swapchain may have; drivers ask for two to four. */
@@ -102,32 +102,32 @@ pub(crate) class VkSwapchain {
     pub(crate) format : i32 = 0;
 
     /** The colour space that goes with `format`. */
-    colorSpace        : i32 = 0;
+    colorSpace : i32 = 0;
 
     /** Width of the images. */
-    pub(crate) w      : i32 = 0;
+    pub(crate) w : i32 = 0;
 
     /** Height of the images. */
-    pub(crate) h      : i32 = 0;
+    pub(crate) h : i32 = 0;
 
     /** How many images the driver made. */
-    pub(crate) count  : i32 = 0;
+    pub(crate) count : i32 = 0;
 
     /** Whether the images can be copied out of (a capture). */
     pub(crate) readable : bool = false;
 
     /** The swapchain's `VkImage`s, as a block of `i64`. */
-    images            : i64[];
-    views             : i64[];
-    frames            : i64[];
-    done              : i64[];
+    images : i64[];
+    views  : i64[];
+    frames : i64[];
+    done   : i64[];
 
     /** An empty swapchain: nothing built yet. */
     constructor() {
-        self.images = malloc<i64>(SWAP_MAX_IMAGES as i64);
-        self.views = malloc<i64>(SWAP_MAX_IMAGES as i64);
-        self.frames = malloc<i64>(SWAP_MAX_IMAGES as i64);
-        self.done = malloc<i64>(SWAP_MAX_IMAGES as i64);
+        self.images = new i64[SWAP_MAX_IMAGES as i64];
+        self.views = new i64[SWAP_MAX_IMAGES as i64];
+        self.frames = new i64[SWAP_MAX_IMAGES as i64];
+        self.done = new i64[SWAP_MAX_IMAGES as i64];
         for (i of 0..SWAP_MAX_IMAGES) {
             self.images[i as i64] = 0;
             self.views[i as i64] = 0;
@@ -347,7 +347,10 @@ pub(crate) class VkSwapchain {
             VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_COMPOSITE_ALPHA
         );
         let transform : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_CURRENT_TRANSFORM);
-        let usageBits : i32 = Mem::dwordAt(caps, VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_USAGE_FLAGS);
+        let usageBits : i32 = Mem::dwordAt(
+            caps,
+            VKO_SURFACE_CAPABILITIES_KHR_SUPPORTED_USAGE_FLAGS
+        );
         Mem::release(caps);
         if (w <= 0 || h <= 0) {
             return VK_NOT_READY;
@@ -434,7 +437,7 @@ pub(crate) class VkSwapchain {
             self.frames[k] = 0;
             self.done[k] = 0;
             if (self.views[k] != 0) {
-                let mut at : i64[] = malloc<i64>(1);
+                let mut at : i64[] = new i64[1];
                 at[0] = self.views[k];
                 let mut fi : VkFramebufferCreateInfo = VkInit::framebufferCreateInfo();
                 fi.renderPass = pipes.presentPass;

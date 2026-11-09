@@ -28,9 +28,8 @@ use crate::sys::vk::vk_const::{
     VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
     VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
     VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-    VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-    VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-    VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+    VK_STRUCTURE_TYPE_MEMORY_BARRIER, VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+    VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
     VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
     VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
     VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
@@ -44,55 +43,55 @@ use crate::sys::vk::vk_const::{
     VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
     VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, VK_STRUCTURE_TYPE_SUBMIT_INFO,
-    VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+    VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET
 };
 
 /** `VkApplicationInfo` — 48 bytes. */
 pub extern "C" struct VkApplicationInfo {
     /** `sType`, at byte 0. */
-    pub sType              : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext              : ptr;
+    pub pNext : ptr;
 
     /** `pApplicationName`, at byte 16. */
-    pub pApplicationName   : ptr;
+    pub pApplicationName : ptr;
 
     /** `applicationVersion`, at byte 24. */
     pub applicationVersion : i32;
 
     /** `pEngineName`, at byte 32. */
-    pub pEngineName        : ptr;
+    pub pEngineName : ptr;
 
     /** `engineVersion`, at byte 40. */
-    pub engineVersion      : i32;
+    pub engineVersion : i32;
 
     /** `apiVersion`, at byte 44. */
-    pub apiVersion         : i32;
+    pub apiVersion : i32;
 }
 
 /** `VkInstanceCreateInfo` — 64 bytes. */
 pub extern "C" struct VkInstanceCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType                   : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext                   : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags                   : i32;
+    pub flags : i32;
 
     /** `pApplicationInfo`, at byte 24. */
-    pub pApplicationInfo        : ptr;
+    pub pApplicationInfo : ptr;
 
     /** `enabledLayerCount`, at byte 32. */
-    pub enabledLayerCount       : i32;
+    pub enabledLayerCount : i32;
 
     /** `ppEnabledLayerNames`, at byte 40. */
-    pub ppEnabledLayerNames     : ptr;
+    pub ppEnabledLayerNames : ptr;
 
     /** `enabledExtensionCount`, at byte 48. */
-    pub enabledExtensionCount   : i32;
+    pub enabledExtensionCount : i32;
 
     /** `ppEnabledExtensionNames`, at byte 56. */
     pub ppEnabledExtensionNames : ptr;
@@ -101,19 +100,19 @@ pub extern "C" struct VkInstanceCreateInfo {
 /** `VkDeviceQueueCreateInfo` — 40 bytes. */
 pub extern "C" struct VkDeviceQueueCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType            : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext            : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags            : i32;
+    pub flags : i32;
 
     /** `queueFamilyIndex`, at byte 20. */
     pub queueFamilyIndex : i32;
 
     /** `queueCount`, at byte 24. */
-    pub queueCount       : i32;
+    pub queueCount : i32;
 
     /** `pQueuePriorities`, at byte 32. */
     pub pQueuePriorities : ptr;
@@ -122,34 +121,34 @@ pub extern "C" struct VkDeviceQueueCreateInfo {
 /** `VkDeviceCreateInfo` — 72 bytes. */
 pub extern "C" struct VkDeviceCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType                   : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext                   : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags                   : i32;
+    pub flags : i32;
 
     /** `queueCreateInfoCount`, at byte 20. */
-    pub queueCreateInfoCount    : i32;
+    pub queueCreateInfoCount : i32;
 
     /** `pQueueCreateInfos`, at byte 24. */
-    pub pQueueCreateInfos       : ptr;
+    pub pQueueCreateInfos : ptr;
 
     /** `enabledLayerCount`, at byte 32. */
-    pub enabledLayerCount       : i32;
+    pub enabledLayerCount : i32;
 
     /** `ppEnabledLayerNames`, at byte 40. */
-    pub ppEnabledLayerNames     : ptr;
+    pub ppEnabledLayerNames : ptr;
 
     /** `enabledExtensionCount`, at byte 48. */
-    pub enabledExtensionCount   : i32;
+    pub enabledExtensionCount : i32;
 
     /** `ppEnabledExtensionNames`, at byte 56. */
     pub ppEnabledExtensionNames : ptr;
 
     /** `pEnabledFeatures`, at byte 64. */
-    pub pEnabledFeatures        : ptr;
+    pub pEnabledFeatures : ptr;
 }
 
 /** `VkPhysicalDeviceFeatures` — 220 bytes. */
@@ -323,7 +322,7 @@ pub extern "C" struct VkPhysicalDeviceFeatures {
 /** `VkExtent2D` — 8 bytes. */
 pub extern "C" struct VkExtent2D {
     /** `width`, at byte 0. */
-    pub width  : i32;
+    pub width : i32;
 
     /** `height`, at byte 4. */
     pub height : i32;
@@ -332,13 +331,13 @@ pub extern "C" struct VkExtent2D {
 /** `VkExtent3D` — 12 bytes. */
 pub extern "C" struct VkExtent3D {
     /** `width`, at byte 0. */
-    pub width  : i32;
+    pub width : i32;
 
     /** `height`, at byte 4. */
     pub height : i32;
 
     /** `depth`, at byte 8. */
-    pub depth  : i32;
+    pub depth : i32;
 }
 
 /** `VkOffset2D` — 8 bytes. */
@@ -374,16 +373,16 @@ pub extern "C" struct VkRect2D {
 /** `VkViewport` — 24 bytes. */
 pub extern "C" struct VkViewport {
     /** `x`, at byte 0. */
-    pub x        : f32;
+    pub x : f32;
 
     /** `y`, at byte 4. */
-    pub y        : f32;
+    pub y : f32;
 
     /** `width`, at byte 8. */
-    pub width    : f32;
+    pub width : f32;
 
     /** `height`, at byte 12. */
-    pub height   : f32;
+    pub height : f32;
 
     /** `minDepth`, at byte 16. */
     pub minDepth : f32;
@@ -395,13 +394,13 @@ pub extern "C" struct VkViewport {
 /** `VkMemoryAllocateInfo` — 32 bytes. */
 pub extern "C" struct VkMemoryAllocateInfo {
     /** `sType`, at byte 0. */
-    pub sType           : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext           : ptr;
+    pub pNext : ptr;
 
     /** `allocationSize`, at byte 16. */
-    pub allocationSize  : i64;
+    pub allocationSize : i64;
 
     /** `memoryTypeIndex`, at byte 24. */
     pub memoryTypeIndex : i32;
@@ -410,109 +409,109 @@ pub extern "C" struct VkMemoryAllocateInfo {
 /** `VkBufferCreateInfo` — 56 bytes. */
 pub extern "C" struct VkBufferCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType                 : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext                 : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags                 : i32;
+    pub flags : i32;
 
     /** `size`, at byte 24. */
-    pub size                  : i64;
+    pub size : i64;
 
     /** `usage`, at byte 32. */
-    pub usage                 : i32;
+    pub usage : i32;
 
     /** `sharingMode`, at byte 36. */
-    pub sharingMode           : i32;
+    pub sharingMode : i32;
 
     /** `queueFamilyIndexCount`, at byte 40. */
     pub queueFamilyIndexCount : i32;
 
     /** `pQueueFamilyIndices`, at byte 48. */
-    pub pQueueFamilyIndices   : ptr;
+    pub pQueueFamilyIndices : ptr;
 }
 
 /** `VkImageCreateInfo` — 88 bytes. */
 pub extern "C" struct VkImageCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType                 : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext                 : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags                 : i32;
+    pub flags : i32;
 
     /** `imageType`, at byte 20. */
-    pub imageType             : i32;
+    pub imageType : i32;
 
     /** `format`, at byte 24. */
-    pub format                : i32;
+    pub format : i32;
 
     /** `extent`, at byte 28. */
-    pub extent                : VkExtent3D;
+    pub extent : VkExtent3D;
 
     /** `mipLevels`, at byte 40. */
-    pub mipLevels             : i32;
+    pub mipLevels : i32;
 
     /** `arrayLayers`, at byte 44. */
-    pub arrayLayers           : i32;
+    pub arrayLayers : i32;
 
     /** `samples`, at byte 48. */
-    pub samples               : i32;
+    pub samples : i32;
 
     /** `tiling`, at byte 52. */
-    pub tiling                : i32;
+    pub tiling : i32;
 
     /** `usage`, at byte 56. */
-    pub usage                 : i32;
+    pub usage : i32;
 
     /** `sharingMode`, at byte 60. */
-    pub sharingMode           : i32;
+    pub sharingMode : i32;
 
     /** `queueFamilyIndexCount`, at byte 64. */
     pub queueFamilyIndexCount : i32;
 
     /** `pQueueFamilyIndices`, at byte 72. */
-    pub pQueueFamilyIndices   : ptr;
+    pub pQueueFamilyIndices : ptr;
 
     /** `initialLayout`, at byte 80. */
-    pub initialLayout         : i32;
+    pub initialLayout : i32;
 }
 
 /** `VkImageSubresourceRange` — 20 bytes. */
 pub extern "C" struct VkImageSubresourceRange {
     /** `aspectMask`, at byte 0. */
-    pub aspectMask     : i32;
+    pub aspectMask : i32;
 
     /** `baseMipLevel`, at byte 4. */
-    pub baseMipLevel   : i32;
+    pub baseMipLevel : i32;
 
     /** `levelCount`, at byte 8. */
-    pub levelCount     : i32;
+    pub levelCount : i32;
 
     /** `baseArrayLayer`, at byte 12. */
     pub baseArrayLayer : i32;
 
     /** `layerCount`, at byte 16. */
-    pub layerCount     : i32;
+    pub layerCount : i32;
 }
 
 /** `VkImageSubresourceLayers` — 16 bytes. */
 pub extern "C" struct VkImageSubresourceLayers {
     /** `aspectMask`, at byte 0. */
-    pub aspectMask     : i32;
+    pub aspectMask : i32;
 
     /** `mipLevel`, at byte 4. */
-    pub mipLevel       : i32;
+    pub mipLevel : i32;
 
     /** `baseArrayLayer`, at byte 8. */
     pub baseArrayLayer : i32;
 
     /** `layerCount`, at byte 12. */
-    pub layerCount     : i32;
+    pub layerCount : i32;
 }
 
 /** `VkComponentMapping` — 16 bytes. */
@@ -533,25 +532,25 @@ pub extern "C" struct VkComponentMapping {
 /** `VkImageViewCreateInfo` — 80 bytes. */
 pub extern "C" struct VkImageViewCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType            : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext            : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags            : i32;
+    pub flags : i32;
 
     /** `image`, at byte 24. */
-    pub image            : i64;
+    pub image : i64;
 
     /** `viewType`, at byte 32. */
-    pub viewType         : i32;
+    pub viewType : i32;
 
     /** `format`, at byte 36. */
-    pub format           : i32;
+    pub format : i32;
 
     /** `components`, at byte 40. */
-    pub components       : VkComponentMapping;
+    pub components : VkComponentMapping;
 
     /** `subresourceRange`, at byte 56. */
     pub subresourceRange : VkImageSubresourceRange;
@@ -560,55 +559,55 @@ pub extern "C" struct VkImageViewCreateInfo {
 /** `VkSamplerCreateInfo` — 80 bytes. */
 pub extern "C" struct VkSamplerCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType                   : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext                   : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags                   : i32;
+    pub flags : i32;
 
     /** `magFilter`, at byte 20. */
-    pub magFilter               : i32;
+    pub magFilter : i32;
 
     /** `minFilter`, at byte 24. */
-    pub minFilter               : i32;
+    pub minFilter : i32;
 
     /** `mipmapMode`, at byte 28. */
-    pub mipmapMode              : i32;
+    pub mipmapMode : i32;
 
     /** `addressModeU`, at byte 32. */
-    pub addressModeU            : i32;
+    pub addressModeU : i32;
 
     /** `addressModeV`, at byte 36. */
-    pub addressModeV            : i32;
+    pub addressModeV : i32;
 
     /** `addressModeW`, at byte 40. */
-    pub addressModeW            : i32;
+    pub addressModeW : i32;
 
     /** `mipLodBias`, at byte 44. */
-    pub mipLodBias              : f32;
+    pub mipLodBias : f32;
 
     /** `anisotropyEnable`, at byte 48. */
-    pub anisotropyEnable        : i32;
+    pub anisotropyEnable : i32;
 
     /** `maxAnisotropy`, at byte 52. */
-    pub maxAnisotropy           : f32;
+    pub maxAnisotropy : f32;
 
     /** `compareEnable`, at byte 56. */
-    pub compareEnable           : i32;
+    pub compareEnable : i32;
 
     /** `compareOp`, at byte 60. */
-    pub compareOp               : i32;
+    pub compareOp : i32;
 
     /** `minLod`, at byte 64. */
-    pub minLod                  : f32;
+    pub minLod : f32;
 
     /** `maxLod`, at byte 68. */
-    pub maxLod                  : f32;
+    pub maxLod : f32;
 
     /** `borderColor`, at byte 72. */
-    pub borderColor             : i32;
+    pub borderColor : i32;
 
     /** `unnormalizedCoordinates`, at byte 76. */
     pub unnormalizedCoordinates : i32;
@@ -617,34 +616,34 @@ pub extern "C" struct VkSamplerCreateInfo {
 /** `VkShaderModuleCreateInfo` — 40 bytes. */
 pub extern "C" struct VkShaderModuleCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType    : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext    : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags    : i32;
+    pub flags : i32;
 
     /** `codeSize`, at byte 24. */
     pub codeSize : i64;
 
     /** `pCode`, at byte 32. */
-    pub pCode    : ptr;
+    pub pCode : ptr;
 }
 
 /** `VkDescriptorSetLayoutBinding` — 24 bytes. */
 pub extern "C" struct VkDescriptorSetLayoutBinding {
     /** `binding`, at byte 0. */
-    pub binding            : i32;
+    pub binding : i32;
 
     /** `descriptorType`, at byte 4. */
-    pub descriptorType     : i32;
+    pub descriptorType : i32;
 
     /** `descriptorCount`, at byte 8. */
-    pub descriptorCount    : i32;
+    pub descriptorCount : i32;
 
     /** `stageFlags`, at byte 12. */
-    pub stageFlags         : i32;
+    pub stageFlags : i32;
 
     /** `pImmutableSamplers`, at byte 16. */
     pub pImmutableSamplers : ptr;
@@ -653,19 +652,19 @@ pub extern "C" struct VkDescriptorSetLayoutBinding {
 /** `VkDescriptorSetLayoutCreateInfo` — 32 bytes. */
 pub extern "C" struct VkDescriptorSetLayoutCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType        : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext        : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags        : i32;
+    pub flags : i32;
 
     /** `bindingCount`, at byte 20. */
     pub bindingCount : i32;
 
     /** `pBindings`, at byte 24. */
-    pub pBindings    : ptr;
+    pub pBindings : ptr;
 }
 
 /** `VkPushConstantRange` — 12 bytes. */
@@ -674,64 +673,64 @@ pub extern "C" struct VkPushConstantRange {
     pub stageFlags : i32;
 
     /** `offset`, at byte 4. */
-    pub offset     : i32;
+    pub offset : i32;
 
     /** `size`, at byte 8. */
-    pub size       : i32;
+    pub size : i32;
 }
 
 /** `VkPipelineLayoutCreateInfo` — 48 bytes. */
 pub extern "C" struct VkPipelineLayoutCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType                  : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext                  : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags                  : i32;
+    pub flags : i32;
 
     /** `setLayoutCount`, at byte 20. */
-    pub setLayoutCount         : i32;
+    pub setLayoutCount : i32;
 
     /** `pSetLayouts`, at byte 24. */
-    pub pSetLayouts            : ptr;
+    pub pSetLayouts : ptr;
 
     /** `pushConstantRangeCount`, at byte 32. */
     pub pushConstantRangeCount : i32;
 
     /** `pPushConstantRanges`, at byte 40. */
-    pub pPushConstantRanges    : ptr;
+    pub pPushConstantRanges : ptr;
 }
 
 /** `VkAttachmentDescription` — 36 bytes. */
 pub extern "C" struct VkAttachmentDescription {
     /** `flags`, at byte 0. */
-    pub flags          : i32;
+    pub flags : i32;
 
     /** `format`, at byte 4. */
-    pub format         : i32;
+    pub format : i32;
 
     /** `samples`, at byte 8. */
-    pub samples        : i32;
+    pub samples : i32;
 
     /** `loadOp`, at byte 12. */
-    pub loadOp         : i32;
+    pub loadOp : i32;
 
     /** `storeOp`, at byte 16. */
-    pub storeOp        : i32;
+    pub storeOp : i32;
 
     /** `stencilLoadOp`, at byte 20. */
-    pub stencilLoadOp  : i32;
+    pub stencilLoadOp : i32;
 
     /** `stencilStoreOp`, at byte 24. */
     pub stencilStoreOp : i32;
 
     /** `initialLayout`, at byte 28. */
-    pub initialLayout  : i32;
+    pub initialLayout : i32;
 
     /** `finalLayout`, at byte 32. */
-    pub finalLayout    : i32;
+    pub finalLayout : i32;
 }
 
 /** `VkAttachmentReference` — 8 bytes. */
@@ -740,31 +739,31 @@ pub extern "C" struct VkAttachmentReference {
     pub attachment : i32;
 
     /** `layout`, at byte 4. */
-    pub layout     : i32;
+    pub layout : i32;
 }
 
 /** `VkSubpassDescription` — 72 bytes. */
 pub extern "C" struct VkSubpassDescription {
     /** `flags`, at byte 0. */
-    pub flags                   : i32;
+    pub flags : i32;
 
     /** `pipelineBindPoint`, at byte 4. */
-    pub pipelineBindPoint       : i32;
+    pub pipelineBindPoint : i32;
 
     /** `inputAttachmentCount`, at byte 8. */
-    pub inputAttachmentCount    : i32;
+    pub inputAttachmentCount : i32;
 
     /** `pInputAttachments`, at byte 16. */
-    pub pInputAttachments       : ptr;
+    pub pInputAttachments : ptr;
 
     /** `colorAttachmentCount`, at byte 24. */
-    pub colorAttachmentCount    : i32;
+    pub colorAttachmentCount : i32;
 
     /** `pColorAttachments`, at byte 32. */
-    pub pColorAttachments       : ptr;
+    pub pColorAttachments : ptr;
 
     /** `pResolveAttachments`, at byte 40. */
-    pub pResolveAttachments     : ptr;
+    pub pResolveAttachments : ptr;
 
     /** `pDepthStencilAttachment`, at byte 48. */
     pub pDepthStencilAttachment : ptr;
@@ -773,28 +772,28 @@ pub extern "C" struct VkSubpassDescription {
     pub preserveAttachmentCount : i32;
 
     /** `pPreserveAttachments`, at byte 64. */
-    pub pPreserveAttachments    : ptr;
+    pub pPreserveAttachments : ptr;
 }
 
 /** `VkSubpassDependency` — 28 bytes. */
 pub extern "C" struct VkSubpassDependency {
     /** `srcSubpass`, at byte 0. */
-    pub srcSubpass      : i32;
+    pub srcSubpass : i32;
 
     /** `dstSubpass`, at byte 4. */
-    pub dstSubpass      : i32;
+    pub dstSubpass : i32;
 
     /** `srcStageMask`, at byte 8. */
-    pub srcStageMask    : i32;
+    pub srcStageMask : i32;
 
     /** `dstStageMask`, at byte 12. */
-    pub dstStageMask    : i32;
+    pub dstStageMask : i32;
 
     /** `srcAccessMask`, at byte 16. */
-    pub srcAccessMask   : i32;
+    pub srcAccessMask : i32;
 
     /** `dstAccessMask`, at byte 20. */
-    pub dstAccessMask   : i32;
+    pub dstAccessMask : i32;
 
     /** `dependencyFlags`, at byte 24. */
     pub dependencyFlags : i32;
@@ -803,82 +802,82 @@ pub extern "C" struct VkSubpassDependency {
 /** `VkRenderPassCreateInfo` — 64 bytes. */
 pub extern "C" struct VkRenderPassCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType           : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext           : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags           : i32;
+    pub flags : i32;
 
     /** `attachmentCount`, at byte 20. */
     pub attachmentCount : i32;
 
     /** `pAttachments`, at byte 24. */
-    pub pAttachments    : ptr;
+    pub pAttachments : ptr;
 
     /** `subpassCount`, at byte 32. */
-    pub subpassCount    : i32;
+    pub subpassCount : i32;
 
     /** `pSubpasses`, at byte 40. */
-    pub pSubpasses      : ptr;
+    pub pSubpasses : ptr;
 
     /** `dependencyCount`, at byte 48. */
     pub dependencyCount : i32;
 
     /** `pDependencies`, at byte 56. */
-    pub pDependencies   : ptr;
+    pub pDependencies : ptr;
 }
 
 /** `VkFramebufferCreateInfo` — 64 bytes. */
 pub extern "C" struct VkFramebufferCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType           : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext           : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags           : i32;
+    pub flags : i32;
 
     /** `renderPass`, at byte 24. */
-    pub renderPass      : i64;
+    pub renderPass : i64;
 
     /** `attachmentCount`, at byte 32. */
     pub attachmentCount : i32;
 
     /** `pAttachments`, at byte 40. */
-    pub pAttachments    : ptr;
+    pub pAttachments : ptr;
 
     /** `width`, at byte 48. */
-    pub width           : i32;
+    pub width : i32;
 
     /** `height`, at byte 52. */
-    pub height          : i32;
+    pub height : i32;
 
     /** `layers`, at byte 56. */
-    pub layers          : i32;
+    pub layers : i32;
 }
 
 /** `VkPipelineShaderStageCreateInfo` — 48 bytes. */
 pub extern "C" struct VkPipelineShaderStageCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType               : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext               : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags               : i32;
+    pub flags : i32;
 
     /** `stage`, at byte 20. */
-    pub stage               : i32;
+    pub stage : i32;
 
     /** `module`, at byte 24. */
-    pub module_             : i64;
+    pub module_ : i64;
 
     /** `pName`, at byte 32. */
-    pub pName               : ptr;
+    pub pName : ptr;
 
     /** `pSpecializationInfo`, at byte 40. */
     pub pSpecializationInfo : ptr;
@@ -887,10 +886,10 @@ pub extern "C" struct VkPipelineShaderStageCreateInfo {
 /** `VkVertexInputBindingDescription` — 12 bytes. */
 pub extern "C" struct VkVertexInputBindingDescription {
     /** `binding`, at byte 0. */
-    pub binding   : i32;
+    pub binding : i32;
 
     /** `stride`, at byte 4. */
-    pub stride    : i32;
+    pub stride : i32;
 
     /** `inputRate`, at byte 8. */
     pub inputRate : i32;
@@ -902,13 +901,13 @@ pub extern "C" struct VkVertexInputAttributeDescription {
     pub location : i32;
 
     /** `binding`, at byte 4. */
-    pub binding  : i32;
+    pub binding : i32;
 
     /** `format`, at byte 8. */
-    pub format   : i32;
+    pub format : i32;
 
     /** `offset`, at byte 12. */
-    pub offset   : i32;
+    pub offset : i32;
 }
 
 /** `VkPipelineVertexInputStateCreateInfo` — 48 bytes. */
@@ -938,16 +937,16 @@ pub extern "C" struct VkPipelineVertexInputStateCreateInfo {
 /** `VkPipelineInputAssemblyStateCreateInfo` — 32 bytes. */
 pub extern "C" struct VkPipelineInputAssemblyStateCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType                  : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext                  : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags                  : i32;
+    pub flags : i32;
 
     /** `topology`, at byte 20. */
-    pub topology               : i32;
+    pub topology : i32;
 
     /** `primitiveRestartEnable`, at byte 24. */
     pub primitiveRestartEnable : i32;
@@ -956,166 +955,166 @@ pub extern "C" struct VkPipelineInputAssemblyStateCreateInfo {
 /** `VkPipelineViewportStateCreateInfo` — 48 bytes. */
 pub extern "C" struct VkPipelineViewportStateCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType         : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext         : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags         : i32;
+    pub flags : i32;
 
     /** `viewportCount`, at byte 20. */
     pub viewportCount : i32;
 
     /** `pViewports`, at byte 24. */
-    pub pViewports    : ptr;
+    pub pViewports : ptr;
 
     /** `scissorCount`, at byte 32. */
-    pub scissorCount  : i32;
+    pub scissorCount : i32;
 
     /** `pScissors`, at byte 40. */
-    pub pScissors     : ptr;
+    pub pScissors : ptr;
 }
 
 /** `VkPipelineRasterizationStateCreateInfo` — 64 bytes. */
 pub extern "C" struct VkPipelineRasterizationStateCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType                   : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext                   : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags                   : i32;
+    pub flags : i32;
 
     /** `depthClampEnable`, at byte 20. */
-    pub depthClampEnable        : i32;
+    pub depthClampEnable : i32;
 
     /** `rasterizerDiscardEnable`, at byte 24. */
     pub rasterizerDiscardEnable : i32;
 
     /** `polygonMode`, at byte 28. */
-    pub polygonMode             : i32;
+    pub polygonMode : i32;
 
     /** `cullMode`, at byte 32. */
-    pub cullMode                : i32;
+    pub cullMode : i32;
 
     /** `frontFace`, at byte 36. */
-    pub frontFace               : i32;
+    pub frontFace : i32;
 
     /** `depthBiasEnable`, at byte 40. */
-    pub depthBiasEnable         : i32;
+    pub depthBiasEnable : i32;
 
     /** `depthBiasConstantFactor`, at byte 44. */
     pub depthBiasConstantFactor : f32;
 
     /** `depthBiasClamp`, at byte 48. */
-    pub depthBiasClamp          : f32;
+    pub depthBiasClamp : f32;
 
     /** `depthBiasSlopeFactor`, at byte 52. */
-    pub depthBiasSlopeFactor    : f32;
+    pub depthBiasSlopeFactor : f32;
 
     /** `lineWidth`, at byte 56. */
-    pub lineWidth               : f32;
+    pub lineWidth : f32;
 }
 
 /** `VkPipelineMultisampleStateCreateInfo` — 48 bytes. */
 pub extern "C" struct VkPipelineMultisampleStateCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType                 : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext                 : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags                 : i32;
+    pub flags : i32;
 
     /** `rasterizationSamples`, at byte 20. */
-    pub rasterizationSamples  : i32;
+    pub rasterizationSamples : i32;
 
     /** `sampleShadingEnable`, at byte 24. */
-    pub sampleShadingEnable   : i32;
+    pub sampleShadingEnable : i32;
 
     /** `minSampleShading`, at byte 28. */
-    pub minSampleShading      : f32;
+    pub minSampleShading : f32;
 
     /** `pSampleMask`, at byte 32. */
-    pub pSampleMask           : ptr;
+    pub pSampleMask : ptr;
 
     /** `alphaToCoverageEnable`, at byte 40. */
     pub alphaToCoverageEnable : i32;
 
     /** `alphaToOneEnable`, at byte 44. */
-    pub alphaToOneEnable      : i32;
+    pub alphaToOneEnable : i32;
 }
 
 /** `VkStencilOpState` — 28 bytes. */
 pub extern "C" struct VkStencilOpState {
     /** `failOp`, at byte 0. */
-    pub failOp      : i32;
+    pub failOp : i32;
 
     /** `passOp`, at byte 4. */
-    pub passOp      : i32;
+    pub passOp : i32;
 
     /** `depthFailOp`, at byte 8. */
     pub depthFailOp : i32;
 
     /** `compareOp`, at byte 12. */
-    pub compareOp   : i32;
+    pub compareOp : i32;
 
     /** `compareMask`, at byte 16. */
     pub compareMask : i32;
 
     /** `writeMask`, at byte 20. */
-    pub writeMask   : i32;
+    pub writeMask : i32;
 
     /** `reference`, at byte 24. */
-    pub reference   : i32;
+    pub reference : i32;
 }
 
 /** `VkPipelineDepthStencilStateCreateInfo` — 104 bytes. */
 pub extern "C" struct VkPipelineDepthStencilStateCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType                 : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext                 : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags                 : i32;
+    pub flags : i32;
 
     /** `depthTestEnable`, at byte 20. */
-    pub depthTestEnable       : i32;
+    pub depthTestEnable : i32;
 
     /** `depthWriteEnable`, at byte 24. */
-    pub depthWriteEnable      : i32;
+    pub depthWriteEnable : i32;
 
     /** `depthCompareOp`, at byte 28. */
-    pub depthCompareOp        : i32;
+    pub depthCompareOp : i32;
 
     /** `depthBoundsTestEnable`, at byte 32. */
     pub depthBoundsTestEnable : i32;
 
     /** `stencilTestEnable`, at byte 36. */
-    pub stencilTestEnable     : i32;
+    pub stencilTestEnable : i32;
 
     /** `front`, at byte 40. */
-    pub front                 : VkStencilOpState;
+    pub front : VkStencilOpState;
 
     /** `back`, at byte 68. */
-    pub back                  : VkStencilOpState;
+    pub back : VkStencilOpState;
 
     /** `minDepthBounds`, at byte 96. */
-    pub minDepthBounds        : f32;
+    pub minDepthBounds : f32;
 
     /** `maxDepthBounds`, at byte 100. */
-    pub maxDepthBounds        : f32;
+    pub maxDepthBounds : f32;
 }
 
 /** `VkPipelineColorBlendAttachmentState` — 32 bytes. */
 pub extern "C" struct VkPipelineColorBlendAttachmentState {
     /** `blendEnable`, at byte 0. */
-    pub blendEnable         : i32;
+    pub blendEnable : i32;
 
     /** `srcColorBlendFactor`, at byte 4. */
     pub srcColorBlendFactor : i32;
@@ -1124,7 +1123,7 @@ pub extern "C" struct VkPipelineColorBlendAttachmentState {
     pub dstColorBlendFactor : i32;
 
     /** `colorBlendOp`, at byte 12. */
-    pub colorBlendOp        : i32;
+    pub colorBlendOp : i32;
 
     /** `srcAlphaBlendFactor`, at byte 16. */
     pub srcAlphaBlendFactor : i32;
@@ -1133,34 +1132,34 @@ pub extern "C" struct VkPipelineColorBlendAttachmentState {
     pub dstAlphaBlendFactor : i32;
 
     /** `alphaBlendOp`, at byte 24. */
-    pub alphaBlendOp        : i32;
+    pub alphaBlendOp : i32;
 
     /** `colorWriteMask`, at byte 28. */
-    pub colorWriteMask      : i32;
+    pub colorWriteMask : i32;
 }
 
 /** `VkPipelineColorBlendStateCreateInfo` — 56 bytes. */
 pub extern "C" struct VkPipelineColorBlendStateCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType           : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext           : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags           : i32;
+    pub flags : i32;
 
     /** `logicOpEnable`, at byte 20. */
-    pub logicOpEnable   : i32;
+    pub logicOpEnable : i32;
 
     /** `logicOp`, at byte 24. */
-    pub logicOp         : i32;
+    pub logicOp : i32;
 
     /** `attachmentCount`, at byte 28. */
     pub attachmentCount : i32;
 
     /** `pAttachments`, at byte 32. */
-    pub pAttachments    : ptr;
+    pub pAttachments : ptr;
 
     /** `blendConstants[]`, at byte 40. */
     pub blendConstants0 : f32;
@@ -1178,91 +1177,91 @@ pub extern "C" struct VkPipelineColorBlendStateCreateInfo {
 /** `VkPipelineDynamicStateCreateInfo` — 32 bytes. */
 pub extern "C" struct VkPipelineDynamicStateCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType             : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext             : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags             : i32;
+    pub flags : i32;
 
     /** `dynamicStateCount`, at byte 20. */
     pub dynamicStateCount : i32;
 
     /** `pDynamicStates`, at byte 24. */
-    pub pDynamicStates    : ptr;
+    pub pDynamicStates : ptr;
 }
 
 /** `VkGraphicsPipelineCreateInfo` — 144 bytes. */
 pub extern "C" struct VkGraphicsPipelineCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType               : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext               : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags               : i32;
+    pub flags : i32;
 
     /** `stageCount`, at byte 20. */
-    pub stageCount          : i32;
+    pub stageCount : i32;
 
     /** `pStages`, at byte 24. */
-    pub pStages             : ptr;
+    pub pStages : ptr;
 
     /** `pVertexInputState`, at byte 32. */
-    pub pVertexInputState   : ptr;
+    pub pVertexInputState : ptr;
 
     /** `pInputAssemblyState`, at byte 40. */
     pub pInputAssemblyState : ptr;
 
     /** `pTessellationState`, at byte 48. */
-    pub pTessellationState  : ptr;
+    pub pTessellationState : ptr;
 
     /** `pViewportState`, at byte 56. */
-    pub pViewportState      : ptr;
+    pub pViewportState : ptr;
 
     /** `pRasterizationState`, at byte 64. */
     pub pRasterizationState : ptr;
 
     /** `pMultisampleState`, at byte 72. */
-    pub pMultisampleState   : ptr;
+    pub pMultisampleState : ptr;
 
     /** `pDepthStencilState`, at byte 80. */
-    pub pDepthStencilState  : ptr;
+    pub pDepthStencilState : ptr;
 
     /** `pColorBlendState`, at byte 88. */
-    pub pColorBlendState    : ptr;
+    pub pColorBlendState : ptr;
 
     /** `pDynamicState`, at byte 96. */
-    pub pDynamicState       : ptr;
+    pub pDynamicState : ptr;
 
     /** `layout`, at byte 104. */
-    pub layout              : i64;
+    pub layout : i64;
 
     /** `renderPass`, at byte 112. */
-    pub renderPass          : i64;
+    pub renderPass : i64;
 
     /** `subpass`, at byte 120. */
-    pub subpass             : i32;
+    pub subpass : i32;
 
     /** `basePipelineHandle`, at byte 128. */
-    pub basePipelineHandle  : i64;
+    pub basePipelineHandle : i64;
 
     /** `basePipelineIndex`, at byte 136. */
-    pub basePipelineIndex   : i32;
+    pub basePipelineIndex : i32;
 }
 
 /** `VkCommandPoolCreateInfo` — 24 bytes. */
 pub extern "C" struct VkCommandPoolCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType            : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext            : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags            : i32;
+    pub flags : i32;
 
     /** `queueFamilyIndex`, at byte 20. */
     pub queueFamilyIndex : i32;
@@ -1271,16 +1270,16 @@ pub extern "C" struct VkCommandPoolCreateInfo {
 /** `VkCommandBufferAllocateInfo` — 32 bytes. */
 pub extern "C" struct VkCommandBufferAllocateInfo {
     /** `sType`, at byte 0. */
-    pub sType              : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext              : ptr;
+    pub pNext : ptr;
 
     /** `commandPool`, at byte 16. */
-    pub commandPool        : i64;
+    pub commandPool : i64;
 
     /** `level`, at byte 24. */
-    pub level              : i32;
+    pub level : i32;
 
     /** `commandBufferCount`, at byte 28. */
     pub commandBufferCount : i32;
@@ -1289,13 +1288,13 @@ pub extern "C" struct VkCommandBufferAllocateInfo {
 /** `VkCommandBufferBeginInfo` — 32 bytes. */
 pub extern "C" struct VkCommandBufferBeginInfo {
     /** `sType`, at byte 0. */
-    pub sType            : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext            : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags            : i32;
+    pub flags : i32;
 
     /** `pInheritanceInfo`, at byte 24. */
     pub pInheritanceInfo : ptr;
@@ -1328,7 +1327,7 @@ pub extern "C" struct VkFenceCreateInfo {
 /** `VkDescriptorPoolSize` — 8 bytes. */
 pub extern "C" struct VkDescriptorPoolSize {
     /** `type`, at byte 0. */
-    pub type_           : i32;
+    pub type_ : i32;
 
     /** `descriptorCount`, at byte 4. */
     pub descriptorCount : i32;
@@ -1337,40 +1336,40 @@ pub extern "C" struct VkDescriptorPoolSize {
 /** `VkDescriptorPoolCreateInfo` — 40 bytes. */
 pub extern "C" struct VkDescriptorPoolCreateInfo {
     /** `sType`, at byte 0. */
-    pub sType         : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext         : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags         : i32;
+    pub flags : i32;
 
     /** `maxSets`, at byte 20. */
-    pub maxSets       : i32;
+    pub maxSets : i32;
 
     /** `poolSizeCount`, at byte 24. */
     pub poolSizeCount : i32;
 
     /** `pPoolSizes`, at byte 32. */
-    pub pPoolSizes    : ptr;
+    pub pPoolSizes : ptr;
 }
 
 /** `VkDescriptorSetAllocateInfo` — 40 bytes. */
 pub extern "C" struct VkDescriptorSetAllocateInfo {
     /** `sType`, at byte 0. */
-    pub sType              : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext              : ptr;
+    pub pNext : ptr;
 
     /** `descriptorPool`, at byte 16. */
-    pub descriptorPool     : i64;
+    pub descriptorPool : i64;
 
     /** `descriptorSetCount`, at byte 24. */
     pub descriptorSetCount : i32;
 
     /** `pSetLayouts`, at byte 32. */
-    pub pSetLayouts        : ptr;
+    pub pSetLayouts : ptr;
 }
 
 /** `VkDescriptorBufferInfo` — 24 bytes. */
@@ -1382,16 +1381,16 @@ pub extern "C" struct VkDescriptorBufferInfo {
     pub offset : i64;
 
     /** `range`, at byte 16. */
-    pub range  : i64;
+    pub range : i64;
 }
 
 /** `VkDescriptorImageInfo` — 24 bytes. */
 pub extern "C" struct VkDescriptorImageInfo {
     /** `sampler`, at byte 0. */
-    pub sampler     : i64;
+    pub sampler : i64;
 
     /** `imageView`, at byte 8. */
-    pub imageView   : i64;
+    pub imageView : i64;
 
     /** `imageLayout`, at byte 16. */
     pub imageLayout : i32;
@@ -1400,31 +1399,31 @@ pub extern "C" struct VkDescriptorImageInfo {
 /** `VkWriteDescriptorSet` — 64 bytes. */
 pub extern "C" struct VkWriteDescriptorSet {
     /** `sType`, at byte 0. */
-    pub sType            : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext            : ptr;
+    pub pNext : ptr;
 
     /** `dstSet`, at byte 16. */
-    pub dstSet           : i64;
+    pub dstSet : i64;
 
     /** `dstBinding`, at byte 24. */
-    pub dstBinding       : i32;
+    pub dstBinding : i32;
 
     /** `dstArrayElement`, at byte 28. */
-    pub dstArrayElement  : i32;
+    pub dstArrayElement : i32;
 
     /** `descriptorCount`, at byte 32. */
-    pub descriptorCount  : i32;
+    pub descriptorCount : i32;
 
     /** `descriptorType`, at byte 36. */
-    pub descriptorType   : i32;
+    pub descriptorType : i32;
 
     /** `pImageInfo`, at byte 40. */
-    pub pImageInfo       : ptr;
+    pub pImageInfo : ptr;
 
     /** `pBufferInfo`, at byte 48. */
-    pub pBufferInfo      : ptr;
+    pub pBufferInfo : ptr;
 
     /** `pTexelBufferView`, at byte 56. */
     pub pTexelBufferView : ptr;
@@ -1439,49 +1438,49 @@ pub extern "C" struct VkBufferCopy {
     pub dstOffset : i64;
 
     /** `size`, at byte 16. */
-    pub size      : i64;
+    pub size : i64;
 }
 
 /** `VkBufferImageCopy` — 56 bytes. */
 pub extern "C" struct VkBufferImageCopy {
     /** `bufferOffset`, at byte 0. */
-    pub bufferOffset      : i64;
+    pub bufferOffset : i64;
 
     /** `bufferRowLength`, at byte 8. */
-    pub bufferRowLength   : i32;
+    pub bufferRowLength : i32;
 
     /** `bufferImageHeight`, at byte 12. */
     pub bufferImageHeight : i32;
 
     /** `imageSubresource`, at byte 16. */
-    pub imageSubresource  : VkImageSubresourceLayers;
+    pub imageSubresource : VkImageSubresourceLayers;
 
     /** `imageOffset`, at byte 32. */
-    pub imageOffset       : VkOffset3D;
+    pub imageOffset : VkOffset3D;
 
     /** `imageExtent`, at byte 44. */
-    pub imageExtent       : VkExtent3D;
+    pub imageExtent : VkExtent3D;
 }
 
 /** `VkImageMemoryBarrier` — 72 bytes. */
 pub extern "C" struct VkImageMemoryBarrier {
     /** `sType`, at byte 0. */
-    pub sType               : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext               : ptr;
+    pub pNext : ptr;
 
     /** `srcAccessMask`, at byte 16. */
-    pub srcAccessMask       : i32;
+    pub srcAccessMask : i32;
 
     /** `dstAccessMask`, at byte 20. */
-    pub dstAccessMask       : i32;
+    pub dstAccessMask : i32;
 
     /** `oldLayout`, at byte 24. */
-    pub oldLayout           : i32;
+    pub oldLayout : i32;
 
     /** `newLayout`, at byte 28. */
-    pub newLayout           : i32;
+    pub newLayout : i32;
 
     /** `srcQueueFamilyIndex`, at byte 32. */
     pub srcQueueFamilyIndex : i32;
@@ -1490,19 +1489,19 @@ pub extern "C" struct VkImageMemoryBarrier {
     pub dstQueueFamilyIndex : i32;
 
     /** `image`, at byte 40. */
-    pub image               : i64;
+    pub image : i64;
 
     /** `subresourceRange`, at byte 48. */
-    pub subresourceRange    : VkImageSubresourceRange;
+    pub subresourceRange : VkImageSubresourceRange;
 }
 
 /** `VkMemoryBarrier` — 24 bytes. */
 pub extern "C" struct VkMemoryBarrier {
     /** `sType`, at byte 0. */
-    pub sType         : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext         : ptr;
+    pub pNext : ptr;
 
     /** `srcAccessMask`, at byte 16. */
     pub srcAccessMask : i32;
@@ -1517,157 +1516,157 @@ pub extern "C" struct VkImageBlit {
     pub srcSubresource : VkImageSubresourceLayers;
 
     /** `srcOffsets[]`, at byte 16. */
-    pub srcOffsets0    : VkOffset3D;
+    pub srcOffsets0 : VkOffset3D;
 
     /** `srcOffsets[]`, at byte 28. */
-    pub srcOffsets1    : VkOffset3D;
+    pub srcOffsets1 : VkOffset3D;
 
     /** `dstSubresource`, at byte 40. */
     pub dstSubresource : VkImageSubresourceLayers;
 
     /** `dstOffsets[]`, at byte 56. */
-    pub dstOffsets0    : VkOffset3D;
+    pub dstOffsets0 : VkOffset3D;
 
     /** `dstOffsets[]`, at byte 68. */
-    pub dstOffsets1    : VkOffset3D;
+    pub dstOffsets1 : VkOffset3D;
 }
 
 /** `VkRenderPassBeginInfo` — 64 bytes. */
 pub extern "C" struct VkRenderPassBeginInfo {
     /** `sType`, at byte 0. */
-    pub sType           : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext           : ptr;
+    pub pNext : ptr;
 
     /** `renderPass`, at byte 16. */
-    pub renderPass      : i64;
+    pub renderPass : i64;
 
     /** `framebuffer`, at byte 24. */
-    pub framebuffer     : i64;
+    pub framebuffer : i64;
 
     /** `renderArea`, at byte 32. */
-    pub renderArea      : VkRect2D;
+    pub renderArea : VkRect2D;
 
     /** `clearValueCount`, at byte 48. */
     pub clearValueCount : i32;
 
     /** `pClearValues`, at byte 56. */
-    pub pClearValues    : ptr;
+    pub pClearValues : ptr;
 }
 
 /** `VkSubmitInfo` — 72 bytes. */
 pub extern "C" struct VkSubmitInfo {
     /** `sType`, at byte 0. */
-    pub sType                : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext                : ptr;
-
-    /** `waitSemaphoreCount`, at byte 16. */
-    pub waitSemaphoreCount   : i32;
-
-    /** `pWaitSemaphores`, at byte 24. */
-    pub pWaitSemaphores      : ptr;
-
-    /** `pWaitDstStageMask`, at byte 32. */
-    pub pWaitDstStageMask    : ptr;
-
-    /** `commandBufferCount`, at byte 40. */
-    pub commandBufferCount   : i32;
-
-    /** `pCommandBuffers`, at byte 48. */
-    pub pCommandBuffers      : ptr;
-
-    /** `signalSemaphoreCount`, at byte 56. */
-    pub signalSemaphoreCount : i32;
-
-    /** `pSignalSemaphores`, at byte 64. */
-    pub pSignalSemaphores    : ptr;
-}
-
-/** `VkPresentInfoKHR` — 64 bytes. */
-pub extern "C" struct VkPresentInfoKHR {
-    /** `sType`, at byte 0. */
-    pub sType              : i32;
-
-    /** `pNext`, at byte 8. */
-    pub pNext              : ptr;
+    pub pNext : ptr;
 
     /** `waitSemaphoreCount`, at byte 16. */
     pub waitSemaphoreCount : i32;
 
     /** `pWaitSemaphores`, at byte 24. */
-    pub pWaitSemaphores    : ptr;
+    pub pWaitSemaphores : ptr;
+
+    /** `pWaitDstStageMask`, at byte 32. */
+    pub pWaitDstStageMask : ptr;
+
+    /** `commandBufferCount`, at byte 40. */
+    pub commandBufferCount : i32;
+
+    /** `pCommandBuffers`, at byte 48. */
+    pub pCommandBuffers : ptr;
+
+    /** `signalSemaphoreCount`, at byte 56. */
+    pub signalSemaphoreCount : i32;
+
+    /** `pSignalSemaphores`, at byte 64. */
+    pub pSignalSemaphores : ptr;
+}
+
+/** `VkPresentInfoKHR` — 64 bytes. */
+pub extern "C" struct VkPresentInfoKHR {
+    /** `sType`, at byte 0. */
+    pub sType : i32;
+
+    /** `pNext`, at byte 8. */
+    pub pNext : ptr;
+
+    /** `waitSemaphoreCount`, at byte 16. */
+    pub waitSemaphoreCount : i32;
+
+    /** `pWaitSemaphores`, at byte 24. */
+    pub pWaitSemaphores : ptr;
 
     /** `swapchainCount`, at byte 32. */
-    pub swapchainCount     : i32;
+    pub swapchainCount : i32;
 
     /** `pSwapchains`, at byte 40. */
-    pub pSwapchains        : ptr;
+    pub pSwapchains : ptr;
 
     /** `pImageIndices`, at byte 48. */
-    pub pImageIndices      : ptr;
+    pub pImageIndices : ptr;
 
     /** `pResults`, at byte 56. */
-    pub pResults           : ptr;
+    pub pResults : ptr;
 }
 
 /** `VkSwapchainCreateInfoKHR` — 104 bytes. */
 pub extern "C" struct VkSwapchainCreateInfoKHR {
     /** `sType`, at byte 0. */
-    pub sType                 : i32;
+    pub sType : i32;
 
     /** `pNext`, at byte 8. */
-    pub pNext                 : ptr;
+    pub pNext : ptr;
 
     /** `flags`, at byte 16. */
-    pub flags                 : i32;
+    pub flags : i32;
 
     /** `surface`, at byte 24. */
-    pub surface               : i64;
+    pub surface : i64;
 
     /** `minImageCount`, at byte 32. */
-    pub minImageCount         : i32;
+    pub minImageCount : i32;
 
     /** `imageFormat`, at byte 36. */
-    pub imageFormat           : i32;
+    pub imageFormat : i32;
 
     /** `imageColorSpace`, at byte 40. */
-    pub imageColorSpace       : i32;
+    pub imageColorSpace : i32;
 
     /** `imageExtent`, at byte 44. */
-    pub imageExtent           : VkExtent2D;
+    pub imageExtent : VkExtent2D;
 
     /** `imageArrayLayers`, at byte 52. */
-    pub imageArrayLayers      : i32;
+    pub imageArrayLayers : i32;
 
     /** `imageUsage`, at byte 56. */
-    pub imageUsage            : i32;
+    pub imageUsage : i32;
 
     /** `imageSharingMode`, at byte 60. */
-    pub imageSharingMode      : i32;
+    pub imageSharingMode : i32;
 
     /** `queueFamilyIndexCount`, at byte 64. */
     pub queueFamilyIndexCount : i32;
 
     /** `pQueueFamilyIndices`, at byte 72. */
-    pub pQueueFamilyIndices   : ptr;
+    pub pQueueFamilyIndices : ptr;
 
     /** `preTransform`, at byte 80. */
-    pub preTransform          : i32;
+    pub preTransform : i32;
 
     /** `compositeAlpha`, at byte 84. */
-    pub compositeAlpha        : i32;
+    pub compositeAlpha : i32;
 
     /** `presentMode`, at byte 88. */
-    pub presentMode           : i32;
+    pub presentMode : i32;
 
     /** `clipped`, at byte 92. */
-    pub clipped               : i32;
+    pub clipped : i32;
 
     /** `oldSwapchain`, at byte 96. */
-    pub oldSwapchain          : i64;
+    pub oldSwapchain : i64;
 }
 
 /**

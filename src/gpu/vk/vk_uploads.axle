@@ -27,12 +27,10 @@ use crate::sys::vk::vk_const::{
     VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
     VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-    VK_PIPELINE_STAGE_TRANSFER_BIT,
+    VK_PIPELINE_STAGE_TRANSFER_BIT
 };
 use crate::sys::vk::vk_table::VkAddr;
-use crate::sys::vk::vk_types::{
-    VkBufferImageCopy, VkExtent3D, VkImageSubresourceLayers, VkOffset3D,
-};
+use crate::sys::vk::vk_types::{VkBufferImageCopy, VkExtent3D, VkImageSubresourceLayers, VkOffset3D};
 
 /** Textures that may wait for the next frame at once. */
 pub(crate) const UPLOAD_MAX : i32 = 16;
@@ -40,43 +38,43 @@ pub(crate) const UPLOAD_MAX : i32 = 16;
 /** Texture updates waiting for a frame. */
 pub(crate) class VkUploads {
     /** Waiting updates: texture slot, size, layers, and where their texels are in `cpu`. */
-    slots    : i32[];
-    widths   : i32[];
-    heights  : i32[];
-    layers   : i32[];
-    offsets  : i64[];
-    count    : i32 = 0;
+    slots   : i32[];
+    widths  : i32[];
+    heights : i32[];
+    layers  : i32[];
+    offsets : i64[];
+    count   : i32 = 0;
 
     /** The texels, one update after another. */
-    cpu      : i64 = 0;
-    cpuCap   : i64 = 0;
-    cpuUsed  : i64 = 0;
+    cpu     : i64 = 0;
+    cpuCap  : i64 = 0;
+    cpuUsed : i64 = 0;
 
     /** Per frame in flight: the staging buffer and its size in bytes. */
     staging  : GpuBuffer[];
     stageCap : i64[];
 
     /** Whether frame slot `f`'s staging buffer holds what its frame is to copy. */
-    staged   : bool = false;
+    staged : bool = false;
 
-    copyArr  : VkBufferImageCopy[];
+    copyArr : VkBufferImageCopy[];
 
     /** Nothing waiting. */
     constructor() {
         let m : i64 = UPLOAD_MAX as i64;
-        self.slots = malloc<i32>(m);
-        self.widths = malloc<i32>(m);
-        self.heights = malloc<i32>(m);
-        self.layers = malloc<i32>(m);
-        self.offsets = malloc<i64>(m);
+        self.slots = new i32[m];
+        self.widths = new i32[m];
+        self.heights = new i32[m];
+        self.layers = new i32[m];
+        self.offsets = new i64[m];
         let n : i64 = FRAMES_IN_FLIGHT as i64;
-        self.staging = malloc<GpuBuffer>(n);
-        self.stageCap = malloc<i64>(n);
+        self.staging = new GpuBuffer[n];
+        self.stageCap = new i64[n];
         for (i of 0..n) {
             self.staging[i] = GpuBuffer::none();
             self.stageCap[i] = 0;
         }
-        self.copyArr = malloc<VkBufferImageCopy>(1);
+        self.copyArr = new VkBufferImageCopy[1];
     }
 
     /** Updates waiting. */

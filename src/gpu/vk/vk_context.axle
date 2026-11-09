@@ -41,14 +41,16 @@
 
 use crate::core::error::PlatformError;
 use crate::gpu::backend::RendererDesc;
+use crate::gpu::vk::vk_error::VkErr;
 use crate::kernel::mem::Mem;
 use crate::kernel::raw::Raw;
 use crate::platform::sys_gpu_loader::SysGpuLoader;
 use crate::sys::vk::vk_const::{
     VK_API_VERSION_1_0, VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     VK_PHYSICAL_DEVICE_TYPE_CPU, VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
-    VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU, VK_QUEUE_GRAPHICS_BIT, VK_SUCCESS,
+    VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU, VK_QUEUE_GRAPHICS_BIT, VK_SUCCESS
 };
+use crate::sys::vk::vk_layout_check::VkLayout;
 use crate::sys::vk::vk_out::{
     VKO_MEMORY_TYPE_PROPERTY_FLAGS, VKO_MEMORY_TYPE_BYTES,
     VKO_PHYSICAL_DEVICE_FEATURES_SAMPLER_ANISOTROPY, VKO_PHYSICAL_DEVICE_FEATURES_BYTES,
@@ -59,15 +61,13 @@ use crate::sys::vk::vk_out::{
     VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_PUSH_CONSTANTS_SIZE,
     VKO_PHYSICAL_DEVICE_PROPERTIES_LIMITS_MAX_SAMPLER_ANISOTROPY,
     VKO_PHYSICAL_DEVICE_PROPERTIES_BYTES, VKO_QUEUE_FAMILY_PROPERTIES_QUEUE_FLAGS,
-    VKO_QUEUE_FAMILY_PROPERTIES_BYTES,
+    VKO_QUEUE_FAMILY_PROPERTIES_BYTES
 };
 use crate::sys::vk::vk_table::{VkAddr, VkTable};
 use crate::sys::vk::vk_types::{
     VkApplicationInfo, VkDeviceCreateInfo, VkDeviceQueueCreateInfo, VkInit, VkInstanceCreateInfo,
-    VkPhysicalDeviceFeatures,
+    VkPhysicalDeviceFeatures
 };
-use crate::gpu::vk::vk_error::VkErr;
-use crate::sys::vk::vk_layout_check::VkLayout;
 use crate::video::sys_vk_surface::SysVkSurface;
 use crate::video::window::Window;
 
@@ -155,55 +155,55 @@ const CTX_MAX_LAYERS : i32 = 64;
 /** A loaded Vulkan, an instance, a device and a surface to present to. */
 pub(crate) class VkContext {
     /** The loaded entry points. */
-    pub(crate) table        : VkTable;
+    pub(crate) table : VkTable;
 
     /** `VkInstance`. */
-    pub(crate) instance     : i64 = 0;
+    pub(crate) instance : i64 = 0;
 
     /** `VkPhysicalDevice`. */
-    pub(crate) physical     : i64 = 0;
+    pub(crate) physical : i64 = 0;
 
     /** `VkDevice`. */
-    pub(crate) device       : i64 = 0;
+    pub(crate) device : i64 = 0;
 
     /** `VkQueue` — the one queue, for drawing and presenting. */
-    pub(crate) queue        : i64 = 0;
+    pub(crate) queue : i64 = 0;
 
     /** `VkSurfaceKHR` for the window. */
-    pub(crate) surface      : i64 = 0;
+    pub(crate) surface : i64 = 0;
 
     /** The queue family the queue came from. */
-    pub(crate) family       : i32 = 0;
+    pub(crate) family : i32 = 0;
 
     /** The `VkPhysicalDeviceType` of the chosen device. */
-    pub(crate) kind         : i32 = 0;
+    pub(crate) kind : i32 = 0;
 
     /** Whether sampler anisotropy was enabled on the device. */
-    pub(crate) anisotropy   : bool = false;
+    pub(crate) anisotropy : bool = false;
 
     /** The device's `maxSamplerAnisotropy`. */
-    pub(crate) maxAniso     : f64 = 1.0;
+    pub(crate) maxAniso : f64 = 1.0;
 
     /** The device's `maxImageDimension2D`: the widest or tallest texture it takes. */
-    pub(crate) maxImage2D   : i32 = 4096;
+    pub(crate) maxImage2D : i32 = 4096;
 
     /** The device's `maxPushConstantsSize`, in bytes. */
     pub(crate) maxPushBytes : i32 = 128;
 
     /** Whether the validation layer was asked for and found. */
-    pub(crate) validating   : bool = false;
+    pub(crate) validating : bool = false;
 
     /** The first error a surface-support query answered, or `VK_SUCCESS`. */
-    supportError            : i32 = 0;
+    supportError : i32 = 0;
 
     /** The block holding `VkPhysicalDeviceMemoryProperties`. */
-    memProps                : i64 = 0;
+    memProps : i64 = 0;
 
     /** The single-value out-parameter block. */
-    pub(crate) scratch      : i64 = 0;
+    pub(crate) scratch : i64 = 0;
 
     /** The `VkAllocationCallbacks`-free instance extension / layer name block. */
-    names                   : i64 = 0;
+    names : i64 = 0;
 
     /**
      * Load Vulkan and open a device that can present to `win`.
@@ -223,14 +223,10 @@ pub(crate) class VkContext {
             layout = 10000 + SysVkSurface::recordLayout();
         }
         if (layout != 0) {
-            throw PlatformError(
-                "vulkan: a Vulkan record is laid out differently from C (check ${layout}); not using the GPU"
-            );
+            throw PlatformError("vulkan: a Vulkan record is laid out differently from C (check ${layout}); not using the GPU");
         }
         if (!self.table.isLoaded()) {
-            throw PlatformError(
-                "vulkan: no Vulkan loader was found (libvulkan.so.1 / vulkan-1.dll)"
-            );
+            throw PlatformError("vulkan: no Vulkan loader was found (libvulkan.so.1 / vulkan-1.dll)");
         }
         self.scratch = Mem::takeZeroed(CTX_SCRATCH_BYTES);
         self.names = Mem::takeZeroed(CTX_NAMES_BYTES);
@@ -363,7 +359,7 @@ pub(crate) class VkContext {
         let appAt : i64 = at;
         at = self.putName(at, desc.appName);
 
-        let mut app : VkApplicationInfo[] = malloc<VkApplicationInfo>(1);
+        let mut app : VkApplicationInfo[] = new VkApplicationInfo[1];
         let mut ai : VkApplicationInfo = VkInit::applicationInfo();
         ai.pApplicationName = Raw::at(self.names + appAt);
         ai.apiVersion = VK_API_VERSION_1_0;
@@ -403,7 +399,8 @@ pub(crate) class VkContext {
             if (found < 0) {
                 let flags : i32 = Mem::dwordAt(
                     props,
-                    (i as i64) * VKO_QUEUE_FAMILY_PROPERTIES_BYTES + VKO_QUEUE_FAMILY_PROPERTIES_QUEUE_FLAGS
+                    (i as i64) * VKO_QUEUE_FAMILY_PROPERTIES_BYTES
+                        + VKO_QUEUE_FAMILY_PROPERTIES_QUEUE_FLAGS
                 );
                 if ((flags & VK_QUEUE_GRAPHICS_BIT) != 0) {
                     let r : i32 = self.table.getPhysicalDeviceSurfaceSupportKHR(
@@ -496,16 +493,12 @@ pub(crate) class VkContext {
         if (best == 0) {
             Mem::release(props);
             if (self.supportError != VK_SUCCESS) {
-                throw PlatformError(
-                    VkErr::message(
-                        "asking whether a device can present to the window",
-                        self.supportError
-                    )
-                );
+                throw PlatformError(VkErr::message(
+                    "asking whether a device can present to the window",
+                    self.supportError
+                ));
             }
-            throw PlatformError(
-                "vulkan: no GPU can draw and present to this window (a software Vulkan is ignored unless RendererDesc.softwareVulkan is set)"
-            );
+            throw PlatformError("vulkan: no GPU can draw and present to this window (a software Vulkan is ignored unless RendererDesc.softwareVulkan is set)");
         }
         self.physical = best;
         self.family = bestFamily;
@@ -539,14 +532,15 @@ pub(crate) class VkContext {
         let canAniso : bool = Mem::dwordAt(
             features,
             VKO_PHYSICAL_DEVICE_FEATURES_SAMPLER_ANISOTROPY
-        ) != 0;
+        )
+            != 0;
         Mem::release(features);
 
         let mut want : VkPhysicalDeviceFeatures = VkInit::physicalDeviceFeatures();
         if (canAniso) {
             want.samplerAnisotropy = 1;
         }
-        let mut featureArr : VkPhysicalDeviceFeatures[] = malloc<VkPhysicalDeviceFeatures>(1);
+        let mut featureArr : VkPhysicalDeviceFeatures[] = new VkPhysicalDeviceFeatures[1];
         featureArr[0] = want;
 
         // One queue, full priority. The priority is a float the driver reads by
@@ -556,7 +550,7 @@ pub(crate) class VkContext {
         qi.queueFamilyIndex = self.family;
         qi.queueCount = 1;
         qi.pQueuePriorities = Raw::at(self.names + CTX_PRIORITY);
-        let mut qarr : VkDeviceQueueCreateInfo[] = malloc<VkDeviceQueueCreateInfo>(1);
+        let mut qarr : VkDeviceQueueCreateInfo[] = new VkDeviceQueueCreateInfo[1];
         qarr[0] = qi;
 
         // The swapchain extension, in the device-extension table.
@@ -584,7 +578,8 @@ pub(crate) class VkContext {
     pub(crate) fn typeFlags(self, i : i32) : i32 {
         return Mem::dwordAt(
             self.memProps,
-            VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_MEMORY_TYPES + (i as i64) * VKO_MEMORY_TYPE_BYTES + VKO_MEMORY_TYPE_PROPERTY_FLAGS
+            VKO_PHYSICAL_DEVICE_MEMORY_PROPERTIES_MEMORY_TYPES + (i as i64) * VKO_MEMORY_TYPE_BYTES
+                + VKO_MEMORY_TYPE_PROPERTY_FLAGS
         );
     }
 

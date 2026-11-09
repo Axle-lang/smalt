@@ -34,15 +34,15 @@ use crate::kernel::raw::Raw;
 use crate::sys::vk::vk_const::{
     VK_COMPONENT_SWIZZLE_IDENTITY, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_TILING_OPTIMAL,
     VK_IMAGE_TYPE_2D, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, VK_SAMPLE_COUNT_1_BIT, VK_SHARING_MODE_EXCLUSIVE,
+    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, VK_SAMPLE_COUNT_1_BIT, VK_SHARING_MODE_EXCLUSIVE
 };
 use crate::sys::vk::vk_out::{
     VKO_MEMORY_REQUIREMENTS_ALIGNMENT, VKO_MEMORY_REQUIREMENTS_MEMORY_TYPE_BITS,
-    VKO_MEMORY_REQUIREMENTS_SIZE,
+    VKO_MEMORY_REQUIREMENTS_SIZE
 };
 use crate::sys::vk::vk_types::{
     VkBufferCreateInfo, VkComponentMapping, VkExtent3D, VkImageCreateInfo, VkImageSubresourceRange,
-    VkImageViewCreateInfo, VkInit,
+    VkImageViewCreateInfo, VkInit
 };
 
 /** What a buffer is for, which decides the memory behind it (see the module header). */
@@ -63,10 +63,10 @@ pub(crate) struct GpuBuffer {
     pub buffer : i64 = 0;
 
     /** The memory it is bound to. */
-    pub alloc  : HeapAlloc;
+    pub alloc : HeapAlloc;
 
     /** Bytes requested. */
-    pub size   : i64 = 0;
+    pub size : i64 = 0;
 
     /** The buffer that names nothing — what a failed creation answers. */
     pub(crate) static fn none() : GpuBuffer {
@@ -147,7 +147,8 @@ pub(crate) class VkMem {
                 alloc = heap.alloc(ctx, local, 1, need, align);
             }
         } else {
-            let both : i32 = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            let both : i32 = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
             let mut first : i32 = -1;
             if (kind == MemUse::Stream) {
                 first = heap.pick(bits, both | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);

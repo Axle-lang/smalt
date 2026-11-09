@@ -44,12 +44,12 @@ use crate::sys::vk::vk_const::{
     VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
     VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_BIND_POINT_GRAPHICS,
-    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT
 };
 use crate::sys::vk::vk_table::VkAddr;
 use crate::sys::vk::vk_types::{
     VkBufferImageCopy, VkExtent2D, VkExtent3D, VkImageSubresourceLayers, VkOffset2D, VkOffset3D,
-    VkRect2D, VkViewport,
+    VkRect2D, VkViewport
 };
 
 /** The overlay texture's sides are rounded up to a multiple of this many texels. */
@@ -61,34 +61,34 @@ pub(crate) class VkOverlay {
     pub(crate) slot : i32 = -1;
 
     /** The texture's size — room for the layer, not the layer's own size. */
-    texW            : i32 = 0;
-    texH            : i32 = 0;
+    texW : i32 = 0;
+    texH : i32 = 0;
 
     /** The layer staged for the frame being recorded. */
-    layerW          : i32 = 0;
-    layerH          : i32 = 0;
+    layerW : i32 = 0;
+    layerH : i32 = 0;
 
     /** Per frame in flight: the staging buffer and its size in bytes. */
-    staging         : GpuBuffer[];
-    stageBytes      : i64[];
+    staging    : GpuBuffer[];
+    stageBytes : i64[];
 
     /** Reusable one-element arrays the copy and the draw pass by address. */
-    copyArr         : VkBufferImageCopy[];
-    vp              : VkViewport[];
-    sc              : VkRect2D[];
+    copyArr : VkBufferImageCopy[];
+    vp      : VkViewport[];
+    sc      : VkRect2D[];
 
     /** No texture yet, no staging buffers. */
     constructor() {
         let n : i64 = FRAMES_IN_FLIGHT as i64;
-        self.staging = malloc<GpuBuffer>(n);
-        self.stageBytes = malloc<i64>(n);
+        self.staging = new GpuBuffer[n];
+        self.stageBytes = new i64[n];
         for (i of 0..n) {
             self.staging[i] = GpuBuffer::none();
             self.stageBytes[i] = 0;
         }
-        self.copyArr = malloc<VkBufferImageCopy>(1);
-        self.vp = malloc<VkViewport>(1);
-        self.sc = malloc<VkRect2D>(1);
+        self.copyArr = new VkBufferImageCopy[1];
+        self.vp = new VkViewport[1];
+        self.sc = new VkRect2D[1];
     }
 
     /** How the overlay is sampled: one texel to one pixel, nothing repeated. */

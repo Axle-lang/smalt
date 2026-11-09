@@ -31,12 +31,12 @@ use crate::sys::vk::vk_const::{
     VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
     VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_VIEW_TYPE_2D, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-    VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SUCCESS, VK_ERROR_OUT_OF_DEVICE_MEMORY,
+    VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SUCCESS, VK_ERROR_OUT_OF_DEVICE_MEMORY
 };
 use crate::sys::vk::vk_table::VkAddr;
 use crate::sys::vk::vk_types::{
     VkDescriptorImageInfo, VkDescriptorSetAllocateInfo, VkFramebufferCreateInfo, VkInit,
-    VkWriteDescriptorSet,
+    VkWriteDescriptorSet
 };
 
 /** Colour targets. */
@@ -45,43 +45,43 @@ pub(crate) const TARGET_COUNT : i32 = 3;
 /** The colour targets, the depth, their framebuffers and the sets a pass reads them through. */
 pub(crate) class VkTargets {
     /** Width of every target. */
-    pub(crate) w  : i32 = 0;
+    pub(crate) w : i32 = 0;
 
     /** Height of every target. */
-    pub(crate) h  : i32 = 0;
+    pub(crate) h : i32 = 0;
 
-    colors        : GpuImage[];
-    colorViews    : i64[];
+    colors     : GpuImage[];
+    colorViews : i64[];
 
     /** One framebuffer per colour target, in the pass render pass. */
-    postFrames    : i64[];
+    postFrames : i64[];
 
-    depth         : GpuImage;
-    depthView     : i64 = 0;
-    depthSample   : i64 = 0;
+    depth       : GpuImage;
+    depthView   : i64 = 0;
+    depthSample : i64 = 0;
 
     /** Colour target 0 and the depth, in the scene render pass. */
     pub(crate) sceneFrame : i64 = 0;
 
-    linear        : i64 = 0;
-    nearest       : i64 = 0;
+    linear  : i64 = 0;
+    nearest : i64 = 0;
 
     /** `sets[prev * TARGET_COUNT + kept]`. */
-    sets          : i64[];
+    sets : i64[];
 
     /** Nothing made yet. */
     constructor() {
         let n : i64 = TARGET_COUNT as i64;
-        self.colors = malloc<GpuImage>(n);
-        self.colorViews = malloc<i64>(n);
-        self.postFrames = malloc<i64>(n);
+        self.colors = new GpuImage[n];
+        self.colorViews = new i64[n];
+        self.postFrames = new i64[n];
         for (i of 0..n) {
             self.colors[i] = GpuImage::none();
             self.colorViews[i] = 0;
             self.postFrames[i] = 0;
         }
         self.depth = GpuImage::none();
-        self.sets = malloc<i64>(n * n);
+        self.sets = new i64[n * n];
         for (i of 0..(n * n)) {
             self.sets[i] = 0;
         }
@@ -133,7 +133,7 @@ pub(crate) class VkTargets {
 
     /** A framebuffer of `views` (one or two) at the targets' size; 0 on failure. */
     pub(file) fn makeFrame(self, ctx : VkContext, pass : i64, a : i64, b : i64) : i64 {
-        let mut at : i64[] = malloc<i64>(2);
+        let mut at : i64[] = new i64[2];
         at[0] = a;
         at[1] = b;
         let mut fi : VkFramebufferCreateInfo = VkInit::framebufferCreateInfo();
@@ -147,7 +147,6 @@ pub(crate) class VkTargets {
         fi.height = self.h;
         fi.layers = 1;
         let r : i32 = ctx.table.createFramebuffer(ctx.device, fi, Raw::at(ctx.scratch));
-        drop at;
         if (!VkErr::ok(r)) {
             return 0;
         }
@@ -156,19 +155,18 @@ pub(crate) class VkTargets {
 
     /** The set that reads `prev`, `kept` and the depth; 0 on failure. */
     pub(file) fn makeSet(self, ctx : VkContext, pipes : VkPipelines, prev : i32, kept : i32) : i64 {
-        let mut layouts : i64[] = malloc<i64>(1);
+        let mut layouts : i64[] = new i64[1];
         layouts[0] = pipes.passSetLayout;
         let mut ai : VkDescriptorSetAllocateInfo = VkInit::descriptorSetAllocateInfo();
         ai.descriptorPool = pipes.pool;
         ai.descriptorSetCount = 1;
         ai.pSetLayouts = VkAddr::handles(layouts);
         let r : i32 = ctx.table.allocateDescriptorSets(ctx.device, ai, Raw::at(ctx.scratch));
-        drop layouts;
         if (!VkErr::ok(r)) {
             return 0;
         }
         let set : i64 = Mem::qwordAt(ctx.scratch, 0);
-        let mut ii : VkDescriptorImageInfo[] = malloc<VkDescriptorImageInfo>(3);
+        let mut ii : VkDescriptorImageInfo[] = new VkDescriptorImageInfo[3];
         ii[0] = VkDescriptorImageInfo {
             sampler: self.linear,
             imageView: self.colorViews[prev as i64],
@@ -190,11 +188,9 @@ pub(crate) class VkTargets {
         write.descriptorCount = 3;
         write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         write.pImageInfo = VkAddr::descriptorImageInfo(ii);
-        let mut w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
+        let mut w : VkWriteDescriptorSet[] = new VkWriteDescriptorSet[1];
         w[0] = write;
         ctx.table.updateDescriptorSets(ctx.device, 1, VkAddr::writeDescriptorSet(w), 0, Raw::nil());
-        drop w;
-        drop ii;
         return set;
     }
 
@@ -224,7 +220,16 @@ pub(crate) class VkTargets {
         for (i of 0..TARGET_COUNT) {
             let k : i64 = i as i64;
             if (ok) {
-                self.colors[k] = VkMem::makeImage(ctx, heap, pipes.targetFormat, w, h, 1, 1, colorUse);
+                self.colors[k] = VkMem::makeImage(
+                    ctx,
+                    heap,
+                    pipes.targetFormat,
+                    w,
+                    h,
+                    1,
+                    1,
+                    colorUse
+                );
                 ok = !self.colors[k].isNone();
             }
             if (ok) {
@@ -241,7 +246,8 @@ pub(crate) class VkTargets {
             }
         }
 
-        let depthUse : i32 = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        let depthUse : i32 = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+            | VK_IMAGE_USAGE_SAMPLED_BIT;
         if (ok) {
             self.depth = VkMem::makeImage(ctx, heap, pipes.depthFormat, w, h, 1, 1, depthUse);
             ok = !self.depth.isNone();
@@ -273,7 +279,12 @@ pub(crate) class VkTargets {
         }
 
         if (ok) {
-            self.sceneFrame = self.makeFrame(ctx, pipes.scenePass, self.colorViews[0], self.depthView);
+            self.sceneFrame = self.makeFrame(
+                ctx,
+                pipes.scenePass,
+                self.colorViews[0],
+                self.depthView
+            );
             ok = self.sceneFrame != 0;
         }
         for (i of 0..TARGET_COUNT) {

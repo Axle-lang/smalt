@@ -62,33 +62,34 @@ use crate::sys::vk::vk_const::{
     VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
     VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
     VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_FILTER_LINEAR, VK_FILTER_NEAREST,
-    VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_USAGE_SAMPLED_BIT,
-    VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_VIEW_TYPE_2D_ARRAY, VK_SUCCESS,
-    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-    VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_MIPMAP_MODE_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST,
+    VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT,
+    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+    VK_IMAGE_VIEW_TYPE_2D_ARRAY, VK_SUCCESS, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+    VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_REPEAT,
+    VK_SAMPLER_MIPMAP_MODE_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST
 };
 use crate::sys::vk::vk_table::VkAddr;
 use crate::sys::vk::vk_types::{
     VkBufferImageCopy, VkDescriptorImageInfo, VkDescriptorSetAllocateInfo, VkExtent3D,
-    VkImageSubresourceLayers, VkInit, VkOffset3D, VkSamplerCreateInfo, VkWriteDescriptorSet,
+    VkImageSubresourceLayers, VkInit, VkOffset3D, VkSamplerCreateInfo, VkWriteDescriptorSet
 };
 
 /** Textures uploaded to the GPU. */
 pub(crate) class VkTextures {
-    cap                  : i32;
-    live                 : i32[];
-    images               : GpuImage[];
-    views                : i64[];
-    samplers             : i64[];
-    sets                 : i64[];
+    cap      : i32;
+    live     : i32[];
+    images   : GpuImage[];
+    views    : i64[];
+    samplers : i64[];
+    sets     : i64[];
 
     /** Per slot: the size, the layers and the mip levels it was made with. */
-    dims                 : i32[];
+    dims : i32[];
 
     /** Live textures, each holding one descriptor set of the pool. */
-    count                : i32 = 0;
+    count : i32 = 0;
 
     /**
      * The `VkResult` of the last `create` that failed on the device itself (a lost
@@ -101,12 +102,12 @@ pub(crate) class VkTextures {
     constructor(capacity : i32) {
         self.cap = capacity.max(1);
         let n : i64 = self.cap as i64;
-        self.live = malloc<i32>(n);
-        self.images = malloc<GpuImage>(n);
-        self.views = malloc<i64>(n);
-        self.samplers = malloc<i64>(n);
-        self.sets = malloc<i64>(n);
-        self.dims = malloc<i32>(n * 4);
+        self.live = new i32[n];
+        self.images = new GpuImage[n];
+        self.views = new i64[n];
+        self.samplers = new i64[n];
+        self.sets = new i64[n];
+        self.dims = new i32[n * 4];
         for (i of 0..(n * 4)) {
             self.dims[i] = 0;
         }
@@ -154,7 +155,8 @@ pub(crate) class VkTextures {
             return false;
         }
         let at : i64 = (slot as i64) * 4;
-        return self.dims[at] == w && self.dims[at + 1] == h && self.dims[at + 2] == layers && self.dims[at + 3] == 1;
+        return self.dims[at] == w && self.dims[at + 1] == h && self.dims[at + 2] == layers
+            && self.dims[at + 3] == 1;
     }
 
     /** The sampler for a description. */
@@ -200,7 +202,7 @@ pub(crate) class VkTextures {
         view : i64,
         sampler : i64
     ) : i64 {
-        let mut layouts : i64[] = malloc<i64>(1);
+        let mut layouts : i64[] = new i64[1];
         layouts[0] = pipes.textureLayout;
         let mut ai : VkDescriptorSetAllocateInfo = VkInit::descriptorSetAllocateInfo();
         ai.descriptorPool = pipes.pool;
@@ -211,13 +213,13 @@ pub(crate) class VkTextures {
             return 0;
         }
         let set : i64 = Mem::qwordAt(ctx.scratch, 0);
-        let mut ii : VkDescriptorImageInfo[] = malloc<VkDescriptorImageInfo>(1);
+        let mut ii : VkDescriptorImageInfo[] = new VkDescriptorImageInfo[1];
         ii[0] = VkDescriptorImageInfo {
             sampler: sampler,
             imageView: view,
             imageLayout: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         };
-        let mut w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
+        let mut w : VkWriteDescriptorSet[] = new VkWriteDescriptorSet[1];
         let mut write : VkWriteDescriptorSet = VkInit::writeDescriptorSet();
         write.dstSet = set;
         write.dstBinding = 0;
@@ -265,7 +267,7 @@ pub(crate) class VkTextures {
 
         // One region per level; a level's layers follow one another in the buffer, which
         // is what a region with `layerCount` > 1 and a tight row length reads.
-        let mut regions : VkBufferImageCopy[] = malloc<VkBufferImageCopy>(mips as i64);
+        let mut regions : VkBufferImageCopy[] = new VkBufferImageCopy[mips as i64];
         let mut offset : i64 = 0;
         for (m of 0..mips) {
             let lw : i32 = Image::levelSide(w, m);
@@ -362,7 +364,6 @@ pub(crate) class VkTextures {
         if (tailBytes > 0) {
             let tail : i32[] = img.mipTailOf(mips, desc.cutout, desc.srgb);
             Mem::copy(staging.mapped() + img.byteCount(), Mem::addressOf(tail), tailBytes);
-            drop tail;
         }
 
         let usage : i32 = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;

@@ -53,20 +53,20 @@ use crate::gpu::vk::vk_context::VkContext;
 use crate::kernel::mem::Mem;
 use crate::kernel::raw::Raw;
 use crate::sys::vk::vk_const::{
-    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 };
 use crate::sys::vk::vk_types::VkInit;
 
 /** A piece of a block: where it is, how big, and — if host-visible — its address. */
 pub(crate) struct HeapAlloc {
     /** The block it came from; -1 when the allocation failed. */
-    pub block  : i32 = -1;
+    pub block : i32 = -1;
 
     /** Byte offset of the piece within the block's `VkDeviceMemory`. */
     pub offset : i64 = 0;
 
     /** Bytes in the piece. */
-    pub size   : i64 = 0;
+    pub size : i64 = 0;
 
     /** The piece's address when its block is host-visible, otherwise 0. */
     pub mapped : i64 = 0;
@@ -91,33 +91,33 @@ pub(crate) class GpuHeap {
     pub static FIRST_BLOCK_BYTES : i64 = 4194304;
 
     /** Blocks the heap can hold at once. */
-    pub static MAX_BLOCKS  : i32 = 256;
+    pub static MAX_BLOCKS : i32 = 256;
 
     /** Free ranges one block's list holds. */
-    pub static MAX_RANGES  : i32 = 1024;
+    pub static MAX_RANGES : i32 = 1024;
 
     typeCount : i32;
     typeFlags : i32[];
 
-    live                   : i32[];
-    mems                   : i64[];
-    types                  : i32[];
-    linear                 : i32[];
-    dedicated              : i32[];
-    sizes                  : i64[];
-    freeBytes              : i64[];
-    mapped                 : i64[];
-    rangeAt                : i64[];
-    rangeN                 : i32[];
+    live      : i32[];
+    mems      : i64[];
+    types     : i32[];
+    linear    : i32[];
+    dedicated : i32[];
+    sizes     : i64[];
+    freeBytes : i64[];
+    mapped    : i64[];
+    rangeAt   : i64[];
+    rangeN    : i32[];
 
     /** One past the highest block index in use. */
-    high                   : i32 = 0;
+    high : i32 = 0;
 
     /** Where the last successful `fit` put the piece. */
-    fitAt                  : i64 = 0;
+    fitAt : i64 = 0;
 
     /** Per memory type: 1 once the driver refused a block of it, until one is given back. */
-    full                   : i32[];
+    full : i32[];
 
     /** Bytes released into a block whose free list had no slot left (see the header). */
     pub(crate) leakedBytes : i64 = 0;
@@ -125,23 +125,23 @@ pub(crate) class GpuHeap {
     /** A heap over the memory types `ctx` reported. */
     constructor(ctx : VkContext) {
         self.typeCount = ctx.memoryTypeCount();
-        self.typeFlags = malloc<i32>(self.typeCount.max(1) as i64);
-        self.full = malloc<i32>(self.typeCount.max(1) as i64);
+        self.typeFlags = new i32[self.typeCount.max(1) as i64];
+        self.full = new i32[self.typeCount.max(1) as i64];
         for (i of 0..self.typeCount) {
             self.typeFlags[i as i64] = ctx.typeFlags(i);
             self.full[i as i64] = 0;
         }
         let n : i64 = GpuHeap::MAX_BLOCKS as i64;
-        self.live = malloc<i32>(n);
-        self.mems = malloc<i64>(n);
-        self.types = malloc<i32>(n);
-        self.linear = malloc<i32>(n);
-        self.dedicated = malloc<i32>(n);
-        self.sizes = malloc<i64>(n);
-        self.freeBytes = malloc<i64>(n);
-        self.mapped = malloc<i64>(n);
-        self.rangeAt = malloc<i64>(n);
-        self.rangeN = malloc<i32>(n);
+        self.live = new i32[n];
+        self.mems = new i64[n];
+        self.types = new i32[n];
+        self.linear = new i32[n];
+        self.dedicated = new i32[n];
+        self.sizes = new i64[n];
+        self.freeBytes = new i64[n];
+        self.mapped = new i64[n];
+        self.rangeAt = new i64[n];
+        self.rangeN = new i32[n];
         for (i of 0..n) {
             self.live[i] = 0;
             self.mems[i] = 0;
@@ -360,7 +360,9 @@ pub(crate) class GpuHeap {
         if (size <= GpuHeap::BLOCK_BYTES / 2) {
             for (b of 0..self.high) {
                 let bi : i64 = b as i64;
-                if (self.live[bi] != 0 && self.dedicated[bi] == 0 && self.types[bi] == memType && self.linear[bi] == linear && self.freeBytes[bi] >= size) {
+                if (self.live[bi] != 0 && self.dedicated[bi] == 0 && self.types[bi] == memType
+                    && self.linear[bi] == linear
+                    && self.freeBytes[bi] >= size) {
                     let i : i32 = self.fit(b, size, align);
                     if (i >= 0) {
                         let at : i64 = self.fitAt;
@@ -373,7 +375,13 @@ pub(crate) class GpuHeap {
             if (self.full[memType as i64] != 0) {
                 return HeapAlloc::none();
             }
-            let nb : i32 = self.newBlock(ctx, memType, linear, self.nextBlockBytes(memType, linear, size), 0);
+            let nb : i32 = self.newBlock(
+                ctx,
+                memType,
+                linear,
+                self.nextBlockBytes(memType, linear, size),
+                0
+            );
             if (nb >= 0) {
                 let i : i32 = self.fit(nb, size, align);
                 if (i < 0) {
@@ -411,7 +419,8 @@ pub(crate) class GpuHeap {
         let mut held : i64 = 0;
         for (b of 0..self.high) {
             let bi : i64 = b as i64;
-            if (self.live[bi] != 0 && self.dedicated[bi] == 0 && self.types[bi] == memType && self.linear[bi] == linear) {
+            if (self.live[bi] != 0 && self.dedicated[bi] == 0 && self.types[bi] == memType
+                && self.linear[bi] == linear) {
                 held += self.sizes[bi];
             }
         }
@@ -475,12 +484,15 @@ pub(crate) class GpuHeap {
             let mut others : i32 = 0;
             for (k of 0..self.high) {
                 let ki : i64 = k as i64;
-                if (k != b && self.live[ki] != 0 && self.dedicated[ki] == 0 && self.types[ki] == self.types[bi] && self.linear[ki] == self.linear[bi]) {
+                if (k != b && self.live[ki] != 0 && self.dedicated[ki] == 0
+                    && self.types[ki] == self.types[bi]
+                    && self.linear[ki] == self.linear[bi]) {
                     others += 1;
                 }
             }
             let flags : i32 = self.typeFlags[self.types[bi] as i64];
-            let systemRam : bool = (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0 && (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == 0;
+            let systemRam : bool = (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0
+                && (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == 0;
             if (self.dedicated[bi] != 0 || others > 0 || systemRam) {
                 self.dropBlock(ctx, b);
             }

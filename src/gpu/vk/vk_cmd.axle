@@ -30,25 +30,25 @@ use crate::kernel::mem::Mem;
 use crate::kernel::raw::Raw;
 use crate::sys::vk::vk_const::{
     VK_COMMAND_BUFFER_LEVEL_PRIMARY, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, VK_QUEUE_FAMILY_IGNORED, VK_SUCCESS,
+    VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, VK_QUEUE_FAMILY_IGNORED, VK_SUCCESS
 };
 use crate::sys::vk::vk_table::VkAddr;
 use crate::sys::vk::vk_types::{
     VkCommandBufferAllocateInfo, VkCommandBufferBeginInfo, VkCommandPoolCreateInfo,
-    VkImageMemoryBarrier, VkImageSubresourceRange, VkInit, VkMemoryBarrier, VkSubmitInfo,
+    VkImageMemoryBarrier, VkImageSubresourceRange, VkInit, VkMemoryBarrier, VkSubmitInfo
 };
 
 /** The command pool and the helpers that record into it. */
 pub(crate) class VkCmd {
     /** `VkCommandPool`. */
-    pub(crate) pool    : i64 = 0;
+    pub(crate) pool : i64 = 0;
 
     /** The reusable one-element barrier arrays. */
-    barrier            : VkImageMemoryBarrier[];
-    memBarrier         : VkMemoryBarrier[];
+    barrier    : VkImageMemoryBarrier[];
+    memBarrier : VkMemoryBarrier[];
 
     /** The reusable one-element submit array. */
-    submit             : VkSubmitInfo[];
+    submit : VkSubmitInfo[];
 
     /**
      * Whether the last `oneShotEnd` that failed had submitted its buffer before it
@@ -58,9 +58,9 @@ pub(crate) class VkCmd {
 
     /** Make the pool for `ctx`'s queue family; 0 in `pool` when the driver refused. */
     constructor(ctx : VkContext) {
-        self.barrier = malloc<VkImageMemoryBarrier>(1);
-        self.memBarrier = malloc<VkMemoryBarrier>(1);
-        self.submit = malloc<VkSubmitInfo>(1);
+        self.barrier = new VkImageMemoryBarrier[1];
+        self.memBarrier = new VkMemoryBarrier[1];
+        self.submit = new VkSubmitInfo[1];
         let mut info : VkCommandPoolCreateInfo = VkInit::commandPoolCreateInfo();
         info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         info.queueFamilyIndex = ctx.family;

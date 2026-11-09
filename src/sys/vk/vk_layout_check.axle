@@ -21,9 +21,9 @@ use crate::sys::vk::vk_types::{
     VkDescriptorPoolCreateInfo, VkDescriptorPoolSize, VkDescriptorSetAllocateInfo,
     VkDescriptorSetLayoutBinding, VkDescriptorSetLayoutCreateInfo, VkDeviceCreateInfo,
     VkDeviceQueueCreateInfo, VkExtent2D, VkExtent3D, VkFenceCreateInfo, VkFramebufferCreateInfo,
-    VkGraphicsPipelineCreateInfo, VkImageBlit, VkImageCreateInfo, VkImageMemoryBarrier, VkMemoryBarrier,
-    VkImageSubresourceLayers, VkImageSubresourceRange, VkImageViewCreateInfo, VkInstanceCreateInfo,
-    VkMemoryAllocateInfo, VkOffset2D, VkOffset3D, VkPhysicalDeviceFeatures,
+    VkGraphicsPipelineCreateInfo, VkImageBlit, VkImageCreateInfo, VkImageMemoryBarrier,
+    VkMemoryBarrier, VkImageSubresourceLayers, VkImageSubresourceRange, VkImageViewCreateInfo,
+    VkInstanceCreateInfo, VkMemoryAllocateInfo, VkOffset2D, VkOffset3D, VkPhysicalDeviceFeatures,
     VkPipelineColorBlendAttachmentState, VkPipelineColorBlendStateCreateInfo,
     VkPipelineDepthStencilStateCreateInfo, VkPipelineDynamicStateCreateInfo,
     VkPipelineInputAssemblyStateCreateInfo, VkPipelineLayoutCreateInfo,
@@ -33,7 +33,7 @@ use crate::sys::vk::vk_types::{
     VkRenderPassBeginInfo, VkRenderPassCreateInfo, VkSamplerCreateInfo, VkSemaphoreCreateInfo,
     VkShaderModuleCreateInfo, VkStencilOpState, VkSubmitInfo, VkSubpassDependency,
     VkSubpassDescription, VkSwapchainCreateInfoKHR, VkVertexInputAttributeDescription,
-    VkVertexInputBindingDescription, VkViewport, VkWriteDescriptorSet, VkClearValue,
+    VkVertexInputBindingDescription, VkViewport, VkWriteDescriptorSet, VkClearValue
 };
 
 /** Sizes and offsets of the Vulkan records, checked against the C headers. */

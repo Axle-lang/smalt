@@ -70,17 +70,17 @@ pub(crate) class VkGraveyard {
     count   : i32 = 0;
 
     /** Descriptor sets among the entries: still allocated from the pool. */
-    sets    : i32 = 0;
+    sets : i32 = 0;
 
     /** An empty graveyard. */
     constructor() {
         let n : i64 = VkGraveyard::CAPACITY as i64;
-        self.kinds = malloc<i32>(n);
-        self.handles = malloc<i64>(n);
-        self.blocks = malloc<i32>(n);
-        self.offsets = malloc<i64>(n);
-        self.sizes = malloc<i64>(n);
-        self.born = malloc<i64>(n);
+        self.kinds = new i32[n];
+        self.handles = new i64[n];
+        self.blocks = new i32[n];
+        self.offsets = new i64[n];
+        self.sizes = new i64[n];
+        self.born = new i64[n];
     }
 
     /** Entries waiting. */
@@ -178,11 +178,11 @@ pub(crate) class VkGraveyard {
             mapped: 0,
         };
         if (kind == GRAVE_BUFFER) {
-            VkMem::destroyBuffer(
-                ctx,
-                heap,
-                GpuBuffer { buffer: handle, alloc: alloc, size: alloc.size }
-            );
+            VkMem::destroyBuffer(ctx, heap, GpuBuffer {
+                buffer: handle,
+                alloc: alloc,
+                size: alloc.size,
+            });
         } else if (kind == GRAVE_IMAGE) {
             VkMem::destroyImage(ctx, heap, GpuImage { image: handle, alloc: alloc });
         } else if (kind == GRAVE_VIEW) {

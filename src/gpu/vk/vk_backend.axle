@@ -76,16 +76,16 @@ use crate::kernel::raw::Raw;
 use crate::render::color::Color;
 use crate::sys::vk::vk_const::{
     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_ERROR_OUT_OF_DATE_KHR,
-    VK_FENCE_CREATE_SIGNALED_BIT, VK_NOT_READY,
-    VK_PIPELINE_BIND_POINT_GRAPHICS, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-    VK_SHADER_STAGE_FRAGMENT_BIT, VK_SHADER_STAGE_VERTEX_BIT, VK_SUBOPTIMAL_KHR,
-    VK_SUBPASS_CONTENTS_INLINE, VK_SUCCESS, VK_TIMEOUT,
+    VK_FENCE_CREATE_SIGNALED_BIT, VK_NOT_READY, VK_PIPELINE_BIND_POINT_GRAPHICS,
+    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_SHADER_STAGE_FRAGMENT_BIT,
+    VK_SHADER_STAGE_VERTEX_BIT, VK_SUBOPTIMAL_KHR, VK_SUBPASS_CONTENTS_INLINE, VK_SUCCESS,
+    VK_TIMEOUT
 };
 use crate::sys::vk::vk_table::VkAddr;
 use crate::sys::vk::vk_types::{
     VkDescriptorBufferInfo, VkDescriptorSetAllocateInfo, VkExtent2D, VkInit, VkOffset2D,
     VkPresentInfoKHR, VkRect2D, VkRenderPassBeginInfo, VkSubmitInfo, VkViewport,
-    VkWriteDescriptorSet,
+    VkWriteDescriptorSet
 };
 use crate::video::window::Window;
 
@@ -144,21 +144,21 @@ const VKB_SHADERS : i32 = 64;
 
 /** The frame being recorded: its command buffer, and its frame-in-flight slot. */
 struct FrameRec {
-    cb : i64,
-    f  : i32,
+    cb : i64;
+    f  : i32;
 }
 
 /** A render pass to begin: the pass, the framebuffer it draws into, the colour it clears to. */
 struct PassBegin {
-    pass        : i64,
-    framebuffer : i64,
-    clear       : Color,
+    pass        : i64;
+    framebuffer : i64;
+    clear       : Color;
 }
 
 /** The colour targets a full-screen pass reads: the pass before's, and the one last kept. */
 struct PassInputs {
-    prev : i32,
-    kept : i32,
+    prev : i32;
+    kept : i32;
 }
 
 /**
@@ -166,26 +166,26 @@ struct PassInputs {
  * last pass — it draws into the window, so it is recorded with the present pass.
  */
 struct PassChain {
-    inputs  : PassInputs,
-    last    : PassItem,
-    hasLast : bool,
+    inputs  : PassInputs;
+    last    : PassItem;
+    hasLast : bool;
 }
 
 /** The Vulkan renderer. */
 pub(crate) class VkBackend : GpuBackend {
-    ctx       : VkContext;
-    heap      : GpuHeap;
-    grave     : VkGraveyard;
-    cmd       : VkCmd;
-    pipes     : VkPipelines;
-    swap      : VkSwapchain;
-    textures  : VkTextures;
-    meshes    : VkMeshes;
-    overlay   : VkOverlay;
-    targets   : VkTargets;
-    shaders   : VkShaders;
-    uploads   : VkUploads;
-    readback  : VkReadback;
+    ctx      : VkContext;
+    heap     : GpuHeap;
+    grave    : VkGraveyard;
+    cmd      : VkCmd;
+    pipes    : VkPipelines;
+    swap     : VkSwapchain;
+    textures : VkTextures;
+    meshes   : VkMeshes;
+    overlay  : VkOverlay;
+    targets  : VkTargets;
+    shaders  : VkShaders;
+    uploads  : VkUploads;
+    readback : VkReadback;
 
     /** Per-frame-in-flight objects. */
     cbs       : i64 = 0;
@@ -206,10 +206,10 @@ pub(crate) class VkBackend : GpuBackend {
     curLayout : i64 = 0;
     curSet    : i64 = 0;
 
-    frameNo  : i64 = 0;
-    reqW     : i32 = 0;
-    reqH     : i32 = 0;
-    vsync    : bool = true;
+    frameNo : i64 = 0;
+    reqW    : i32 = 0;
+    reqH    : i32 = 0;
+    vsync   : bool = true;
 
     /**
      * Whether the swapchain must be rebuilt before the next frame. Set by `resize`, by an
@@ -249,10 +249,10 @@ pub(crate) class VkBackend : GpuBackend {
         self.reqH = win.height();
 
         let n : i64 = FRAMES_IN_FLIGHT as i64;
-        self.avail = malloc<i64>(n);
-        self.fences = malloc<i64>(n);
-        self.ubos = malloc<GpuBuffer>(n);
-        self.frameSets = malloc<i64>(n);
+        self.avail = new i64[n];
+        self.fences = new i64[n];
+        self.ubos = new GpuBuffer[n];
+        self.frameSets = new i64[n];
         for (i of 0..n) {
             self.avail[i] = 0;
             self.fences[i] = 0;
@@ -262,9 +262,9 @@ pub(crate) class VkBackend : GpuBackend {
         self.block = Mem::takeZeroed(BLK_BYTES);
         self.push = Mem::takeZeroed(DRAW_BYTES);
         self.cbs = Mem::takeZeroed(n * 8);
-        self.vp = malloc<VkViewport>(1);
-        self.sc = malloc<VkRect2D>(1);
-        self.submitArr = malloc<VkSubmitInfo>(1);
+        self.vp = new VkViewport[1];
+        self.sc = new VkRect2D[1];
+        self.submitArr = new VkSubmitInfo[1];
 
         let mut reason : string = "";
         let format : i32 = self.swap.pickFormat(self.ctx);
@@ -332,9 +332,9 @@ pub(crate) class VkBackend : GpuBackend {
             return false;
         }
         // The one-element arrays the descriptor calls read, rewritten for each slot.
-        let mut layouts : i64[] = malloc<i64>(1);
-        let mut bi : VkDescriptorBufferInfo[] = malloc<VkDescriptorBufferInfo>(1);
-        let mut w : VkWriteDescriptorSet[] = malloc<VkWriteDescriptorSet>(1);
+        let mut layouts : i64[] = new i64[1];
+        let mut bi : VkDescriptorBufferInfo[] = new VkDescriptorBufferInfo[1];
+        let mut w : VkWriteDescriptorSet[] = new VkWriteDescriptorSet[1];
         for (i of 0..n) {
             let k : i64 = i as i64;
             let sr : i32 = self.ctx.table.createSemaphore(
@@ -780,7 +780,13 @@ pub(crate) class VkBackend : GpuBackend {
     }
 
     /** A program's pass, reading `inputs`, into a colour target or into the window. */
-    pub(file) fn recordPass(mut self, rec : FrameRec, pass : PassItem, toWindow : bool, inputs : PassInputs) : void {
+    pub(file) fn recordPass(
+        mut self,
+        rec : FrameRec,
+        pass : PassItem,
+        toWindow : bool,
+        inputs : PassInputs
+    ) : void {
         let pipe : i64 = self.shaders.passPipeline(pass.shaderSlot, toWindow);
         let set : i64 = self.textures.setOf(pass.texSlot);
         if (pipe == 0 || set == 0) {
@@ -847,14 +853,11 @@ pub(crate) class VkBackend : GpuBackend {
 
     /** The scene pass: the background, then every draw, into colour target 0 and the depth. */
     pub(file) fn recordScene(mut self, rec : FrameRec, scene : Scene) : void {
-        self.beginPass(
-            rec,
-            PassBegin {
-                pass: self.pipes.scenePass,
-                framebuffer: self.targets.sceneFrame,
-                clear: scene.clearColor(),
-            }
-        );
+        self.beginPass(rec, PassBegin {
+            pass: self.pipes.scenePass,
+            framebuffer: self.targets.sceneFrame,
+            clear: scene.clearColor(),
+        });
         if (scene.hasBackground()) {
             self.recordBackground(rec, scene.background());
         }
@@ -889,14 +892,11 @@ pub(crate) class VkBackend : GpuBackend {
                     chain.last = p;
                 } else {
                     let t : i32 = VkTargets::other(chain.inputs.prev, chain.inputs.kept);
-                    self.beginPass(
-                        rec,
-                        PassBegin {
-                            pass: self.pipes.postPass,
-                            framebuffer: self.targets.postFrame(t),
-                            clear: Color::black(),
-                        }
-                    );
+                    self.beginPass(rec, PassBegin {
+                        pass: self.pipes.postPass,
+                        framebuffer: self.targets.postFrame(t),
+                        clear: Color::black(),
+                    });
                     self.recordPass(rec, p, false, chain.inputs);
                     self.ctx.table.cmdEndRenderPass(rec.cb);
                     let mut kept : i32 = chain.inputs.kept;
@@ -911,15 +911,18 @@ pub(crate) class VkBackend : GpuBackend {
     }
 
     /** The present pass into swapchain image `index`: the last pass or the copy, then the overlay. */
-    pub(file) fn recordPresent(mut self, rec : FrameRec, index : i32, chain : PassChain, drawOverlay : bool) : void {
-        self.beginPass(
-            rec,
-            PassBegin {
-                pass: self.pipes.presentPass,
-                framebuffer: self.swap.framebuffer(index),
-                clear: Color::black(),
-            }
-        );
+    pub(file) fn recordPresent(
+        mut self,
+        rec : FrameRec,
+        index : i32,
+        chain : PassChain,
+        drawOverlay : bool
+    ) : void {
+        self.beginPass(rec, PassBegin {
+            pass: self.pipes.presentPass,
+            framebuffer: self.swap.framebuffer(index),
+            clear: Color::black(),
+        });
         if (chain.hasLast) {
             self.recordPass(rec, chain.last, true, chain.inputs);
         } else {
@@ -940,7 +943,13 @@ pub(crate) class VkBackend : GpuBackend {
     }
 
     /** Record the whole frame into `rec` against swapchain image `index`. */
-    pub(file) fn record(mut self, rec : FrameRec, index : i32, scene : Scene, drawOverlay : bool) : bool {
+    pub(file) fn record(
+        mut self,
+        rec : FrameRec,
+        index : i32,
+        scene : Scene,
+        drawOverlay : bool
+    ) : bool {
         if (!self.cmd.begin(self.ctx, rec.cb)) {
             return false;
         }
@@ -952,18 +961,12 @@ pub(crate) class VkBackend : GpuBackend {
         let chain : PassChain = self.recordPasses(rec, scene);
         self.recordPresent(rec, index, chain, drawOverlay);
         if (self.swap.readable) {
-            self.readback.record(
-                self.ctx,
-                self.heap,
-                self.cmd,
-                rec.cb,
-                ReadSource {
-                    image: self.swap.image(index),
-                    w: self.swap.w,
-                    h: self.swap.h,
-                    format: self.swap.format,
-                }
-            );
+            self.readback.record(self.ctx, self.heap, self.cmd, rec.cb, ReadSource {
+                image: self.swap.image(index),
+                w: self.swap.w,
+                h: self.swap.h,
+                format: self.swap.format,
+            });
         }
         return VkErr::ok(self.ctx.table.endCommandBuffer(rec.cb));
     }

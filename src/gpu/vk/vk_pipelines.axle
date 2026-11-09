@@ -83,16 +83,14 @@ use crate::sys::vk::vk_const::{
     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
     VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_UNDEFINED, VK_LOGIC_OP_COPY,
-    VK_PIPELINE_BIND_POINT_GRAPHICS,
-    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-    VK_PIPELINE_STAGE_TRANSFER_BIT,
-    VK_POLYGON_MODE_FILL, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_SAMPLE_COUNT_1_BIT,
-    VK_SHADER_STAGE_FRAGMENT_BIT, VK_SHADER_STAGE_VERTEX_BIT, VK_SUBPASS_EXTERNAL,
-    VK_VERTEX_INPUT_RATE_VERTEX,
+    VK_PIPELINE_BIND_POINT_GRAPHICS, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+    VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_POLYGON_MODE_FILL,
+    VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_SAMPLE_COUNT_1_BIT, VK_SHADER_STAGE_FRAGMENT_BIT,
+    VK_SHADER_STAGE_VERTEX_BIT, VK_SUBPASS_EXTERNAL, VK_VERTEX_INPUT_RATE_VERTEX
 };
-use crate::sys::vk::vk_table::VkAddr;
 use crate::sys::vk::vk_out::VKO_FORMAT_PROPERTIES_OPTIMAL_TILING_FEATURES;
+use crate::sys::vk::vk_table::VkAddr;
 use crate::sys::vk::vk_types::{
     VkAttachmentDescription, VkAttachmentReference, VkDescriptorPoolCreateInfo,
     VkDescriptorPoolSize, VkDescriptorSetLayoutBinding, VkDescriptorSetLayoutCreateInfo,
@@ -103,7 +101,7 @@ use crate::sys::vk::vk_types::{
     VkPipelineRasterizationStateCreateInfo, VkPipelineShaderStageCreateInfo,
     VkPipelineVertexInputStateCreateInfo, VkPipelineViewportStateCreateInfo, VkPushConstantRange,
     VkRenderPassCreateInfo, VkShaderModuleCreateInfo, VkSubpassDependency, VkSubpassDescription,
-    VkVertexInputAttributeDescription, VkVertexInputBindingDescription,
+    VkVertexInputAttributeDescription, VkVertexInputBindingDescription
 };
 
 /** Descriptor sets beyond one per texture slot: buried textures wait for the graveyard, so
@@ -140,37 +138,37 @@ const PIPE_ENTRY : string = "main";
 /** One graphics pipeline, asked for: its stages, the pass it draws in, its fixed state. */
 pub(crate) struct PipeSpec {
     /** Vertex stage module. */
-    pub(crate) vs         : i64 = 0;
+    pub(crate) vs : i64 = 0;
 
     /** Fragment stage module. */
-    pub(crate) fs         : i64 = 0;
+    pub(crate) fs : i64 = 0;
 
     /** The render pass it is drawn in. */
     pub(crate) renderPass : i64 = 0;
 
     /** The pipeline layout it binds through. */
-    pub(crate) layout     : i64 = 0;
+    pub(crate) layout : i64 = 0;
 
     /** Whether it reads smalt's 32-byte vertex; false draws a full-screen triangle. */
-    pub(crate) meshInput  : bool = false;
+    pub(crate) meshInput : bool = false;
 
     /** Whether it tests depth. */
-    pub(crate) depthTest  : bool = false;
+    pub(crate) depthTest : bool = false;
 
     /** Whether it writes depth. */
     pub(crate) depthWrite : bool = false;
 
     /** Whether it alpha-blends over what is there. */
-    pub(crate) blend      : bool = false;
+    pub(crate) blend : bool = false;
 
     /** Whether it draws both faces. */
-    pub(crate) cullNone   : bool = true;
+    pub(crate) cullNone : bool = true;
 }
 
 /** A mesh shader's two stages, as modules. */
 pub(crate) struct MeshStages {
-    pub(crate) vs : i64,
-    pub(crate) fs : i64,
+    pub(crate) vs : i64;
+    pub(crate) fs : i64;
 }
 
 /** One render pass, asked for. */
@@ -179,37 +177,37 @@ struct PassSpec {
     colorFormat : i32 = 0;
 
     /** Whether the colour attachment is cleared on load (else its contents are not kept). */
-    clearColor  : bool = true;
+    clearColor : bool = true;
 
     /** The colour attachment's layout once the pass is over. */
-    colorFinal  : i32 = 0;
+    colorFinal : i32 = 0;
 
     /** Whether the pass has the depth attachment, cleared and kept for sampling. */
-    withDepth   : bool = false;
+    withDepth : bool = false;
 
     /** Whether what follows the pass samples its attachments (else it is presented). */
-    sampledOut  : bool = true;
+    sampledOut : bool = true;
 }
 
 /** The objects that describe how a frame is drawn. */
 pub(crate) class VkPipelines {
     /** The scene pass: colour target and depth. */
-    pub(crate) scenePass     : i64 = 0;
+    pub(crate) scenePass : i64 = 0;
 
     /** The pass a program's full-screen pass draws in, target to target. */
-    pub(crate) postPass      : i64 = 0;
+    pub(crate) postPass : i64 = 0;
 
     /** The pass that draws into the window's image. */
-    pub(crate) presentPass   : i64 = 0;
+    pub(crate) presentPass : i64 = 0;
 
     /** The depth attachment's format. */
-    pub(crate) depthFormat   : i32 = 0;
+    pub(crate) depthFormat : i32 = 0;
 
     /** The colour targets' format. */
-    pub(crate) targetFormat  : i32 = 0;
+    pub(crate) targetFormat : i32 = 0;
 
     /** `VkDescriptorSetLayout` of set 0 — the frame block. */
-    pub(crate) frameLayout   : i64 = 0;
+    pub(crate) frameLayout : i64 = 0;
 
     /** `VkDescriptorSetLayout` of set 1 — one texture. */
     pub(crate) textureLayout : i64 = 0;
@@ -218,26 +216,26 @@ pub(crate) class VkPipelines {
     pub(crate) passSetLayout : i64 = 0;
 
     /** `VkDescriptorPool` every set comes from. */
-    pub(crate) pool          : i64 = 0;
+    pub(crate) pool : i64 = 0;
 
     /** `VkPipelineLayout` of mesh and background draws: sets 0 and 1. */
-    pub(crate) layout        : i64 = 0;
+    pub(crate) layout : i64 = 0;
 
     /** `VkPipelineLayout` of full-screen passes: sets 0, 1 and 2. */
-    pub(crate) passLayout    : i64 = 0;
+    pub(crate) passLayout : i64 = 0;
 
     /**
      * Texture descriptor sets the pool holds: one per slot plus `PIPE_POOL_SLACK`.
      * `VkTextures` counts against it, because Vulkan 1.0 does not promise an error
      * for allocating past it.
      */
-    pub(crate) textureSets   : i32 = 0;
+    pub(crate) textureSets : i32 = 0;
 
     /** The built-in pipelines, in the order `scenePipeline` and the others index them. */
-    pipelines                : i64[];
+    pipelines : i64[];
 
     /** The built-in shader modules. */
-    modules                  : i64[];
+    modules : i64[];
 
     /**
      * Build the layouts, the pool and the shader modules, then the three render passes
@@ -247,8 +245,8 @@ pub(crate) class VkPipelines {
      * when the driver refused a step; `isReady` says whether it all worked.
      */
     constructor(ctx : VkContext, colorFormat : i32, textureSlots : i32) {
-        self.pipelines = malloc<i64>(PIPE_BUILTIN as i64);
-        self.modules = malloc<i64>(PIPE_MODULES as i64);
+        self.pipelines = new i64[PIPE_BUILTIN as i64];
+        self.modules = new i64[PIPE_MODULES as i64];
         for (i of 0..PIPE_BUILTIN) {
             self.pipelines[i as i64] = 0;
         }
@@ -258,10 +256,13 @@ pub(crate) class VkPipelines {
         self.depthFormat = self.pickDepthFormat(ctx);
         self.targetFormat = self.pickTargetFormat(ctx, colorFormat);
         // Each step runs only if the one before it worked.
-        if (self.depthFormat != 0 && colorFormat != 0 && self.makeLayouts(
-            ctx,
-            textureSlots
-        ) && self.makeShaders(ctx) && self.makeRenderPasses(ctx, colorFormat)) {
+        if (self.depthFormat != 0 && colorFormat != 0
+            && self.makeLayouts(
+                ctx,
+                textureSlots
+            )
+            && self.makeShaders(ctx)
+            && self.makeRenderPasses(ctx, colorFormat)) {
             self.makePipelines(ctx);
         }
     }
@@ -273,7 +274,9 @@ pub(crate) class VkPipelines {
                 return false;
             }
         }
-        return self.scenePass != 0 && self.postPass != 0 && self.presentPass != 0 && self.layout != 0 && self.passLayout != 0;
+        return self.scenePass != 0 && self.postPass != 0 && self.presentPass != 0
+            && self.layout != 0
+            && self.passLayout != 0;
     }
 
     /** The optimal-tiling features the device gives `format`. */
@@ -292,7 +295,8 @@ pub(crate) class VkPipelines {
         ];
         for (i of 0..3) {
             let f : i32 = candidates[i];
-            let need : i32 = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+            let need : i32 = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+                | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
             if ((self.featuresOf(ctx, f) & need) == need) {
                 return f;
             }
@@ -305,7 +309,10 @@ pub(crate) class VkPipelines {
      * it and samples it with a linear filter; the window's format otherwise.
      */
     pub(file) fn pickTargetFormat(self, ctx : VkContext, colorFormat : i32) : i32 {
-        let need : i32 = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+        let need : i32 = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT
+            | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT
+            | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT
+            | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
         if ((self.featuresOf(ctx, VK_FORMAT_R16G16B16A16_SFLOAT) & need) == need) {
             return VK_FORMAT_R16G16B16A16_SFLOAT;
         }
@@ -314,7 +321,7 @@ pub(crate) class VkPipelines {
 
     /** One descriptor set layout of `n` bindings of `type_` (from binding 0), seen by `stages`; 0 on failure. */
     pub(file) fn makeSetLayout(self, ctx : VkContext, n : i32, type_ : i32, stages : i32) : i64 {
-        let mut b : VkDescriptorSetLayoutBinding[] = malloc<VkDescriptorSetLayoutBinding>(n as i64);
+        let mut b : VkDescriptorSetLayoutBinding[] = new VkDescriptorSetLayoutBinding[n as i64];
         for (i of 0..n) {
             b[i as i64] = VkDescriptorSetLayoutBinding {
                 binding: i,
@@ -336,11 +343,11 @@ pub(crate) class VkPipelines {
 
     /** A pipeline layout over the first `sets` of (frame, texture, pass targets) and the push block; 0 on failure. */
     pub(file) fn makePipelineLayout(self, ctx : VkContext, sets : i32) : i64 {
-        let mut layouts : i64[] = malloc<i64>(3);
+        let mut layouts : i64[] = new i64[3];
         layouts[0] = self.frameLayout;
         layouts[1] = self.textureLayout;
         layouts[2] = self.passSetLayout;
-        let mut push : VkPushConstantRange[] = malloc<VkPushConstantRange>(1);
+        let mut push : VkPushConstantRange[] = new VkPushConstantRange[1];
         push[0] = VkPushConstantRange {
             stageFlags: VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
             offset: 0,
@@ -387,7 +394,7 @@ pub(crate) class VkPipelines {
             return false;
         }
 
-        let mut sizes : VkDescriptorPoolSize[] = malloc<VkDescriptorPoolSize>(2);
+        let mut sizes : VkDescriptorPoolSize[] = new VkDescriptorPoolSize[2];
         sizes[0] = VkDescriptorPoolSize {
             type_: VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             descriptorCount: PIPE_POOL_UNIFORMS,
@@ -447,7 +454,7 @@ pub(crate) class VkPipelines {
 
     /** One render pass; 0 on failure. See the module header for its dependencies. */
     pub(file) fn makePass(self, ctx : VkContext, spec : PassSpec) : i64 {
-        let mut at : VkAttachmentDescription[] = malloc<VkAttachmentDescription>(2);
+        let mut at : VkAttachmentDescription[] = new VkAttachmentDescription[2];
         let mut load : i32 = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         if (spec.clearColor) {
             load = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -474,17 +481,17 @@ pub(crate) class VkPipelines {
             initialLayout: VK_IMAGE_LAYOUT_UNDEFINED,
             finalLayout: VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
         };
-        let mut colorRef : VkAttachmentReference[] = malloc<VkAttachmentReference>(1);
+        let mut colorRef : VkAttachmentReference[] = new VkAttachmentReference[1];
         colorRef[0] = VkAttachmentReference {
             attachment: 0,
             layout: VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         };
-        let mut depthRef : VkAttachmentReference[] = malloc<VkAttachmentReference>(1);
+        let mut depthRef : VkAttachmentReference[] = new VkAttachmentReference[1];
         depthRef[0] = VkAttachmentReference {
             attachment: 1,
             layout: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         };
-        let mut sub : VkSubpassDescription[] = malloc<VkSubpassDescription>(1);
+        let mut sub : VkSubpassDescription[] = new VkSubpassDescription[1];
         let mut sd : VkSubpassDescription = VkInit::subpassDescription();
         sd.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         sd.colorAttachmentCount = 1;
@@ -494,9 +501,10 @@ pub(crate) class VkPipelines {
         }
         sub[0] = sd;
 
-        let depthStages : i32 = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        let depthStages : i32 = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
+            | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         let writes : i32 = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | depthStages;
-        let mut dep : VkSubpassDependency[] = malloc<VkSubpassDependency>(2);
+        let mut dep : VkSubpassDependency[] = new VkSubpassDependency[2];
         // In: wait for every earlier write of these attachments and every earlier read of
         // them as textures (the frame before this one, still on the queue).
         dep[0] = VkSubpassDependency {
@@ -504,8 +512,12 @@ pub(crate) class VkPipelines {
             dstSubpass: 0,
             srcStageMask: writes | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
             dstStageMask: writes,
-            srcAccessMask: VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            dstAccessMask: VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            srcAccessMask: VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            dstAccessMask: VK_ACCESS_COLOR_ATTACHMENT_READ_BIT
+                | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT
+                | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
             dependencyFlags: 0,
         };
         let mut outStage : i32 = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
@@ -521,7 +533,8 @@ pub(crate) class VkPipelines {
             dstSubpass: VK_SUBPASS_EXTERNAL,
             srcStageMask: writes,
             dstStageMask: outStage,
-            srcAccessMask: VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            srcAccessMask: VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
             dstAccessMask: outAccess,
             dependencyFlags: 0,
         };
@@ -545,36 +558,27 @@ pub(crate) class VkPipelines {
 
     /** The scene, pass and present render passes. */
     pub(file) fn makeRenderPasses(mut self, ctx : VkContext, colorFormat : i32) : bool {
-        self.scenePass = self.makePass(
-            ctx,
-            PassSpec {
-                colorFormat: self.targetFormat,
-                clearColor: true,
-                colorFinal: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                withDepth: true,
-                sampledOut: true,
-            }
-        );
-        self.postPass = self.makePass(
-            ctx,
-            PassSpec {
-                colorFormat: self.targetFormat,
-                clearColor: false,
-                colorFinal: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                withDepth: false,
-                sampledOut: true,
-            }
-        );
-        self.presentPass = self.makePass(
-            ctx,
-            PassSpec {
-                colorFormat: colorFormat,
-                clearColor: true,
-                colorFinal: VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                withDepth: false,
-                sampledOut: false,
-            }
-        );
+        self.scenePass = self.makePass(ctx, PassSpec {
+            colorFormat: self.targetFormat,
+            clearColor: true,
+            colorFinal: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            withDepth: true,
+            sampledOut: true,
+        });
+        self.postPass = self.makePass(ctx, PassSpec {
+            colorFormat: self.targetFormat,
+            clearColor: false,
+            colorFinal: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            withDepth: false,
+            sampledOut: true,
+        });
+        self.presentPass = self.makePass(ctx, PassSpec {
+            colorFormat: colorFormat,
+            clearColor: true,
+            colorFinal: VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            withDepth: false,
+            sampledOut: false,
+        });
         return self.scenePass != 0 && self.postPass != 0 && self.presentPass != 0;
     }
 
@@ -589,7 +593,7 @@ pub(crate) class VkPipelines {
         let n : i32 = Mem::internString(nameAt, 0, PIPE_ENTRY, 16);
         Mem::putByte(nameAt, n as i64, 0);
 
-        let mut stages : VkPipelineShaderStageCreateInfo[] = malloc<VkPipelineShaderStageCreateInfo>(2);
+        let mut stages : VkPipelineShaderStageCreateInfo[] = new VkPipelineShaderStageCreateInfo[2];
         let mut s0 : VkPipelineShaderStageCreateInfo = VkInit::pipelineShaderStageCreateInfo();
         s0.stage = VK_SHADER_STAGE_VERTEX_BIT;
         s0.module_ = spec.vs;
@@ -601,13 +605,13 @@ pub(crate) class VkPipelines {
         s1.pName = Raw::at(nameAt);
         stages[1] = s1;
 
-        let mut bind : VkVertexInputBindingDescription[] = malloc<VkVertexInputBindingDescription>(1);
+        let mut bind : VkVertexInputBindingDescription[] = new VkVertexInputBindingDescription[1];
         bind[0] = VkVertexInputBindingDescription {
             binding: 0,
             stride: MeshBuilder::VERTEX_BYTES,
             inputRate: VK_VERTEX_INPUT_RATE_VERTEX,
         };
-        let mut attr : VkVertexInputAttributeDescription[] = malloc<VkVertexInputAttributeDescription>(5);
+        let mut attr : VkVertexInputAttributeDescription[] = new VkVertexInputAttributeDescription[5];
         attr[0] = VkVertexInputAttributeDescription {
             location: 0,
             binding: 0,
@@ -645,18 +649,18 @@ pub(crate) class VkPipelines {
             vi.vertexAttributeDescriptionCount = 5;
             vi.pVertexAttributeDescriptions = VkAddr::vertexInputAttributeDescription(attr);
         }
-        let mut vis : VkPipelineVertexInputStateCreateInfo[] = malloc<VkPipelineVertexInputStateCreateInfo>(1);
+        let mut vis : VkPipelineVertexInputStateCreateInfo[] = new VkPipelineVertexInputStateCreateInfo[1];
         vis[0] = vi;
 
         let mut ia : VkPipelineInputAssemblyStateCreateInfo = VkInit::pipelineInputAssemblyStateCreateInfo();
         ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        let mut ias : VkPipelineInputAssemblyStateCreateInfo[] = malloc<VkPipelineInputAssemblyStateCreateInfo>(1);
+        let mut ias : VkPipelineInputAssemblyStateCreateInfo[] = new VkPipelineInputAssemblyStateCreateInfo[1];
         ias[0] = ia;
 
         let mut vp : VkPipelineViewportStateCreateInfo = VkInit::pipelineViewportStateCreateInfo();
         vp.viewportCount = 1;
         vp.scissorCount = 1;
-        let mut vps : VkPipelineViewportStateCreateInfo[] = malloc<VkPipelineViewportStateCreateInfo>(1);
+        let mut vps : VkPipelineViewportStateCreateInfo[] = new VkPipelineViewportStateCreateInfo[1];
         vps[0] = vp;
 
         let mut rs : VkPipelineRasterizationStateCreateInfo = VkInit::pipelineRasterizationStateCreateInfo();
@@ -667,12 +671,12 @@ pub(crate) class VkPipelines {
         }
         rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rs.lineWidth = (1.0 as f32);
-        let mut rss : VkPipelineRasterizationStateCreateInfo[] = malloc<VkPipelineRasterizationStateCreateInfo>(1);
+        let mut rss : VkPipelineRasterizationStateCreateInfo[] = new VkPipelineRasterizationStateCreateInfo[1];
         rss[0] = rs;
 
         let mut ms : VkPipelineMultisampleStateCreateInfo = VkInit::pipelineMultisampleStateCreateInfo();
         ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-        let mut mss : VkPipelineMultisampleStateCreateInfo[] = malloc<VkPipelineMultisampleStateCreateInfo>(1);
+        let mut mss : VkPipelineMultisampleStateCreateInfo[] = new VkPipelineMultisampleStateCreateInfo[1];
         mss[0] = ms;
 
         let mut ds : VkPipelineDepthStencilStateCreateInfo = VkInit::pipelineDepthStencilStateCreateInfo();
@@ -687,10 +691,10 @@ pub(crate) class VkPipelines {
             ds.depthCompareOp = VK_COMPARE_OP_ALWAYS;
         }
         ds.maxDepthBounds = (1.0 as f32);
-        let mut dss : VkPipelineDepthStencilStateCreateInfo[] = malloc<VkPipelineDepthStencilStateCreateInfo>(1);
+        let mut dss : VkPipelineDepthStencilStateCreateInfo[] = new VkPipelineDepthStencilStateCreateInfo[1];
         dss[0] = ds;
 
-        let mut cba : VkPipelineColorBlendAttachmentState[] = malloc<VkPipelineColorBlendAttachmentState>(1);
+        let mut cba : VkPipelineColorBlendAttachmentState[] = new VkPipelineColorBlendAttachmentState[1];
         let mut a : VkPipelineColorBlendAttachmentState = VkInit::pipelineColorBlendAttachmentState();
         if (spec.blend) {
             a.blendEnable = 1;
@@ -706,7 +710,8 @@ pub(crate) class VkPipelines {
         // `COMPOSITE_ALPHA_INHERIT` a written 0 would let the desktop show through the
         // window. A pass between targets writes all four, so what the next pass reads of
         // a target it did not clear is what the one before it drew.
-        a.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT;
+        a.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+            | VK_COLOR_COMPONENT_B_BIT;
         if (spec.renderPass == self.postPass) {
             a.colorWriteMask = a.colorWriteMask | VK_COLOR_COMPONENT_A_BIT;
         }
@@ -715,14 +720,14 @@ pub(crate) class VkPipelines {
         cb.logicOp = VK_LOGIC_OP_COPY;
         cb.attachmentCount = 1;
         cb.pAttachments = VkAddr::pipelineColorBlendAttachmentState(cba);
-        let mut cbs : VkPipelineColorBlendStateCreateInfo[] = malloc<VkPipelineColorBlendStateCreateInfo>(1);
+        let mut cbs : VkPipelineColorBlendStateCreateInfo[] = new VkPipelineColorBlendStateCreateInfo[1];
         cbs[0] = cb;
 
         let dynStates : i32[] = [VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR];
         let mut dy : VkPipelineDynamicStateCreateInfo = VkInit::pipelineDynamicStateCreateInfo();
         dy.dynamicStateCount = 2;
         dy.pDynamicStates = VkAddr::ints(dynStates);
-        let mut dys : VkPipelineDynamicStateCreateInfo[] = malloc<VkPipelineDynamicStateCreateInfo>(1);
+        let mut dys : VkPipelineDynamicStateCreateInfo[] = new VkPipelineDynamicStateCreateInfo[1];
         dys[0] = dy;
 
         let mut gi : VkGraphicsPipelineCreateInfo = VkInit::graphicsPipelineCreateInfo();
@@ -740,7 +745,7 @@ pub(crate) class VkPipelines {
         gi.renderPass = spec.renderPass;
         gi.subpass = 0;
         gi.basePipelineIndex = -1;
-        let mut gis : VkGraphicsPipelineCreateInfo[] = malloc<VkGraphicsPipelineCreateInfo>(1);
+        let mut gis : VkGraphicsPipelineCreateInfo[] = new VkGraphicsPipelineCreateInfo[1];
         gis[0] = gi;
 
         let r : i32 = ctx.table.createGraphicsPipelines(
@@ -757,21 +762,24 @@ pub(crate) class VkPipelines {
     }
 
     /** A mesh draw's pipeline in the scene pass: blended or not, one face or both. */
-    pub(crate) fn meshPipeline(self, ctx : VkContext, stages : MeshStages, blend : bool, cullNone : bool) : i64 {
-        return self.makePipeline(
-            ctx,
-            PipeSpec {
-                vs: stages.vs,
-                fs: stages.fs,
-                renderPass: self.scenePass,
-                layout: self.layout,
-                meshInput: true,
-                depthTest: true,
-                depthWrite: !blend,
-                blend: blend,
-                cullNone: cullNone,
-            }
-        );
+    pub(crate) fn meshPipeline(
+        self,
+        ctx : VkContext,
+        stages : MeshStages,
+        blend : bool,
+        cullNone : bool
+    ) : i64 {
+        return self.makePipeline(ctx, PipeSpec {
+            vs: stages.vs,
+            fs: stages.fs,
+            renderPass: self.scenePass,
+            layout: self.layout,
+            meshInput: true,
+            depthTest: true,
+            depthWrite: !blend,
+            blend: blend,
+            cullNone: cullNone,
+        });
     }
 
     /** All the built-in pipelines. */
@@ -782,25 +790,19 @@ pub(crate) class VkPipelines {
         self.pipelines[1] = self.meshPipeline(ctx, scene, false, true);
         self.pipelines[2] = self.meshPipeline(ctx, scene, true, false);
         self.pipelines[3] = self.meshPipeline(ctx, scene, true, true);
-        self.pipelines[PIPE_OVERLAY] = self.makePipeline(
-            ctx,
-            PipeSpec {
-                vs: self.modules[2],
-                fs: self.modules[3],
-                renderPass: self.presentPass,
-                layout: self.layout,
-                blend: true,
-            }
-        );
-        self.pipelines[PIPE_COPY] = self.makePipeline(
-            ctx,
-            PipeSpec {
-                vs: self.modules[2],
-                fs: self.modules[4],
-                renderPass: self.presentPass,
-                layout: self.passLayout,
-            }
-        );
+        self.pipelines[PIPE_OVERLAY] = self.makePipeline(ctx, PipeSpec {
+            vs: self.modules[2],
+            fs: self.modules[3],
+            renderPass: self.presentPass,
+            layout: self.layout,
+            blend: true,
+        });
+        self.pipelines[PIPE_COPY] = self.makePipeline(ctx, PipeSpec {
+            vs: self.modules[2],
+            fs: self.modules[4],
+            renderPass: self.presentPass,
+            layout: self.passLayout,
+        });
     }
 
     /** The built-in scene pipeline for a draw: blended or not, one face or both. */
