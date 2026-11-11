@@ -75,7 +75,7 @@ struct MipPlane {
 }
 
 /** Write the texel at (`x`, `y`) of `p`. */
-fn putTexel(p : MipPlane, x : i32, y : i32, word : i32) : void {
+fn putTexel(mut p : MipPlane, x : i32, y : i32, word : i32) : void {
     p.words[p.at + (y as i64) * (p.w as i64) + (x as i64)] = word;
 }
 
@@ -400,7 +400,7 @@ pub class Image {
      * odd edge), its colour weighted by alpha and its alpha the plain mean. With a
      * 256-entry `lin` table the colour is averaged in linear light and encoded back.
      */
-    pub(file) static fn downsample(src : MipPlane, dst : MipPlane, lin : f64[]) : void {
+    pub(file) static fn downsample(src : MipPlane, mut dst : MipPlane, lin : f64[]) : void {
         if (lin.length == 256) {
             Image::downsampleLinear(src, dst, lin);
             return;
@@ -446,7 +446,7 @@ pub class Image {
     }
 
     /** `downsample`, the colour averaged in linear light (`lin` is the sRGB decode table). */
-    pub(file) static fn downsampleLinear(src : MipPlane, dst : MipPlane, lin : f64[]) : void {
+    pub(file) static fn downsampleLinear(src : MipPlane, mut dst : MipPlane, lin : f64[]) : void {
         for (y of 0..dst.h) {
             for (x of 0..dst.w) {
                 let mut r : f64 = 0.0;
