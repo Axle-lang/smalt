@@ -195,6 +195,11 @@ memory released by hand is the statement `drop value;` (`free` is gone, and
 method or to pass a struct to a `mut` parameter. An older compiler does not
 know these spellings, so there is no version that builds both.
 
+0.21 builds every example too, with one rule more: a parameter handed on to
+a `mut` parameter must be `mut` itself (E0283), since a read-only parameter
+is a copy its own caller never sees. smalt is written to it; a `mut`
+parameter is a 0.20 spelling as well, so the floor stays 0.20.
+
 <details>
 <summary><b>Missing or older? Install / upgrade Axle →</b></summary>
 
@@ -299,7 +304,7 @@ A program that already has a renderer should not have to adopt one to get a wind
 
 | | Windows (Win32) | Linux (X11) | Linux (Wayland) |
 |---|---|---|---|
-| Builds | ✅ every example | ✅ every example (Axle 0.20) | ❌ the port does not compile with the current compiler yet |
+| Builds | ✅ every example (Axle 0.20, 0.21) | ✅ every example (Axle 0.20) | ❌ the port does not compile with the current compiler yet |
 | Headless checks (`self_check`, `gpu_check`) | ✅ | ✅ | — |
 | A window opens and draws | ✅ | ✅ `ui_panel --snap` drew a frame and `spinning_cube` ran, both under Xvfb | — |
 | Vulkan GPU path | ✅ one discrete GPU | not run | not run |
