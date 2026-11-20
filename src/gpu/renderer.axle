@@ -567,7 +567,7 @@ pub class Renderer : Closeable {
      * nothing drawn, for a window other than the one the renderer was made on, and
      * after `close()`.
      */
-    pub fn render(mut self, scene : Scene, win : Window) : bool {
+    pub fn render(mut self, mut scene : Scene, win : Window) : bool {
         if (self.closed || !self.ownsWindow(win)) {
             return false;
         }

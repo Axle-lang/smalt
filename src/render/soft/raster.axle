@@ -254,7 +254,7 @@ pub class Raster {
      * — so the same test serves both windings.
      */
     pub(file) static fn fill(
-        target : RenderTarget,
+        mut target : RenderTarget,
         tex : Texture,
         sh : Shading,
         a : ScreenVertex,
@@ -348,7 +348,7 @@ pub class Raster {
 
     /** Project three clipped vertices and fill them. */
     pub(file) static fn emit(
-        target : RenderTarget,
+        mut target : RenderTarget,
         tex : Texture,
         sh : Shading,
         a : ClipVertex,
@@ -373,7 +373,7 @@ pub class Raster {
      * order `a` → `b` → `c` → `a`.
      */
     pub(file) static fn clipOne(
-        target : RenderTarget,
+        mut target : RenderTarget,
         tex : Texture,
         sh : Shading,
         a : ClipVertex,
@@ -388,7 +388,7 @@ pub class Raster {
      * fanned into two triangles from `a`.
      */
     pub(file) static fn clipTwo(
-        target : RenderTarget,
+        mut target : RenderTarget,
         tex : Texture,
         sh : Shading,
         a : ClipVertex,
@@ -436,7 +436,7 @@ pub class Raster {
      * back-face test depends on.
      */
     pub static fn triangle(
-        target : RenderTarget,
+        mut target : RenderTarget,
         tex : Texture,
         sh : Shading,
         v0 : ClipVertex,
