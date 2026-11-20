@@ -73,7 +73,7 @@ fn cursorFor(win : SysWindow, shape : i32) : i64 {
  * is hidden (by the program or by relative mode), the desktop's own for `Arrow`,
  * the shape's otherwise.
  */
-pub(crate) fn applyCursor(win : SysWindow) : void {
+pub(crate) fn applyCursor(mut win : SysWindow) : void {
     if (win.pointerHidden || win.shape == CURSOR_HIDDEN) {
         XDefineCursor(connection(win), id(win), blankCursor(win));
     } else if (win.shape == 0) {

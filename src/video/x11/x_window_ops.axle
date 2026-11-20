@@ -132,7 +132,7 @@ pub(crate) fn cachedBlankCursor(win : SysWindow) : i64 {
  * window keeps it, because that is what it is defined on and what
  * outlives the call that made it.
  */
-pub(crate) fn adoptBlankCursor(win : SysWindow, cursor : i64) : void {
+pub(crate) fn adoptBlankCursor(mut win : SysWindow, cursor : i64) : void {
     win.blank = cursor;
 }
 
@@ -145,7 +145,7 @@ pub(crate) fn adoptBlankCursor(win : SysWindow, cursor : i64) : void {
  * self-check below can run it without a queue, a keyboard and a
  * mouse to hand.
  */
-pub(crate) fn absorb(win : SysWindow, event : ptr) : bool {
+pub(crate) fn absorb(mut win : SysWindow, event : ptr) : bool {
     unsafe {
         let any : ptr<XAnyEvent> = event as ptr<XAnyEvent>;
         let kind : i32 = (*any).type_;
@@ -210,7 +210,7 @@ pub(crate) fn absorb(win : SysWindow, event : ptr) : bool {
  * dragging a window across the desktop would reallocate the
  * framebuffer once per motion event.
  */
-pub(crate) fn noteResize(win : SysWindow, w : i32, h : i32) : void {
+pub(crate) fn noteResize(mut win : SysWindow, w : i32, h : i32) : void {
     if (w <= 0 || h <= 0) {
         return;
     }
@@ -223,7 +223,7 @@ pub(crate) fn noteResize(win : SysWindow, w : i32, h : i32) : void {
 }
 
 /** Record a focus edge, if it is one. */
-pub(crate) fn noteFocus(win : SysWindow, focused : bool) : void {
+pub(crate) fn noteFocus(mut win : SysWindow, focused : bool) : void {
     if (focused == win.focusedNow) {
         return;
     }
@@ -232,7 +232,7 @@ pub(crate) fn noteFocus(win : SysWindow, focused : bool) : void {
 }
 
 /** Record a minimise / restore edge, if it is one. */
-pub(crate) fn noteMinimised(win : SysWindow, minimised : bool) : void {
+pub(crate) fn noteMinimised(mut win : SysWindow, minimised : bool) : void {
     if (minimised == win.minimisedNow) {
         return;
     }
@@ -248,7 +248,7 @@ pub(crate) fn noteMinimised(win : SysWindow, minimised : bool) : void {
  * event to this window and to nothing else — a propagated synthetic
  * event would climb to the root and be somebody else's problem.
  */
-pub(crate) fn roundTrip(win : SysWindow, scratch : Blob, kind : i32, w : i32, h : i32) : bool {
+pub(crate) fn roundTrip(mut win : SysWindow, scratch : Blob, kind : i32, w : i32, h : i32) : bool {
     unsafe {
         Raw::clear(scratch.at(), X_EVENT_BYTES);
         let mut any : ptr<XAnyEvent> = scratch.at() as ptr<XAnyEvent>;

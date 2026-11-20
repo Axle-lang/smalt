@@ -85,8 +85,8 @@ pub(crate) fn handleKey(
     event : ptr,
     press : bool,
     stamp : i64,
-    queue : EventQueue,
-    keys : KeyboardState,
+    mut queue : EventQueue,
+    mut keys : KeyboardState,
     text : Blob,
     keysym : Blob
 ) : void {
@@ -122,8 +122,8 @@ pub(crate) fn handleButton(
     event : ptr,
     press : bool,
     stamp : i64,
-    queue : EventQueue,
-    mouse : MouseState
+    mut queue : EventQueue,
+    mut mouse : MouseState
 ) : void {
     unsafe {
         let btn : ptr<XButtonEvent> = event as ptr<XButtonEvent>;
@@ -173,8 +173,8 @@ pub(crate) fn handleButton(
 pub(crate) fn handleMotion(
     event : ptr,
     stamp : i64,
-    queue : EventQueue,
-    mouse : MouseState
+    mut queue : EventQueue,
+    mut mouse : MouseState
 ) : void {
     unsafe {
         let motion : ptr<XMotionEvent> = event as ptr<XMotionEvent>;
@@ -208,8 +208,8 @@ pub(crate) fn handleCrossing(
     event : ptr,
     entered : bool,
     stamp : i64,
-    queue : EventQueue,
-    mouse : MouseState
+    mut queue : EventQueue,
+    mut mouse : MouseState
 ) : void {
     unsafe {
         let at : ptr<XMotionEvent> = event as ptr<XMotionEvent>;

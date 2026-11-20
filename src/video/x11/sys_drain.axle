@@ -108,11 +108,11 @@ class SysDrain {
      */
     pub(crate) static fn drain(
         scratch : Blob,
-        win : SysWindow,
+        mut win : SysWindow,
         stamp : i64,
-        queue : EventQueue,
-        keys : KeyboardState,
-        mouse : MouseState
+        mut queue : EventQueue,
+        mut keys : KeyboardState,
+        mut mouse : MouseState
     ) : void {
         let text = new Blob(X_TEXT_BYTES);
         defer text.close();
