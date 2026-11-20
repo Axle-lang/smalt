@@ -185,9 +185,9 @@ fn run() : i32 ! PlatformError {
  * frames are drawn and the teardown checked (`END_QUIT` or `END_FAILED`).
  */
 fn session(
-    win : Window,
-    clock : Clock,
-    events : Events,
+    mut win : Window,
+    mut clock : Clock,
+    mut events : Events,
     backend : Backend,
     smoke : bool
 ) : i32 ! PlatformError {
@@ -396,7 +396,7 @@ fn paneModel() : Mat4 {
 }
 
 /** Move the camera from the held keys, framerate-independently. */
-fn walk(camera : Camera, events : Events, dt : f64) : void {
+fn walk(mut camera : Camera, events : Events, dt : f64) : void {
     let step = WALK_SPEED * dt;
     let forward = camera.forward();
     let right = camera.right();

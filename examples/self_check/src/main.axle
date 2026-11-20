@@ -515,7 +515,7 @@ fn checkFmt() : i32 {
 }
 
 /** Fill `sc` with case `n` and compare it against `want`. */
-fn expectFmt(sc : Scratch, want : string, n : i32) : i32 {
+fn expectFmt(mut sc : Scratch, want : string, n : i32) : i32 {
     sc.reset();
     match n {
         1 => {

@@ -41,7 +41,7 @@ fn shade(lum : f64) : i32 {
  * is `0.0` — the far plane. That is why the test in `renderTorus` reads `>`
  * where a linear depth buffer would read `<`.
  */
-fn clearFrame(px : i32[], zb : f64[], w : i32, h : i32) : void {
+fn clearFrame(mut px : i32[], mut zb : f64[], w : i32, h : i32) : void {
     let bg : i32 = Color::packBytes(8, 12, 28);
     let n : i32 = w * h;
     let mut i : i32 = 0;
@@ -56,7 +56,7 @@ fn clearFrame(px : i32[], zb : f64[], w : i32, h : i32) : void {
  * Rasterise the torus rotated by `a` (about X) and `b` (about Z), depth
  * tested against `zb`.
  */
-fn renderTorus(px : i32[], zb : f64[], w : i32, h : i32, a : f64, b : f64) : void {
+fn renderTorus(mut px : i32[], mut zb : f64[], w : i32, h : i32, a : f64, b : f64) : void {
     let sA : f64 = a.sin();
     let cA : f64 = a.cos();
     let sB : f64 = b.sin();

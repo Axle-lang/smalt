@@ -84,7 +84,7 @@ fn run() : i32 ! PlatformError {
 }
 
 /** A drifting gradient, so a stalled frame loop is visible at a glance. */
-fn paint(device : SoftDevice, t : f64) : void {
+fn paint(mut device : SoftDevice, t : f64) : void {
     let w = device.width();
     let h = device.height();
     let wave = 0.5 + 0.5 * t.sin();

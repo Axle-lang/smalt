@@ -139,7 +139,7 @@ fn cubeModel(spin : f64) : Mat4 {
 }
 
 /** Move the camera from the held keys, framerate-independently. */
-fn walk(camera : Camera, events : Events, dt : f64) : void {
+fn walk(mut camera : Camera, events : Events, dt : f64) : void {
     let step = WALK_SPEED * dt;
     let forward = camera.forward();
     let right = camera.right();

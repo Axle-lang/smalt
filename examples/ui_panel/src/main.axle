@@ -177,10 +177,10 @@ fn paint(
     f : Frame,
     ui : BitmapFont,
     big : BitmapFont,
-    scratch : Scratch,
+    mut scratch : Scratch,
     clicks : i64,
     hovering : bool,
-    clock : Clock
+    mut clock : Clock
 ) : void {
     f.fill(C_BG);
 

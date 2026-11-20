@@ -19,7 +19,7 @@ use smalt::Color;
 
 /** Fill an axis-aligned rectangle (screen pixels), clipped to the view. */
 fn fillRect(
-    px : i32[],
+    mut px : i32[],
     w : i32,
     h : i32,
     x : i32,
@@ -69,7 +69,7 @@ fn grassColor(grassy : bool) : i32 {
 }
 
 /** Render `world` to the framebuffer. */
-fn render(world : World, px : i32[], w : i32, h : i32) : void {
+fn render(world : World, mut px : i32[], w : i32, h : i32) : void {
     fillRect(px, w, h, 0, 0, w, h, Color::packBytes(112, 168, 240));
     let t : i32 = tile;
     let camI : i32 = world.camX.floorToInt() as i32;
@@ -165,7 +165,7 @@ fn render(world : World, px : i32[], w : i32, h : i32) : void {
 }
 
 /** A small Mario sprite: red cap, skin face, red shirt, blue overalls. */
-fn drawPlayer(world : World, px : i32[], w : i32, h : i32, camI : i32) : void {
+fn drawPlayer(world : World, mut px : i32[], w : i32, h : i32, camI : i32) : void {
     let pw : i32 = playerW.floorToInt() as i32;
     let ph : i32 = playerH.floorToInt() as i32;
     let x : i32 = world.player.x.floorToInt() as i32 - camI;
@@ -181,7 +181,7 @@ fn drawPlayer(world : World, px : i32[], w : i32, h : i32, camI : i32) : void {
 }
 
 /** Draw the coin/life counters and the win/lose banner. */
-fn drawHud(world : World, px : i32[], w : i32, h : i32) : void {
+fn drawHud(world : World, mut px : i32[], w : i32, h : i32) : void {
     let gold : i32 = Color::packBytes(248, 216, 72);
     let mut i : i32 = 0;
     while (i < world.coinCount) {
