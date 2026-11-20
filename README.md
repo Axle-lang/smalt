@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://axle-lang.dev"><img alt="Powered by Axle" src="https://img.shields.io/badge/powered%20by-Axle-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
-  <a href="https://axle-lang.dev"><img alt="Axle 0.20.0+" src="https://img.shields.io/badge/axle-0.20.0%2B-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
+  <a href="https://axle-lang.dev"><img alt="Axle 0.22.0+" src="https://img.shields.io/badge/axle-0.22.0%2B-5B4BE1?style=for-the-badge&labelColor=1b1b2b"></a>
 </p>
 <p align="center">
   <img alt="Rendering: CPU or Vulkan" src="https://img.shields.io/badge/rendering-CPU%20%C2%B7%20Vulkan-FF7A45?style=flat-square&labelColor=1b1b2b">
@@ -179,13 +179,13 @@ That is the whole setup. No DLL beside the binary, no `[link]` section — `gdi3
 
 ### Prerequisite
 
-Only the Axle compiler, **v0.20.0 or newer**:
+Only the Axle compiler, **v0.22.0 or newer**:
 
 ```bash
-axle --version      # must print 0.20.0 or higher
+axle --version      # must print 0.22.0 or higher
 ```
 
-0.20 is a floor, not a preference. It spells annotations as values —
+0.22 is a floor, not a preference. The spellings came in 0.20: annotations are values —
 `@layout(packed)`, `@link(symbol = "…")` — and an array is made with
 `new T[n]` (there is no `malloc<T>`); a shared object is `share new X(…)`;
 memory released by hand is the statement `drop value;` (`free` is gone, and
@@ -195,17 +195,19 @@ memory released by hand is the statement `drop value;` (`free` is gone, and
 method or to pass a struct to a `mut` parameter. An older compiler does not
 know these spellings, so there is no version that builds both.
 
-0.21 builds every example too, with one rule more: a parameter handed on to
-a `mut` parameter must be `mut` itself (E0283), since a read-only parameter
-is a copy its own caller never sees. smalt is written to it; a `mut`
-parameter is a 0.20 spelling as well, so the floor stays 0.20.
+0.22 adds the rule that raises the floor: a parameter written through must
+be `mut`, whatever its type (E0283) — a class whose field is written or whose
+`mut self` method is called, an array whose element is written, a
+`Shared<T>`, and one handed on to a `mut` parameter. smalt is written to it.
+0.21 refuses the other way round: a `mut` on a class parameter it does not see
+written is E0281, so no compiler before 0.22 builds this tree.
 
 <details>
 <summary><b>Missing or older? Install / upgrade Axle →</b></summary>
 
 <br>
 
-- **Windows** — install the x64 `.msi` from the `v0.20.0` (or newer) release; it puts `axle.exe` in `C:\Program Files (x86)\Axle\` and on your `PATH`.
+- **Windows** — install the x64 `.msi` from the `v0.22.0` (or newer) release; it puts `axle.exe` in `C:\Program Files (x86)\Axle\` and on your `PATH`.
 - **Other platforms** — see [axle-lang.dev](https://axle-lang.dev).
 
 On Linux, the X11 port needs `libx11-dev` and `libasound2-dev`; the
@@ -304,7 +306,7 @@ A program that already has a renderer should not have to adopt one to get a wind
 
 | | Windows (Win32) | Linux (X11) | Linux (Wayland) |
 |---|---|---|---|
-| Builds | ✅ every example (Axle 0.20, 0.21) | ✅ every example (Axle 0.20) | ❌ the port does not compile with the current compiler yet |
+| Builds | ✅ every example (Axle 0.22) | ✅ every example passes `axle check --deep --target x86_64-unknown-linux-gnu` (Axle 0.22, from Windows) | ✅ `tools/wayland_check` passes `axle check --deep` (Axle 0.22, from Windows); not yet linked or run on Linux |
 | Headless checks (`self_check`, `gpu_check`) | ✅ | ✅ | — |
 | A window opens and draws | ✅ | ✅ `ui_panel --snap` drew a frame and `spinning_cube` ran, both under Xvfb | — |
 | Vulkan GPU path | ✅ one discrete GPU | not run | not run |

@@ -31,7 +31,7 @@ concurrency:
 env:
   # The compiler these sources need. The installers serve whatever is current, so the jobs check instead of
   # assuming: an older `axle` fails with one clear line rather than a hundred confusing ones.
-  AXLE_MIN: '0.18.0'
+  AXLE_MIN: '0.22.0'
 
 jobs:
   seam:
@@ -196,10 +196,11 @@ jobs:
           axle ports | tee ports.txt
           grep -q 'wayland.*active' ports.txt
 
-      # The probe proves the selection. The port itself does not compile with
-      # 0.18.1 yet — ownership and `unsafe` errors under src/sys/wayland — so
-      # this step reports without failing the run until it is green; that is
-      # the day to flip `continue-on-error` to false.
+      # The probe proves the selection. With 0.22.0 the port passes
+      # `axle check --deep` (checked from Windows), but it has never been
+      # linked against libwayland, so this step reports without failing the
+      # run until it is green; that is the day to flip `continue-on-error` to
+      # false.
       - name: Build the probe
         id: build
         continue-on-error: true
