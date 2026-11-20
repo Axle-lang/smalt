@@ -123,7 +123,7 @@ pub(crate) class VkMeshes {
      */
     pub(file) static fn fill(
         ctx : VkContext,
-        heap : GpuHeap,
+        mut heap : GpuHeap,
         mesh : MeshBuilder
     ) : (vertex: GpuBuffer, index: GpuBuffer) {
         let vb : GpuBuffer = VkMem::makeBuffer(
@@ -182,7 +182,7 @@ pub(crate) class VkMeshes {
     }
 
     /** Upload `mesh`; the slot, or -1 when it is empty, the table is full, or memory is out. */
-    pub(crate) fn create(mut self, ctx : VkContext, heap : GpuHeap, mesh : MeshBuilder) : i32 {
+    pub(crate) fn create(mut self, ctx : VkContext, mut heap : GpuHeap, mesh : MeshBuilder) : i32 {
         if (mesh.isEmpty()) {
             return -1;
         }
@@ -199,7 +199,7 @@ pub(crate) class VkMeshes {
     }
 
     /** Bury the buffer pair of `slot`. The caller has checked the graveyard has room for two. */
-    pub(file) fn buryPair(self, grave : VkGraveyard, slot : i32, frame : i64) : void {
+    pub(file) fn buryPair(self, mut grave : VkGraveyard, slot : i32, frame : i64) : void {
         grave.buryBuffer(self.vbufs[slot as i64], frame);
         grave.buryBuffer(self.ibufs[slot as i64], frame);
     }
@@ -214,8 +214,8 @@ pub(crate) class VkMeshes {
     pub(crate) fn update(
         mut self,
         ctx : VkContext,
-        heap : GpuHeap,
-        grave : VkGraveyard,
+        mut heap : GpuHeap,
+        mut grave : VkGraveyard,
         slot : i32,
         mesh : MeshBuilder,
         frame : i64
@@ -236,7 +236,7 @@ pub(crate) class VkMeshes {
     }
 
     /** Release mesh `slot` once no frame in flight can be drawing it; false when the graveyard is full. */
-    pub(crate) fn destroy(mut self, grave : VkGraveyard, slot : i32, frame : i64) : bool {
+    pub(crate) fn destroy(mut self, mut grave : VkGraveyard, slot : i32, frame : i64) : bool {
         if (slot < 0 || slot >= self.cap || self.live[slot as i64] == 0) {
             return true;
         }
@@ -249,7 +249,7 @@ pub(crate) class VkMeshes {
     }
 
     /** Destroy every live mesh at once. Only after the device has gone idle. */
-    pub(crate) fn destroyAll(mut self, ctx : VkContext, heap : GpuHeap) : void {
+    pub(crate) fn destroyAll(mut self, ctx : VkContext, mut heap : GpuHeap) : void {
         for (i of 0..self.cap) {
             let s : i64 = i as i64;
             if (self.live[s] != 0) {

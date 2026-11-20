@@ -124,7 +124,7 @@ pub(crate) class VkOverlay {
     pub(crate) fn stage(
         mut self,
         ctx : VkContext,
-        heap : GpuHeap,
+        mut heap : GpuHeap,
         f : i32,
         ov : OverlayView
     ) : bool {
@@ -170,7 +170,7 @@ pub(crate) class VkOverlay {
     pub(crate) fn recordUpload(
         mut self,
         ctx : VkContext,
-        cmd : VkCmd,
+        mut cmd : VkCmd,
         textures : VkTextures,
         cb : i64,
         f : i32
@@ -283,7 +283,7 @@ pub(crate) class VkOverlay {
     }
 
     /** Destroy the staging buffers. The texture is the texture table's to destroy. */
-    pub(crate) fn release(mut self, ctx : VkContext, heap : GpuHeap) : void {
+    pub(crate) fn release(mut self, ctx : VkContext, mut heap : GpuHeap) : void {
         for (i of 0..FRAMES_IN_FLIGHT) {
             let k : i64 = i as i64;
             if (!self.staging[k].isNone()) {
