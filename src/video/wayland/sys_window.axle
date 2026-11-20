@@ -83,7 +83,7 @@ pub(crate) class SysWindow : Closeable {
 
             let a : ptr<WlApp> = app as ptr<WlApp>;
             let core : ptr<WlCore> = (*a).core as ptr<WlCore>;
-            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             (*st).display = (*a).display;
             (*st).wmBase = (*a).wmBase;
             (*st).w = w;
@@ -93,7 +93,7 @@ pub(crate) class SysWindow : Closeable {
 
             createWindow(st, a, self.args, title, w, h, resizable);
 
-            let target : ptr<WlDrawable> = self.token.at() as ptr<WlDrawable>;
+            let mut target : ptr<WlDrawable> = self.token.at() as ptr<WlDrawable>;
             (*target).display = (*a).display;
             (*target).surface = (*st).surface;
             (*target).shm = (*a).shm;
@@ -138,7 +138,7 @@ pub(crate) class SysWindow : Closeable {
     /** Client-area height, in pixels. */
     pub(crate) fn height(self) : i32 {
         unsafe {
-            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             return (*st).h;
         }
     }
@@ -153,7 +153,7 @@ pub(crate) class SysWindow : Closeable {
      */
     pub(crate) fn alive(self) : bool {
         unsafe {
-            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             return (*st).destroyed == 0;
         }
     }
@@ -185,7 +185,7 @@ pub(crate) class SysWindow : Closeable {
     /** Replace the title bar text. */
     pub(crate) fn setTitle(mut self, title : string) : void {
         unsafe {
-            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             self.args.set(0, cstr(title) as i64);
             self.args.send((*st).toplevel, XDG_TOPLEVEL_SET_TITLE, Raw::nil(), 0);
         }
@@ -194,7 +194,7 @@ pub(crate) class SysWindow : Closeable {
     /** Whether a close was requested, clearing the request. */
     pub(crate) fn takeClose(mut self) : bool {
         unsafe {
-            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             let pending = (*st).closePending != 0;
             (*st).closePending = 0;
             return pending;
@@ -210,7 +210,7 @@ pub(crate) class SysWindow : Closeable {
      */
     pub(crate) fn takeResize(mut self) : bool {
         unsafe {
-            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             if ((*st).sizePending == 0) {
                 return false;
             }
@@ -230,7 +230,7 @@ pub(crate) class SysWindow : Closeable {
     /** Whether a focus edge is waiting, clearing it. */
     pub(crate) fn takeFocusEdge(mut self) : bool {
         unsafe {
-            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             let pending = (*st).focusPending != 0;
             (*st).focusPending = 0;
             return pending;
@@ -240,7 +240,7 @@ pub(crate) class SysWindow : Closeable {
     /** Whether the window holds input focus. */
     pub(crate) fn focused(self) : bool {
         unsafe {
-            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             return (*st).focused != 0;
         }
     }
@@ -248,7 +248,7 @@ pub(crate) class SysWindow : Closeable {
     /** Whether a minimise / restore edge is waiting, clearing it. */
     pub(crate) fn takeMinimiseEdge(mut self) : bool {
         unsafe {
-            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             let pending = (*st).minimisePending != 0;
             (*st).minimisePending = 0;
             return pending;
@@ -297,7 +297,7 @@ pub(crate) class SysWindow : Closeable {
      */
     pub(crate) fn selfCheck(mut self, width : i32, height : i32) : i32 {
         unsafe {
-            let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
             let a : ptr<WlApp> = self.app as ptr<WlApp>;
             let core : ptr<WlCore> = (*a).core as ptr<WlCore>;
 
@@ -317,7 +317,12 @@ pub(crate) class SysWindow : Closeable {
         }
     }
 
-    /** Destroy the buffers, then the objects, then the blocks. */
+    /**
+     * Destroy the buffers, then the objects, then the blocks.
+     *
+     * `close` is `Closeable`'s and reads `self` only, so the destroy requests
+     * are spelled in a scratch block of their own rather than in `self.args`.
+     */
     pub(crate) fn close(self) : void {
         unsafe {
             let st : ptr<WlWinState> = self.mem.at() as ptr<WlWinState>;
@@ -325,9 +330,11 @@ pub(crate) class SysWindow : Closeable {
                 return;
             }
             let target : ptr<WlDrawable> = self.token.at() as ptr<WlDrawable>;
-            releaseBuffers(target, self.args);
+            let mut scratch = new WlArgs();
+            releaseBuffers(target, scratch);
             dropDrawable(target);
-            destroyWindow(st, self.args);
+            destroyWindow(st, scratch);
+            scratch.close();
             self.args.close();
             self.token.close();
             self.mem.close();

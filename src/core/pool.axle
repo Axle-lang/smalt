@@ -136,7 +136,7 @@ class PoolCore {
  */
 pub class WorkerPool : Closeable {
     /** What the crew reads; the handles to the crew are kept apart from it. */
-    pub(file) core : PoolCore;
+    pub(file) core : Shared<PoolCore>;
 
     pub(file) crew : Future<i32>[31];
     pub(file) n    : i32;
@@ -158,7 +158,7 @@ pub class WorkerPool : Closeable {
             want = POOL_MAX;
         }
         self.n = want;
-        self.core = new PoolCore();
+        self.core = share new PoolCore();
         for (i of 0..want) {
             self.crew[i] = spawn poolLoop(self.core);
         }
@@ -275,7 +275,7 @@ pub class WorkerPool : Closeable {
  * @param p  the state of the pool this worker belongs to
  * @return 0, unused
  */
-fn poolLoop(p : PoolCore) : i32 {
+fn poolLoop(mut p : Shared<PoolCore>) : i32 {
     while (true) {
         let mut woken : bool = false;
         while (!woken) {

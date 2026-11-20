@@ -200,7 +200,7 @@ pub class GpuCheck {
     }
 
     /** Fix `scene`'s draw order, as `Renderer::render` does before drawing. */
-    pub static fn prepare(scene : Scene) : void {
+    pub static fn prepare(mut scene : Scene) : void {
         scene.prepare();
     }
 

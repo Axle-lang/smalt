@@ -201,7 +201,7 @@ pub(crate) class VkTargets {
     pub(crate) fn build(
         mut self,
         ctx : VkContext,
-        heap : GpuHeap,
+        mut heap : GpuHeap,
         pipes : VkPipelines,
         w : i32,
         h : i32
@@ -314,7 +314,7 @@ pub(crate) class VkTargets {
      * Destroy what is built, keeping the two samplers. Only once the device is idle:
      * the frames in flight draw into these and read them.
      */
-    pub(crate) fn destroy(mut self, ctx : VkContext, heap : GpuHeap, pipes : VkPipelines) : void {
+    pub(crate) fn destroy(mut self, ctx : VkContext, mut heap : GpuHeap, pipes : VkPipelines) : void {
         let n : i32 = TARGET_COUNT * TARGET_COUNT;
         for (i of 0..n) {
             let k : i64 = i as i64;
@@ -354,7 +354,7 @@ pub(crate) class VkTargets {
     }
 
     /** Destroy everything, the samplers too — teardown, after the device is idle. */
-    pub(crate) fn release(mut self, ctx : VkContext, heap : GpuHeap, pipes : VkPipelines) : void {
+    pub(crate) fn release(mut self, ctx : VkContext, mut heap : GpuHeap, pipes : VkPipelines) : void {
         self.destroy(ctx, heap, pipes);
         if (self.linear != 0) {
             ctx.table.destroySampler(ctx.device, self.linear);

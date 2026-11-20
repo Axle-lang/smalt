@@ -504,7 +504,7 @@ pub(crate) class VkSwapchain {
         mut self,
         ctx : VkContext,
         pipes : VkPipelines,
-        grave : VkGraveyard,
+        mut grave : VkGraveyard,
         frame : i64,
         winW : i32,
         winH : i32,
@@ -532,7 +532,7 @@ pub(crate) class VkSwapchain {
      * room for is left to `destroyViews` — the device is idle, which is all Vulkan 1.0
      * can promise.
      */
-    pub(file) fn buryPresentWaits(mut self, grave : VkGraveyard, frame : i64) : void {
+    pub(file) fn buryPresentWaits(mut self, mut grave : VkGraveyard, frame : i64) : void {
         let at : i64 = frame + (FRAMES_IN_FLIGHT as i64);
         for (i of 0..self.count) {
             let k : i64 = i as i64;

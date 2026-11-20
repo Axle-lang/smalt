@@ -28,7 +28,7 @@ already in the source; follow the reference and you will find it.
 There is one, and it is Vulkan 1.0. [`doc/GPU.md`](doc/GPU.md) is the design; this is the
 account of what it does not do.
 
-**It builds and runs on Windows.** With axle 0.20.0 every example builds, `examples/gpu_check`
+**It builds and runs on Windows.** With axle 0.22.0 every example builds, `examples/gpu_check`
 passes, and `gpu_cube --gpu --smoke` (and `--software --smoke`) draws, releases and re-uploads
 while frames are in flight, reads a frame back, and tears down — on a discrete GPU. The built-in
 path ran once under the Khronos validation layer with synchronization checks without one
@@ -90,7 +90,7 @@ the rest would need).
 
 ### 1.4 Wayland, specifically
 
-**Status: it does not compile with Axle 0.20.0.** `axle build` on `tools/wayland_check` reports close to two hundred E0004 (bindings assigned through without `let mut`), two E0707 (a `ptr` cast outside an `unsafe` block) and one E0003 (`MANAGER_REQUESTS` declared twice). CI reports the Wayland build without failing the run until it is green. The X11 port is the one to use.
+**Status: it compiles with Axle 0.22.0 and has not been run.** `axle check --deep --target x86_64-unknown-linux-gnu` on `tools/wayland_check` passes (sema, then LLVM IR lowered and verified), checked from Windows: nothing has been linked against `libwayland` or opened on a compositor yet. CI reports the Wayland build without failing the run until it is green. Until it is, the X11 port is the one to use.
 
 The Wayland port is thinner than the X11 one, and each gap is an
 extension rather than a bug:

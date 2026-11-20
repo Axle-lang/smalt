@@ -43,7 +43,7 @@ class SysClipboard {
     }
 
     /** Take the clipboard and offer `text` on it. */
-    pub(crate) static fn setText(win : SysWindow, text : string) : bool {
+    pub(crate) static fn setText(mut win : SysWindow, text : string) : bool {
         return claimClipboard(win, text);
     }
 }

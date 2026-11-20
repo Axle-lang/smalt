@@ -129,7 +129,7 @@ pub extern "C" struct WlDrawable {
  */
 pub(crate) fn onBufferRelease(data : ptr, buffer : ptr) : void {
     unsafe {
-        let slot : ptr<WlSlot> = data as ptr<WlSlot>;
+        let mut slot : ptr<WlSlot> = data as ptr<WlSlot>;
         (*slot).busy = 0;
     }
 }
@@ -147,7 +147,7 @@ pub(crate) fn initDrawable(target : ptr<WlDrawable>) : void {
         (*target).slots = Raw::take(WL_BUFFER_COUNT * sizeof<WlSlot>());
         Raw::clear((*target).slots, WL_BUFFER_COUNT * sizeof<WlSlot>());
         (*target).listener = Raw::take(sizeof<BufferListener>());
-        let listener : ptr<BufferListener> = (*target).listener as ptr<BufferListener>;
+        let mut listener : ptr<BufferListener> = (*target).listener as ptr<BufferListener>;
         (*listener).release = onBufferRelease;
         (*target).fd = -1;
     }
@@ -177,7 +177,7 @@ pub(crate) fn slotAt(target : ptr<WlDrawable>, index : i64) : ptr<WlSlot> {
  * caller reports as a window that could not be created — or, on a
  * resize, as a frame that is not drawn.
  */
-pub(crate) fn ensureBuffers(target : ptr<WlDrawable>, args : WlArgs, w : i32, h : i32) : bool {
+pub(crate) fn ensureBuffers(target : ptr<WlDrawable>, mut args : WlArgs, w : i32, h : i32) : bool {
     unsafe {
         if (w <= 0 || h <= 0) {
             return false;
@@ -201,7 +201,7 @@ pub(crate) fn ensureBuffers(target : ptr<WlDrawable>, args : WlArgs, w : i32, h 
                 releaseBuffers(target, args);
                 return false;
             }
-            let slot : ptr<WlSlot> = slotAt(target, i);
+            let mut slot : ptr<WlSlot> = slotAt(target, i);
             (*slot).dirtyX = 0;
             (*slot).dirtyY = 0;
             (*slot).dirtyW = w;
@@ -250,7 +250,7 @@ pub(crate) fn staleAdd(
         if (w <= 0 || h <= 0) {
             return;
         }
-        let slot : ptr<WlSlot> = slotAt(target, index);
+        let mut slot : ptr<WlSlot> = slotAt(target, index);
         if ((*slot).dirtyW <= 0 || (*slot).dirtyH <= 0) {
             (*slot).dirtyX = x;
             (*slot).dirtyY = y;
@@ -304,7 +304,7 @@ pub(crate) fn dropFrame(target : ptr<WlDrawable>, x : i32, y : i32, w : i32, h :
 /** Slot `index` matches the frame just written into it: nothing is stale. */
 pub(crate) fn staleClear(target : ptr<WlDrawable>, index : i64) : void {
     unsafe {
-        let slot : ptr<WlSlot> = slotAt(target, index);
+        let mut slot : ptr<WlSlot> = slotAt(target, index);
         (*slot).dirtyX = 0;
         (*slot).dirtyY = 0;
         (*slot).dirtyW = 0;
@@ -319,7 +319,7 @@ pub(crate) fn staleClear(target : ptr<WlDrawable>, index : i64) : void {
  * The buffer is the compositor's from here until its `release`, which is
  * what [`WlSlot::busy`] records.
  */
-pub(crate) fn commitFrame(target : ptr<WlDrawable>, args : WlArgs, index : i64) : void {
+pub(crate) fn commitFrame(target : ptr<WlDrawable>, mut args : WlArgs, index : i64) : void {
     unsafe {
         commitRegion(target, args, index, 0, 0, (*target).width, (*target).height);
     }
@@ -335,7 +335,7 @@ pub(crate) fn commitFrame(target : ptr<WlDrawable>, args : WlArgs, index : i64) 
  */
 pub(crate) fn commitRegion(
     target : ptr<WlDrawable>,
-    args : WlArgs,
+    mut args : WlArgs,
     index : i64,
     x : i32,
     y : i32,
@@ -372,7 +372,7 @@ pub(crate) fn commitRegion(
             dh = (*target).height;
             (*target).fresh = 0;
         }
-        let slot : ptr<WlSlot> = slotAt(target, index);
+        let mut slot : ptr<WlSlot> = slotAt(target, index);
         if (Raw::isNil((*slot).proxy)) {
             return;
         }
@@ -396,7 +396,7 @@ pub(crate) fn commitRegion(
 }
 
 /** Take the buffer off the surface: a surface with none shows nothing. */
-pub(crate) fn detachFrame(target : ptr<WlDrawable>, args : WlArgs) : void {
+pub(crate) fn detachFrame(target : ptr<WlDrawable>, mut args : WlArgs) : void {
     unsafe {
         args.setObject(0, Raw::nil());
         args.set(1, 0);
@@ -407,10 +407,10 @@ pub(crate) fn detachFrame(target : ptr<WlDrawable>, args : WlArgs) : void {
 }
 
 /** Give the buffers, the pool, the mapping and the descriptor back. */
-pub(crate) fn releaseBuffers(target : ptr<WlDrawable>, args : WlArgs) : void {
+pub(crate) fn releaseBuffers(target : ptr<WlDrawable>, mut args : WlArgs) : void {
     unsafe {
         for (i of 0..WL_BUFFER_COUNT) {
-            let slot : ptr<WlSlot> = slotAt(target, i);
+            let mut slot : ptr<WlSlot> = slotAt(target, i);
             args.sendDestroy((*slot).proxy, WL_BUFFER_DESTROY);
             (*slot).proxy = Raw::nil();
             (*slot).pixels = Raw::nil();
@@ -437,7 +437,7 @@ pub(crate) fn releaseBuffers(target : ptr<WlDrawable>, args : WlArgs) : void {
 }
 
 /** An anonymous file of `bytes`, mapped here and handed to the compositor. */
-fn mapPool(target : ptr<WlDrawable>, args : WlArgs, bytes : i64) : bool {
+fn mapPool(target : ptr<WlDrawable>, mut args : WlArgs, bytes : i64) : bool {
     unsafe {
         let fd = memfdCreate("smalt-wl", MFD_CLOEXEC);
         if (fd < 0) {
@@ -478,7 +478,7 @@ fn mapPool(target : ptr<WlDrawable>, args : WlArgs, bytes : i64) : bool {
 /** One buffer of the pair, at `offset` into the pool. */
 fn makeBuffer(
     target : ptr<WlDrawable>,
-    args : WlArgs,
+    mut args : WlArgs,
     index : i64,
     offset : i64,
     stride : i64
@@ -496,7 +496,7 @@ fn makeBuffer(
         if (Raw::isNil(proxy)) {
             return false;
         }
-        let slot : ptr<WlSlot> = slotAt(target, index);
+        let mut slot : ptr<WlSlot> = slotAt(target, index);
         (*slot).proxy = proxy;
         (*slot).pixels = Raw::at(Raw::addr((*target).mapping) + offset);
         (*slot).busy = 0;

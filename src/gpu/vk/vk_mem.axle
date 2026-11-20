@@ -114,7 +114,7 @@ pub(crate) class VkMem {
      */
     pub(crate) static fn makeBuffer(
         ctx : VkContext,
-        heap : GpuHeap,
+        mut heap : GpuHeap,
         size : i64,
         usage : i32,
         kind : MemUse
@@ -189,7 +189,7 @@ pub(crate) class VkMem {
     }
 
     /** Destroy a buffer and give its memory back. Only when no submitted work can still read it. */
-    pub(crate) static fn destroyBuffer(ctx : VkContext, heap : GpuHeap, b : GpuBuffer) : void {
+    pub(crate) static fn destroyBuffer(ctx : VkContext, mut heap : GpuHeap, b : GpuBuffer) : void {
         if (b.buffer != 0) {
             ctx.table.destroyBuffer(ctx.device, b.buffer);
             heap.release(ctx, b.alloc);
@@ -202,7 +202,7 @@ pub(crate) class VkMem {
      */
     pub(crate) static fn makeImage(
         ctx : VkContext,
-        heap : GpuHeap,
+        mut heap : GpuHeap,
         format : i32,
         w : i32,
         h : i32,
@@ -259,7 +259,7 @@ pub(crate) class VkMem {
     }
 
     /** Destroy an image and give its memory back. Only when no submitted work can still read it. */
-    pub(crate) static fn destroyImage(ctx : VkContext, heap : GpuHeap, i : GpuImage) : void {
+    pub(crate) static fn destroyImage(ctx : VkContext, mut heap : GpuHeap, i : GpuImage) : void {
         if (i.image != 0) {
             ctx.table.destroyImage(ctx.device, i.image);
             heap.release(ctx, i.alloc);

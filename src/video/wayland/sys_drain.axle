@@ -71,9 +71,9 @@ class SysDrain {
         scratch : Blob,
         win : SysWindow,
         stamp : i64,
-        queue : EventQueue,
-        keys : KeyboardState,
-        mouse : MouseState
+        mut queue : EventQueue,
+        mut keys : KeyboardState,
+        mut mouse : MouseState
     ) : void {
         unsafe {
             let st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;

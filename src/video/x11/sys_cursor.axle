@@ -55,7 +55,7 @@ class SysCursor {
      * for, which is the arrow the desktop chose until a program says
      * otherwise.
      */
-    pub(crate) static fn showCursor(win : SysWindow, visible : bool) : void {
+    pub(crate) static fn showCursor(mut win : SysWindow, visible : bool) : void {
         win.pointerHidden = !visible;
         applyCursor(win);
     }
@@ -66,7 +66,7 @@ class SysCursor {
      * Remembered even while relative mode hides the pointer, so the shape
      * is there when the mode ends.
      */
-    pub(crate) static fn setShape(win : SysWindow, shape : i32) : void {
+    pub(crate) static fn setShape(mut win : SysWindow, shape : i32) : void {
         win.shape = shape;
         applyCursor(win);
     }

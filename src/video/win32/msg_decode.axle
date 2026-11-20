@@ -116,9 +116,9 @@ pub(crate) fn handle(
     wp : i64,
     lp : i64,
     stamp : i64,
-    queue : EventQueue,
-    keys : KeyboardState,
-    mouse : MouseState
+    mut queue : EventQueue,
+    mut keys : KeyboardState,
+    mut mouse : MouseState
 ) : void {
     match message {
         WM_KEYDOWN | WM_SYSKEYDOWN => {

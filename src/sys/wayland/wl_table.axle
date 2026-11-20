@@ -40,7 +40,7 @@ pub(crate) fn putMessage(
     types : ptr
 ) : void {
     unsafe {
-        let m : ptr<WlMessage> = recordAt(base, i, sizeof<WlMessage>()) as ptr<WlMessage>;
+        let mut m : ptr<WlMessage> = recordAt(base, i, sizeof<WlMessage>()) as ptr<WlMessage>;
         (*m).name = cstr(name);
         (*m).signature = cstr(signature);
         (*m).types = types;
@@ -50,7 +50,7 @@ pub(crate) fn putMessage(
 /** Write one interface pointer into slot `i` of a `types` array. */
 pub(crate) fn putType(base : ptr, i : i64, iface : ptr) : void {
     unsafe {
-        let slot : ptr<i64> = recordAt(base, i, WL_WORD_BYTES) as ptr<i64>;
+        let mut slot : ptr<i64> = recordAt(base, i, WL_WORD_BYTES) as ptr<i64>;
         (*slot) = iface as i64;
     }
 }

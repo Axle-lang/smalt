@@ -130,7 +130,7 @@ pub(crate) class VkUploads {
      * Copy every waiting update into frame slot `f`'s staging buffer, growing it if it
      * is too small; whether they are all there. Slot `f`'s fence has been waited on.
      */
-    pub(crate) fn stage(mut self, ctx : VkContext, heap : GpuHeap, f : i32) : bool {
+    pub(crate) fn stage(mut self, ctx : VkContext, mut heap : GpuHeap, f : i32) : bool {
         self.staged = false;
         if (self.count == 0) {
             return false;
@@ -169,7 +169,7 @@ pub(crate) class VkUploads {
     pub(crate) fn record(
         mut self,
         ctx : VkContext,
-        cmd : VkCmd,
+        mut cmd : VkCmd,
         textures : VkTextures,
         cb : i64,
         f : i32
@@ -263,7 +263,7 @@ pub(crate) class VkUploads {
     }
 
     /** Destroy the staging buffers and the CPU block — teardown, after the device is idle. */
-    pub(crate) fn release(mut self, ctx : VkContext, heap : GpuHeap) : void {
+    pub(crate) fn release(mut self, ctx : VkContext, mut heap : GpuHeap) : void {
         for (i of 0..FRAMES_IN_FLIGHT) {
             let k : i64 = i as i64;
             if (!self.staging[k].isNone()) {

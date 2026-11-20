@@ -84,8 +84,8 @@ pub(crate) class VkReadback {
     pub(crate) fn record(
         mut self,
         ctx : VkContext,
-        heap : GpuHeap,
-        cmd : VkCmd,
+        mut heap : GpuHeap,
+        mut cmd : VkCmd,
         cb : i64,
         src : ReadSource
     ) : void {
@@ -243,7 +243,7 @@ pub(crate) class VkReadback {
     }
 
     /** Destroy the buffer and the pixels — teardown, after the device is idle. */
-    pub(crate) fn release(mut self, ctx : VkContext, heap : GpuHeap) : void {
+    pub(crate) fn release(mut self, ctx : VkContext, mut heap : GpuHeap) : void {
         VkMem::destroyBuffer(ctx, heap, self.buffer);
         self.buffer = GpuBuffer::none();
         self.bufferBytes = 0;

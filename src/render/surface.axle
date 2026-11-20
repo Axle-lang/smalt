@@ -188,7 +188,7 @@ pub class Surface : Closeable {
      * Put what `damage` holds on `win`, then clear it — the end of a repaint
      * that recorded what it touched. An empty damage presents nothing.
      */
-    pub fn presentDamage(mut self, win : Window, damage : Damage) : void {
+    pub fn presentDamage(mut self, win : Window, mut damage : Damage) : void {
         damage.clipTo(self.w, self.h);
         if (damage.isEmpty()) {
             return;

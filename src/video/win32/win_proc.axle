@@ -328,7 +328,7 @@ pub(crate) class WinProcBlock : Closeable {
  * point of a latch — and a caller that then found the queue empty would
  * be watching this function's bookkeeping rather than the event path.
  */
-pub(crate) fn selfCheck(hwnd : ptr, block : WinProcBlock, width : i32, height : i32) : i32 {
+pub(crate) fn selfCheck(hwnd : ptr, mut block : WinProcBlock, width : i32, height : i32) : i32 {
     let packed : i64 = (width as i64) | ((height as i64) << 16);
     unsafe {
         SendMessageW(hwnd, WM_SIZE as u32, 0, packed);

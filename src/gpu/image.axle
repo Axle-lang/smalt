@@ -497,7 +497,7 @@ pub class Image {
      * per level. Colour is left as it is.
      */
     pub(file) static fn keepCoverage(
-        words : i32[],
+        mut words : i32[],
         start : i64,
         count : i64,
         cut : i32,

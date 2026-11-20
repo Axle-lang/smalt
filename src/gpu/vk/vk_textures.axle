@@ -239,7 +239,7 @@ pub(crate) class VkTextures {
     pub(file) fn recordUpload(
         self,
         ctx : VkContext,
-        cmd : VkCmd,
+        mut cmd : VkCmd,
         cb : i64,
         staging : GpuBuffer,
         image : i64,
@@ -323,10 +323,10 @@ pub(crate) class VkTextures {
     pub(crate) fn create(
         mut self,
         ctx : VkContext,
-        heap : GpuHeap,
-        cmd : VkCmd,
+        mut heap : GpuHeap,
+        mut cmd : VkCmd,
         pipes : VkPipelines,
-        grave : VkGraveyard,
+        mut grave : VkGraveyard,
         frame : i64,
         img : Image,
         desc : SamplerDesc
@@ -454,7 +454,7 @@ pub(crate) class VkTextures {
      * objects go to the graveyard, buried at `frame`. False if the graveyard is full —
      * the caller waits for the device to go idle, flushes it, and calls again.
      */
-    pub(crate) fn destroy(mut self, grave : VkGraveyard, slot : i32, frame : i64) : bool {
+    pub(crate) fn destroy(mut self, mut grave : VkGraveyard, slot : i32, frame : i64) : bool {
         if (slot < 0 || slot >= self.cap || self.live[slot as i64] == 0) {
             return true;
         }
@@ -475,7 +475,7 @@ pub(crate) class VkTextures {
     pub(crate) fn destroyAll(
         mut self,
         ctx : VkContext,
-        heap : GpuHeap,
+        mut heap : GpuHeap,
         pipes : VkPipelines
     ) : void {
         for (i of 0..self.cap) {

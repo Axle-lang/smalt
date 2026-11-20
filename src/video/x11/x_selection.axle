@@ -140,7 +140,7 @@ pub(crate) fn ownsClipboard(win : SysWindow) : bool {
 }
 
 /** Claim the clipboard for this window, offering `text`; answers whether the claim stood. */
-pub(crate) fn claimClipboard(win : SysWindow, text : string) : bool {
+pub(crate) fn claimClipboard(mut win : SysWindow, text : string) : bool {
     win.ownedText = text;
     XSetSelectionOwner(win.display, clipboardAtom(win), win.window, X_CURRENT_TIME);
     XFlush(win.display);

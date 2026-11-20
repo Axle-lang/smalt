@@ -27,12 +27,16 @@ use crate::video::wayland::wl_window_ops::{winApp, winState};
 class SysClipboard {
     /** Whether the clipboard holds text. */
     pub(crate) static fn hasText(win : SysWindow) : bool {
-        return hasClipboardText(winApp(win) as ptr<WlApp>);
+        unsafe {
+            return hasClipboardText(winApp(win) as ptr<WlApp>);
+        }
     }
 
     /** The clipboard's text as UTF-8, or the empty string. */
     pub(crate) static fn getText(win : SysWindow) : string {
-        return pasteText(winApp(win) as ptr<WlApp>);
+        unsafe {
+            return pasteText(winApp(win) as ptr<WlApp>);
+        }
     }
 
     /** Take the clipboard and offer `text` on it. */

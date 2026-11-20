@@ -53,12 +53,12 @@ pub extern "C" struct WlCursorKit {
 }
 
 /** Give the kit back — every proxy, the mapping, the descriptor, the blocks — and forget it. */
-pub(crate) fn releaseKit(st : ptr<WlWinState>, args : WlArgs) : void {
+pub(crate) fn releaseKit(st : ptr<WlWinState>, mut args : WlArgs) : void {
     unsafe {
         if (Raw::isNil((*st).cursorKit)) {
             return;
         }
-        let kit : ptr<WlCursorKit> = (*st).cursorKit as ptr<WlCursorKit>;
+        let mut kit : ptr<WlCursorKit> = (*st).cursorKit as ptr<WlCursorKit>;
         if (!Raw::isNil((*kit).buffers)) {
             for (i of 0..CURSOR_SHAPE_COUNT) {
                 let proxy : ptr = Raw::at(Raw::i64At((*kit).buffers, (i as i64) * KIT_SLOT_BYTES));
@@ -92,10 +92,10 @@ pub(crate) fn releaseKit(st : ptr<WlWinState>, args : WlArgs) : void {
  * Make the kit: the surface, the pool of shared memory, and a buffer drawn for each shape.
  * Answers it, or nil after giving back whatever it had made.
  */
-fn makeKit(app : ptr<WlApp>, st : ptr<WlWinState>, args : WlArgs) : ptr<WlCursorKit> {
+fn makeKit(app : ptr<WlApp>, st : ptr<WlWinState>, mut args : WlArgs) : ptr<WlCursorKit> {
     unsafe {
         let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
-        let kit : ptr<WlCursorKit> = Raw::take(sizeof<WlCursorKit>()) as ptr<WlCursorKit>;
+        let mut kit : ptr<WlCursorKit> = Raw::take(sizeof<WlCursorKit>()) as ptr<WlCursorKit>;
         Raw::clear(kit as ptr, sizeof<WlCursorKit>());
         (*kit).fd = -1;
         (*st).cursorKit = kit as ptr;
@@ -161,7 +161,7 @@ fn makeKit(app : ptr<WlApp>, st : ptr<WlWinState>, args : WlArgs) : ptr<WlCursor
 }
 
 /** Take back a half-made kit and answer nil. */
-fn refuse(st : ptr<WlWinState>, args : WlArgs) : ptr<WlCursorKit> {
+fn refuse(st : ptr<WlWinState>, mut args : WlArgs) : ptr<WlCursorKit> {
     releaseKit(st, args);
     unsafe {
         return Raw::nil() as ptr<WlCursorKit>;

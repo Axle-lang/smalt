@@ -46,7 +46,7 @@ pub(crate) const ZXDG_TOPLEVEL_DECORATION_SET_MODE : i32 = 1;
 pub(crate) const ZXDG_DECORATION_MODE_SERVER_SIDE : i64 = 2;
 
 /** Requests in the manager and in one toplevel's decoration. */
-const MANAGER_REQUESTS : i64 = 2;
+const DECORATION_MANAGER_REQUESTS : i64 = 2;
 const DECORATION_REQUESTS : i64 = 3;
 
 /** The two tables the negotiation needs. */
@@ -64,12 +64,12 @@ pub extern "C" struct XdgDecorationTables {
 pub(crate) fn buildDecorationTables(out : ptr<XdgDecorationTables>, xdgToplevel : ptr) : void {
     unsafe {
         let block = Raw::take(2 * sizeof<WlInterface>());
-        let manager : ptr<WlInterface> = recordAt(
+        let mut manager : ptr<WlInterface> = recordAt(
             block,
             0,
             sizeof<WlInterface>()
         ) as ptr<WlInterface>;
-        let decoration : ptr<WlInterface> = recordAt(
+        let mut decoration : ptr<WlInterface> = recordAt(
             block,
             1,
             sizeof<WlInterface>()
@@ -79,7 +79,7 @@ pub(crate) fn buildDecorationTables(out : ptr<XdgDecorationTables>, xdgToplevel 
 
         // The manager: two requests, and no events at all — the answer
         // comes on the per-toplevel object, not on the factory.
-        let mMethods = Raw::take(MANAGER_REQUESTS * sizeof<WlMessage>());
+        let mMethods = Raw::take(DECORATION_MANAGER_REQUESTS * sizeof<WlMessage>());
         putMessage(mMethods, 0, "destroy", "", Raw::nil());
         putMessage(
             mMethods,
@@ -90,7 +90,7 @@ pub(crate) fn buildDecorationTables(out : ptr<XdgDecorationTables>, xdgToplevel 
         );
         (*manager).name = cstr("zxdg_decoration_manager_v1");
         (*manager).version = 1;
-        (*manager).methodCount = MANAGER_REQUESTS as i32;
+        (*manager).methodCount = DECORATION_MANAGER_REQUESTS as i32;
         (*manager).methods = mMethods;
         (*manager).eventCount = 0;
         (*manager).events = Raw::nil();
