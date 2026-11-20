@@ -94,9 +94,9 @@ class SysDrain {
         scratch : Blob,
         win : SysWindow,
         stamp : i64,
-        queue : EventQueue,
-        keys : KeyboardState,
-        mouse : MouseState
+        mut queue : EventQueue,
+        mut keys : KeyboardState,
+        mut mouse : MouseState
     ) : void {
         unsafe {
             let m : ptr<MSG> = scratch.at() as ptr<MSG>;
