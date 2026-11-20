@@ -390,7 +390,7 @@ pub class Mixer : Closeable {
  * block, which is enough to never miss one and cheap enough to be
  * invisible in a profile.
  */
-pub fn mixerLoop(mx : Mixer) : i32 {
+pub fn mixerLoop(mut mx : Mixer) : i32 {
     while (mx.isRunning()) {
         mx.pump();
         sleep(Mixer::PUMP_SLEEP_MS);

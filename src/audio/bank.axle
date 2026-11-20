@@ -90,7 +90,7 @@ pub class SoundBank : Closeable {
     }
 
     /** Play one variant at a fixed gain — the listener's own sound. */
-    pub fn playRand(self, mx : Mixer, rnd : f64, gain : f64) : void {
+    pub fn playRand(self, mut mx : Mixer, rnd : f64, gain : f64) : void {
         let i : i32 = self.pick(rnd);
         if (i < 0) {
             return;
@@ -101,7 +101,7 @@ pub class SoundBank : Closeable {
     /** Play one variant at a world position, fading to nothing at `range`. */
     pub fn playRandPos(
         self,
-        mx : Mixer,
+        mut mx : Mixer,
         rnd : f64,
         gain : f64,
         x : f64,

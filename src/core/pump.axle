@@ -163,7 +163,7 @@ pub class Events : Closeable {
      * `FramePacer` — waiting for input in a loop that must draw the next
      * frame anyway is a frame that arrives late.
      */
-    pub fn wait(mut self, win : Window, clock : Clock, timeoutMs : i32) : bool {
+    pub fn wait(mut self, mut win : Window, mut clock : Clock, timeoutMs : i32) : bool {
         let arrived = SysDrain::waitReady(self.msg, win.sys, timeoutMs);
         self.pump(win, clock);
         return arrived;
@@ -175,7 +175,7 @@ pub class Events : Closeable {
      * The clock is read once, so a frame's events share one timestamp
      * rather than a spread of readings taken while draining.
      */
-    pub fn pump(mut self, win : Window, clock : Clock) : void {
+    pub fn pump(mut self, mut win : Window, mut clock : Clock) : void {
         let stamp = clock.ticks();
         self.mouse.newFrame();
         if (self.cursorPending) {

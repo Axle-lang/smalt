@@ -304,7 +304,7 @@ pub class FramePacer {
      * than a period leaves a backlog that no run of short frames can
      * clear, so the deadline is re-seeded from now rather than chased.
      */
-    pub fn tick(mut self, clock : Clock) : f64 {
+    pub fn tick(mut self, mut clock : Clock) : f64 {
         if (!self.started) {
             self.started = true;
             self.lastUs = clock.micros();
