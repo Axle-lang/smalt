@@ -84,7 +84,7 @@ pub(crate) fn initState(st : ptr<WlWinState>) : void {
 pub(crate) fn createWindow(
     st : ptr<WlWinState>,
     app : ptr<WlApp>,
-    args : WlArgs,
+    mut args : WlArgs,
     title : string,
     w : i32,
     h : i32,
@@ -113,7 +113,7 @@ pub(crate) fn createWindow(
             throw PlatformError("xdg_wm_base.get_xdg_surface produced no surface");
         }
         (*st).xdgSurface = xdgSurface;
-        let surfaceListener : ptr<XdgSurfaceListener> = (*st).surfaceListener as ptr<XdgSurfaceListener>;
+        let mut surfaceListener : ptr<XdgSurfaceListener> = (*st).surfaceListener as ptr<XdgSurfaceListener>;
         (*surfaceListener).configure = onSurfaceConfigure;
         wl_proxy_add_listener(xdgSurface, (*st).surfaceListener, st as ptr);
 
@@ -123,7 +123,7 @@ pub(crate) fn createWindow(
             throw PlatformError("xdg_surface.get_toplevel produced no toplevel");
         }
         (*st).toplevel = toplevel;
-        let toplevelListener : ptr<XdgToplevelListener> = (*st).toplevelListener as ptr<XdgToplevelListener>;
+        let mut toplevelListener : ptr<XdgToplevelListener> = (*st).toplevelListener as ptr<XdgToplevelListener>;
         (*toplevelListener).configure = onToplevelConfigure;
         (*toplevelListener).close = onToplevelClose;
         wl_proxy_add_listener(toplevel, (*st).toplevelListener, st as ptr);
@@ -155,7 +155,7 @@ pub(crate) fn createWindow(
  * flag is what stops `libwayland` from holding the name for a window
  * that has closed.
  */
-pub(crate) fn destroyWindow(st : ptr<WlWinState>, args : WlArgs) : void {
+pub(crate) fn destroyWindow(st : ptr<WlWinState>, mut args : WlArgs) : void {
     unsafe {
         releaseKit(st, args);
         args.sendDestroy((*st).decoration, ZXDG_TOPLEVEL_DECORATION_DESTROY);
@@ -189,7 +189,7 @@ pub(crate) fn destroyWindow(st : ptr<WlWinState>, args : WlArgs) : void {
  * window has no frame, and that is the desktop's answer rather than a
  * failure of this call.
  */
-fn requestDecoration(st : ptr<WlWinState>, app : ptr<WlApp>, args : WlArgs) : void {
+fn requestDecoration(st : ptr<WlWinState>, app : ptr<WlApp>, mut args : WlArgs) : void {
     unsafe {
         if (Raw::isNil((*app).decorationManager)) {
             return;
@@ -207,7 +207,7 @@ fn requestDecoration(st : ptr<WlWinState>, app : ptr<WlApp>, args : WlArgs) : vo
             return;
         }
         (*st).decoration = decoration;
-        let listener : ptr<XdgDecorationListener> = (*st).decorationListener as ptr<XdgDecorationListener>;
+        let mut listener : ptr<XdgDecorationListener> = (*st).decorationListener as ptr<XdgDecorationListener>;
         (*listener).configure = onDecorationConfigure;
         wl_proxy_add_listener(decoration, (*st).decorationListener, st as ptr);
         args.set(0, ZXDG_DECORATION_MODE_SERVER_SIDE);
@@ -216,7 +216,7 @@ fn requestDecoration(st : ptr<WlWinState>, app : ptr<WlApp>, args : WlArgs) : vo
 }
 
 /** The title bar's text, and the identity a desktop groups windows by. */
-fn nameWindow(st : ptr<WlWinState>, args : WlArgs, title : string) : void {
+fn nameWindow(st : ptr<WlWinState>, mut args : WlArgs, title : string) : void {
     unsafe {
         args.set(0, cstr(title) as i64);
         args.send((*st).toplevel, XDG_TOPLEVEL_SET_TITLE, Raw::nil(), 0);
@@ -231,7 +231,7 @@ fn nameWindow(st : ptr<WlWinState>, args : WlArgs, title : string) : void {
  * A request, not a call: the compositor is free to ignore both, and what
  * the player then gets is a window they can resize — not a failure.
  */
-fn pinSize(st : ptr<WlWinState>, args : WlArgs, w : i32, h : i32) : void {
+fn pinSize(st : ptr<WlWinState>, mut args : WlArgs, w : i32, h : i32) : void {
     unsafe {
         args.set(0, w as i64);
         args.set(1, h as i64);
@@ -250,7 +250,7 @@ fn pinSize(st : ptr<WlWinState>, args : WlArgs, w : i32, h : i32) : void {
  * send its `done`, and the answer arrives by being matched against an
  * interface table and dispatched into a listener installed here.
  */
-pub(crate) fn syncRoundTrip(st : ptr<WlWinState>, core : ptr<WlCore>, args : WlArgs) : bool {
+pub(crate) fn syncRoundTrip(st : ptr<WlWinState>, core : ptr<WlCore>, mut args : WlArgs) : bool {
     unsafe {
         (*st).syncDone = 0;
         args.set(0, 0);
@@ -261,7 +261,7 @@ pub(crate) fn syncRoundTrip(st : ptr<WlWinState>, core : ptr<WlCore>, args : WlA
         if (Raw::isNil((*st).syncListener)) {
             (*st).syncListener = Raw::take(sizeof<WlCallbackListener>());
         }
-        let listener : ptr<WlCallbackListener> = (*st).syncListener as ptr<WlCallbackListener>;
+        let mut listener : ptr<WlCallbackListener> = (*st).syncListener as ptr<WlCallbackListener>;
         (*listener).done = onSyncDone;
         wl_proxy_add_listener(callback, (*st).syncListener, st as ptr);
         if (wl_display_roundtrip((*st).display) < 0) {

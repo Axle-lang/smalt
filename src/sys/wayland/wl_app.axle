@@ -52,7 +52,7 @@ pub(crate) fn connect() : ptr {
             return Raw::nil();
         }
 
-        let app : ptr<WlApp> = Raw::take(sizeof<WlApp>()) as ptr<WlApp>;
+        let mut app : ptr<WlApp> = Raw::take(sizeof<WlApp>()) as ptr<WlApp>;
         Raw::clear(app as ptr, sizeof<WlApp>());
         (*app).display = display;
         (*app).core = Raw::take(sizeof<WlCore>());
@@ -105,7 +105,7 @@ pub(crate) fn disconnect(token : ptr) : void {
         if (Raw::isNil(token)) {
             return;
         }
-        let app : ptr<WlApp> = token as ptr<WlApp>;
+        let mut app : ptr<WlApp> = token as ptr<WlApp>;
         // The clipboard's proxies are destroyed by request, so while the connection is open.
         closeClipboard(app);
         if (!Raw::isNil((*app).display)) {
@@ -123,7 +123,7 @@ pub(crate) fn disconnect(token : ptr) : void {
 }
 
 /** Ask the registry what there is, and wait for the answer. */
-fn sweep(app : ptr<WlApp>, args : WlArgs) : bool {
+fn sweep(app : ptr<WlApp>, mut args : WlArgs) : bool {
     unsafe {
         let core : ptr<WlCore> = (*app).core as ptr<WlCore>;
         args.set(0, 0);
@@ -140,7 +140,7 @@ fn sweep(app : ptr<WlApp>, args : WlArgs) : bool {
         }
         (*app).registry = registry;
 
-        let listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
+        let mut listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
         (*listeners).registry.global = onGlobal;
         (*listeners).registry.globalRemove = onGlobalRemove;
         wl_proxy_add_listener(registry, (*app).listeners, app as ptr);
@@ -150,7 +150,7 @@ fn sweep(app : ptr<WlApp>, args : WlArgs) : bool {
 }
 
 /** The three globals without which there is no window. */
-fn bindShell(app : ptr<WlApp>, args : WlArgs) : bool {
+fn bindShell(app : ptr<WlApp>, mut args : WlArgs) : bool {
     unsafe {
         if ((*app).compositorName == 0 || (*app).shmName == 0 || (*app).wmBaseName == 0) {
             return false;
@@ -183,7 +183,7 @@ fn bindShell(app : ptr<WlApp>, args : WlArgs) : bool {
  * Optional: a compositor with no seat is a session with no input, which
  * is a program that draws and quits rather than one that fails.
  */
-fn bindSeat(app : ptr<WlApp>, args : WlArgs) : void {
+fn bindSeat(app : ptr<WlApp>, mut args : WlArgs) : void {
     unsafe {
         if ((*app).seatName == 0) {
             return;
@@ -193,7 +193,7 @@ fn bindSeat(app : ptr<WlApp>, args : WlArgs) : void {
         if (Raw::isNil((*app).seat)) {
             return;
         }
-        let listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
+        let mut listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
         (*listeners).seat.capabilities = onSeatCapabilities;
         (*listeners).seat.name = onSeatName;
         wl_proxy_add_listener((*app).seat, seatListenerAt(app), app as ptr);
@@ -208,7 +208,7 @@ fn bindSeat(app : ptr<WlApp>, args : WlArgs) : void {
  * delivers `wl_seat.capabilities` and not with the bind that precedes
  * it.
  */
-fn openSeatDevices(app : ptr<WlApp>, args : WlArgs) : void {
+fn openSeatDevices(app : ptr<WlApp>, mut args : WlArgs) : void {
     unsafe {
         if (Raw::isNil((*app).seat)) {
             return;
@@ -241,7 +241,7 @@ fn hasCapability(caps : i32, bit : i32) : bool {
 }
 
 /** The first monitor, for the one question `SysScreen` asks. */
-fn bindOutput(app : ptr<WlApp>, args : WlArgs) : void {
+fn bindOutput(app : ptr<WlApp>, mut args : WlArgs) : void {
     unsafe {
         if ((*app).outputName == 0) {
             return;
@@ -257,7 +257,7 @@ fn bindOutput(app : ptr<WlApp>, args : WlArgs) : void {
         if (Raw::isNil((*app).output)) {
             return;
         }
-        let listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
+        let mut listeners : ptr<WlAppListeners> = (*app).listeners as ptr<WlAppListeners>;
         (*listeners).output.geometry = onOutputGeometry;
         (*listeners).output.mode = onOutputMode;
         (*listeners).output.done = onOutputDone;
@@ -274,7 +274,7 @@ fn bindOutput(app : ptr<WlApp>, args : WlArgs) : void {
  * Asking is free and the answer is the compositor's: a desktop that
  * draws frames offers this, one that does not is not offering it.
  */
-fn bindDecorations(app : ptr<WlApp>, args : WlArgs) : void {
+fn bindDecorations(app : ptr<WlApp>, mut args : WlArgs) : void {
     unsafe {
         if ((*app).decorationName == 0) {
             return;
@@ -297,7 +297,7 @@ fn bindDecorations(app : ptr<WlApp>, args : WlArgs) : void {
  * the pointer a program asks for from the user's theme; one that does not
  * is served the built-in pointers of `video::wayland::wl_cursor`.
  */
-fn bindCursorShape(app : ptr<WlApp>, args : WlArgs) : void {
+fn bindCursorShape(app : ptr<WlApp>, mut args : WlArgs) : void {
     unsafe {
         if ((*app).cursorShapeName == 0) {
             return;
@@ -314,7 +314,7 @@ fn bindCursorShape(app : ptr<WlApp>, args : WlArgs) : void {
 }
 
 /** The data-device manager, where there is one: without it there is no clipboard. */
-fn bindDataManager(app : ptr<WlApp>, args : WlArgs) : void {
+fn bindDataManager(app : ptr<WlApp>, mut args : WlArgs) : void {
     unsafe {
         if ((*app).dataManagerName == 0) {
             return;
@@ -334,7 +334,7 @@ fn bindDataManager(app : ptr<WlApp>, args : WlArgs) : void {
 }
 
 /** The pointer's cursor-shape device, once there is a pointer to make one for. */
-fn openCursorDevice(app : ptr<WlApp>, args : WlArgs) : void {
+fn openCursorDevice(app : ptr<WlApp>, mut args : WlArgs) : void {
     unsafe {
         if (Raw::isNil((*app).cursorShapeManager) || Raw::isNil((*app).pointer)) {
             return;

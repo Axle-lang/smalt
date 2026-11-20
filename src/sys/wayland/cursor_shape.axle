@@ -32,7 +32,7 @@ pub(crate) const WP_CURSOR_SHAPE_DEVICE_DESTROY : i32 = 0;
 pub(crate) const WP_CURSOR_SHAPE_DEVICE_SET_SHAPE : i32 = 1;
 
 /** Requests in the manager (`destroy`, `get_pointer`, `get_tablet_tool_v2`) and in a device. */
-const MANAGER_REQUESTS : i64 = 3;
+const SHAPE_MANAGER_REQUESTS : i64 = 3;
 const DEVICE_REQUESTS : i64 = 2;
 
 /** The two tables the extension needs. */
@@ -72,12 +72,12 @@ pub(crate) fn protocolShape(shape : i32) : i64 {
 pub(crate) fn buildCursorShapeTables(out : ptr<CursorShapeTables>, wlPointer : ptr) : void {
     unsafe {
         let block = Raw::take(2 * sizeof<WlInterface>());
-        let manager : ptr<WlInterface> = recordAt(
+        let mut manager : ptr<WlInterface> = recordAt(
             block,
             0,
             sizeof<WlInterface>()
         ) as ptr<WlInterface>;
-        let device : ptr<WlInterface> = recordAt(
+        let mut device : ptr<WlInterface> = recordAt(
             block,
             1,
             sizeof<WlInterface>()
@@ -87,13 +87,13 @@ pub(crate) fn buildCursorShapeTables(out : ptr<CursorShapeTables>, wlPointer : p
 
         // The manager: no events. `get_tablet_tool_v2` keeps its slot because an opcode is a
         // position, though this port never sends it.
-        let mMethods = Raw::take(MANAGER_REQUESTS * sizeof<WlMessage>());
+        let mMethods = Raw::take(SHAPE_MANAGER_REQUESTS * sizeof<WlMessage>());
         putMessage(mMethods, 0, "destroy", "", Raw::nil());
         putMessage(mMethods, 1, "get_pointer", "no", typesOf2(device as ptr, wlPointer));
         putMessage(mMethods, 2, "get_tablet_tool_v2", "no", nullTypes(2));
         (*manager).name = cstr("wp_cursor_shape_manager_v1");
         (*manager).version = 1;
-        (*manager).methodCount = MANAGER_REQUESTS as i32;
+        (*manager).methodCount = SHAPE_MANAGER_REQUESTS as i32;
         (*manager).methods = mMethods;
         (*manager).eventCount = 0;
         (*manager).events = Raw::nil();

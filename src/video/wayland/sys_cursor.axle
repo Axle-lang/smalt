@@ -52,7 +52,7 @@ class SysCursor {
     /** Hide the pointer over `win` for relative-mouse mode, or show the shape it was asked for. */
     pub(crate) static fn showCursor(win : SysWindow, visible : bool) : void {
         unsafe {
-            let st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
             (*st).cursorHidden = 1;
             if (visible) {
                 (*st).cursorHidden = 0;
@@ -70,7 +70,7 @@ class SysCursor {
      */
     pub(crate) static fn setShape(win : SysWindow, shape : i32) : void {
         unsafe {
-            let st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
+            let mut st : ptr<WlWinState> = winState(win) as ptr<WlWinState>;
             (*st).cursorShape = shape;
             (*st).cursorDirty = 1;
             applyCursor(winApp(win) as ptr<WlApp>, st);

@@ -188,7 +188,7 @@ pub(crate) fn onPointerEnter(
     y : i32
 ) : void {
     unsafe {
-        let st : ptr<WlWinState> = data as ptr<WlWinState>;
+        let mut st : ptr<WlWinState> = data as ptr<WlWinState>;
         (*st).pointerSerial = serial;
         (*st).inputSerial = serial;
         // The compositor shows no cursor of ours until we say which, once per enter.
@@ -279,7 +279,7 @@ pub(crate) fn bindInput(app : ptr<WlApp>, st : ptr<WlWinState>) : void {
         (*st).inputBound = 1;
         if (!Raw::isNil((*app).keyboard)) {
             (*st).keyboardListener = Raw::take(sizeof<KeyboardListener>());
-            let kl : ptr<KeyboardListener> = (*st).keyboardListener as ptr<KeyboardListener>;
+            let mut kl : ptr<KeyboardListener> = (*st).keyboardListener as ptr<KeyboardListener>;
             (*kl).keymap = onKeymap;
             (*kl).enter = onKeyEnter;
             (*kl).leave = onKeyLeave;
@@ -290,7 +290,7 @@ pub(crate) fn bindInput(app : ptr<WlApp>, st : ptr<WlWinState>) : void {
         }
         if (!Raw::isNil((*app).pointer)) {
             (*st).pointerListener = Raw::take(sizeof<PointerListener>());
-            let pl : ptr<PointerListener> = (*st).pointerListener as ptr<PointerListener>;
+            let mut pl : ptr<PointerListener> = (*st).pointerListener as ptr<PointerListener>;
             (*pl).enter = onPointerEnter;
             (*pl).leave = onPointerLeave;
             (*pl).motion = onPointerMotion;
@@ -336,7 +336,7 @@ pub(crate) fn readAvailable(scratch : Blob, st : ptr<WlWinState>, timeoutMs : i3
         }
         wl_display_flush(display);
 
-        let fds : ptr<PollFd> = scratch.at() as ptr<PollFd>;
+        let mut fds : ptr<PollFd> = scratch.at() as ptr<PollFd>;
         (*fds).fd = wl_display_get_fd(display);
         (*fds).events = POLL_IN;
         (*fds).revents = 0;
@@ -357,9 +357,9 @@ pub(crate) fn readAvailable(scratch : Blob, st : ptr<WlWinState>, timeoutMs : i3
 pub(crate) fn drainRing(
     st : ptr<WlWinState>,
     stamp : i64,
-    queue : EventQueue,
-    keys : KeyboardState,
-    mouse : MouseState
+    mut queue : EventQueue,
+    mut keys : KeyboardState,
+    mut mouse : MouseState
 ) : void {
     unsafe {
         while ((*st).tail != (*st).head) {
@@ -433,7 +433,7 @@ fn push(st : ptr<WlWinState>, kind : i32, a : i32, b : i32) : void {
 }
 
 /** A key record: pressed or released, and the evdev code. */
-fn emitKey(state : i32, code : i32, stamp : i64, queue : EventQueue, keys : KeyboardState) : void {
+fn emitKey(state : i32, code : i32, stamp : i64, mut queue : EventQueue, mut keys : KeyboardState) : void {
     let sc = EvdevKeymap::lookup(code);
     if (state != KEY_PRESSED) {
         keys.release(sc);
@@ -455,7 +455,7 @@ fn emitKey(state : i32, code : i32, stamp : i64, queue : EventQueue, keys : Keyb
  * a `wl_pointer.button` carries no coordinates, because the motion that
  * put the pointer there was its own event.
  */
-fn emitButton(state : i32, code : i32, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
+fn emitButton(state : i32, code : i32, stamp : i64, mut queue : EventQueue, mut mouse : MouseState) : void {
     let b = buttonOf(code);
     let x = mouse.posX();
     let y = mouse.posY();
@@ -482,7 +482,7 @@ fn emitButton(state : i32, code : i32, stamp : i64, queue : EventQueue, mouse : 
 }
 
 /** A motion record: a surface-local position in whole pixels. */
-fn emitMotion(x : i32, y : i32, stamp : i64, queue : EventQueue, mouse : MouseState) : void {
+fn emitMotion(x : i32, y : i32, stamp : i64, mut queue : EventQueue, mut mouse : MouseState) : void {
     mouse.moveTo(x, y);
     queue.push(Event { kind: EventKind::MouseMotion, timestamp: stamp, x: x, y: y });
 }

@@ -164,7 +164,7 @@ fn ready(fd : i32, events : i16, ms : i32) : bool {
     let block = new Blob(sizeof<PollFd>());
     defer block.close();
     unsafe {
-        let one : ptr<PollFd> = block.at() as ptr<PollFd>;
+        let mut one : ptr<PollFd> = block.at() as ptr<PollFd>;
         (*one).fd = fd;
         (*one).events = events;
         (*one).revents = 0;
@@ -177,7 +177,7 @@ fn ready(fd : i32, events : i16, ms : i32) : bool {
 /** A new offer: remember it as pending, and listen to the formats it lists. */
 pub(crate) fn onDataOffer(data : ptr, device : ptr, offer : ptr) : void {
     unsafe {
-        let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
+        let mut clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
         // An offer that never became the selection is dead weight: take it back.
         if (!Raw::isNil((*clip).pending)) {
             destroyProxy((*clip).pending, WL_DATA_OFFER_DESTROY);
@@ -191,7 +191,7 @@ pub(crate) fn onDataOffer(data : ptr, device : ptr, offer : ptr) : void {
 /** One format the pending offer comes in; keep the best text one. */
 pub(crate) fn onOfferMime(data : ptr, offer : ptr, mime : ptr) : void {
     unsafe {
-        let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
+        let mut clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
         let rank : i32 = rankOf(mime);
         if (rank != 0 && ((*clip).pendingMime == 0 || rank < (*clip).pendingMime)) {
             (*clip).pendingMime = rank;
@@ -213,7 +213,7 @@ pub(crate) fn onDataEnter(
     offer : ptr
 ) : void {
     unsafe {
-        let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
+        let mut clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
         if (Raw::isNil(offer)) {
             return;
         }
@@ -237,7 +237,7 @@ pub(crate) fn onDataDrop(data : ptr, device : ptr) : void {}
  */
 pub(crate) fn onDataSelection(data : ptr, device : ptr, offer : ptr) : void {
     unsafe {
-        let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
+        let mut clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
         if (!Raw::isNil((*clip).offer) && Raw::addr((*clip).offer) != Raw::addr(offer)) {
             destroyProxy((*clip).offer, WL_DATA_OFFER_DESTROY);
         }
@@ -274,7 +274,7 @@ pub(crate) fn onSourceAction(data : ptr, source : ptr, action : u32) : void {}
  */
 pub(crate) fn onSourceSend(data : ptr, source : ptr, mime : ptr, fd : i32) : void {
     unsafe {
-        let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
+        let mut clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
         let mut sent : i64 = 0;
         let total : i64 = (*clip).sourceBytes;
         let mut waited : i32 = 0;
@@ -300,7 +300,7 @@ pub(crate) fn onSourceSend(data : ptr, source : ptr, mime : ptr, fd : i32) : voi
 /** Another program claimed the selection: this source is finished, and so is the text it served. */
 pub(crate) fn onSourceCancelled(data : ptr, source : ptr) : void {
     unsafe {
-        let clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
+        let mut clip : ptr<WlClipboard> = data as ptr<WlClipboard>;
         destroyProxy(source, WL_DATA_SOURCE_DESTROY);
         if (Raw::addr(source) == Raw::addr((*clip).source)) {
             (*clip).source = Raw::nil();
@@ -319,7 +319,7 @@ pub(crate) fn onSourceCancelled(data : ptr, source : ptr) : void {
  * Make the clipboard's record and ask the seat for its data device, once the connection has both.
  * Quietly nothing when the compositor offers no data-device manager or the tables are missing.
  */
-pub(crate) fn openClipboard(app : ptr<WlApp>, args : WlArgs) : void {
+pub(crate) fn openClipboard(app : ptr<WlApp>, mut args : WlArgs) : void {
     unsafe {
         if (Raw::isNil((*app).dataManager) || Raw::isNil((*app).seat)) {
             return;
@@ -334,12 +334,12 @@ pub(crate) fn openClipboard(app : ptr<WlApp>, args : WlArgs) : void {
         // with an error instead — the way every graphical client that serves a clipboard has it.
         signal(SIGPIPE, Raw::at(SIG_IGN));
 
-        let clip : ptr<WlClipboard> = Raw::take(sizeof<WlClipboard>()) as ptr<WlClipboard>;
+        let mut clip : ptr<WlClipboard> = Raw::take(sizeof<WlClipboard>()) as ptr<WlClipboard>;
         Raw::clear(clip as ptr, sizeof<WlClipboard>());
         (*app).clipboard = clip as ptr;
 
         (*clip).deviceListener = Raw::take(sizeof<DataDeviceListener>());
-        let dl : ptr<DataDeviceListener> = (*clip).deviceListener as ptr<DataDeviceListener>;
+        let mut dl : ptr<DataDeviceListener> = (*clip).deviceListener as ptr<DataDeviceListener>;
         (*dl).dataOffer = onDataOffer;
         (*dl).enter = onDataEnter;
         (*dl).leave = onDataLeave;
@@ -348,13 +348,13 @@ pub(crate) fn openClipboard(app : ptr<WlApp>, args : WlArgs) : void {
         (*dl).selection = onDataSelection;
 
         (*clip).offerListener = Raw::take(sizeof<DataOfferListener>());
-        let ol : ptr<DataOfferListener> = (*clip).offerListener as ptr<DataOfferListener>;
+        let mut ol : ptr<DataOfferListener> = (*clip).offerListener as ptr<DataOfferListener>;
         (*ol).offer = onOfferMime;
         (*ol).sourceActions = onOfferSourceActions;
         (*ol).action = onOfferAction;
 
         (*clip).sourceListener = Raw::take(sizeof<DataSourceListener>());
-        let sl : ptr<DataSourceListener> = (*clip).sourceListener as ptr<DataSourceListener>;
+        let mut sl : ptr<DataSourceListener> = (*clip).sourceListener as ptr<DataSourceListener>;
         (*sl).target = onSourceTarget;
         (*sl).send = onSourceSend;
         (*sl).cancelled = onSourceCancelled;
@@ -410,7 +410,7 @@ pub(crate) fn hasClipboardText(app : ptr<WlApp>) : bool {
         if (Raw::isNil((*app).clipboard)) {
             return false;
         }
-        let clip : ptr<WlClipboard> = (*app).clipboard as ptr<WlClipboard>;
+        let mut clip : ptr<WlClipboard> = (*app).clipboard as ptr<WlClipboard>;
         return !Raw::isNil((*clip).source)
             || (!Raw::isNil((*clip).offer) && (*clip).offerMime != 0);
     }
@@ -428,7 +428,7 @@ pub(crate) fn pasteText(app : ptr<WlApp>) : string {
         if (Raw::isNil((*app).clipboard)) {
             return "";
         }
-        let clip : ptr<WlClipboard> = (*app).clipboard as ptr<WlClipboard>;
+        let mut clip : ptr<WlClipboard> = (*app).clipboard as ptr<WlClipboard>;
         if (!Raw::isNil((*clip).source)) {
             return Codec::fromUtf8(Raw::addr((*clip).sourceText), (*clip).sourceBytes);
         }
@@ -494,7 +494,7 @@ pub(crate) fn copyText(app : ptr<WlApp>, serial : u32, text : string) : bool {
         if (Raw::isNil((*app).clipboard)) {
             return false;
         }
-        let clip : ptr<WlClipboard> = (*app).clipboard as ptr<WlClipboard>;
+        let mut clip : ptr<WlClipboard> = (*app).clipboard as ptr<WlClipboard>;
         if (Raw::isNil((*clip).device)) {
             return false;
         }
